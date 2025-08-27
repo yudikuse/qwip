@@ -2,11 +2,12 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-// --- Dados de exemplo ---------------------------------------------------------
-// Se você já tem uma fonte de dados centralizada, pode deletar este bloco e
-// usar seu import atual. Mantive aqui para o arquivo ser "plug-and-play".
+// -----------------------------------------------------------------------------
+// Dados mockados (use os seus se preferir). Mantive aqui para o arquivo ser
+// plug-and-play. Se já estiver buscando de outra fonte, pode remover este bloco.
+// -----------------------------------------------------------------------------
 type Ad = {
   id: number;
   title: string;
@@ -15,10 +16,10 @@ type Ad = {
   category: string;
   condition: 'novo' | 'usado';
   price: number;
-  phone: string; // WhatsApp
+  phone: string;
   description: string;
-  updatedAt: string; // ISO ou data simples
-  images?: string[]; // pode ter strings vazias
+  updatedAt: string;
+  images?: string[];
 };
 
 const ADS: Ad[] = [
@@ -36,7 +37,7 @@ const ADS: Ad[] = [
     updatedAt: '2025-08-27',
     images: [
       'https://images.unsplash.com/photo-1544551763-7ef420c5ea07?q=80&w=1200&auto=format&fit=crop',
-      '', // <- vazio (exemplo) será ignorado
+      '',
       'https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=1200&auto=format&fit=crop',
     ],
   },
@@ -55,7 +56,7 @@ const ADS: Ad[] = [
     images: [
       'https://images.unsplash.com/photo-1488646953014-85cb44e25828?q=80&w=1200&auto=format&fit=crop',
       'https://images.unsplash.com/photo-1520975922323-911d8b3f0b1b?q=80&w=1200&auto=format&fit=crop',
-      '', // <- vazio (exemplo) será ignorado
+      '',
     ],
   },
   {
@@ -127,17 +128,40 @@ function getAdById(id: number): Ad | undefined {
   return ADS.find((a) => a.id === id);
 }
 
-// --- Página -------------------------------------------------------------------
-
-type PageProps = {
-  params: { id: string };
-};
+// -----------------------------------------------------------------------------
+// Página
+// -----------------------------------------------------------------------------
+type PageProps = { params: { id: string } };
 
 export default function AnuncioPage({ params }: PageProps) {
   const adId = Number(params.id);
   const ad = getAdById(adId);
 
-  // Fallback simples se não achar o anúncio
+  // HOOKS SEMPRE NO TOPO (sem return antes!)
+  const validImages = useMemo(
+    () => (ad?.images ?? []).filter((src) => typeof src === 'string' && src.trim().length > 0),
+    [ad?.images]
+  );
+
+  const PLACEHOLDER =
+    'https://images.unsplash.com/photo-1549187774-b4e9b0445b41?q=80&w=1200&auto=format&fit=crop';
+
+  const initialMain = validImages[0] ?? PLACEHOLDER;
+  const [mainImage, setMainImage] = useState<string>(initialMain);
+
+  // Se o anúncio (ou a primeira imagem válida) mudar, ressincroniza a imagem principal
+  useEffect(() => {
+    setMainImage(validImages[0] ?? PLACEHOLDER);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adId, validImages.length]);
+
+  // WhatsApp link (mesmo se ad for undefined, não quebra — só não será usado)
+  const waMessage = encodeURIComponent(
+    ad ? `Olá! Vi seu anúncio "${ad.title}" na Qwip. Ainda está disponível?` : 'Olá!'
+  );
+  const waHref = `https://wa.me/${ad?.phone ?? ''}?text=${waMessage}`;
+
+  // RENDERIZAÇÃO
   if (!ad) {
     return (
       <main className="max-w-6xl mx-auto px-4 py-8">
@@ -149,34 +173,8 @@ export default function AnuncioPage({ params }: PageProps) {
     );
   }
 
-  // 1) filtra imagens válidas (remove undefined, null e strings vazias)
-  const validImages = useMemo(
-    () => (ad.images ?? []).filter((src) => typeof src === 'string' && src.trim().length > 0),
-    [ad.images]
-  );
-
-  // 2) define principal como a primeira imagem válida (se não houver, usa placeholder)
-  const initialMain =
-    validImages[0] ??
-    'https://images.unsplash.com/photo-1549187774-b4e9b0445b41?q=80&w=1200&auto=format&fit=crop';
-  const [mainImage, setMainImage] = useState<string>(initialMain);
-
-  // 3) miniaturas (só mostra se houver mais de 1 imagem válida)
-  const thumbs = useMemo(
-    () => validImages.slice(0, 6), // limite de miniaturas (se quiser)
-    [validImages]
-  );
-
-  // WhatsApp
-  const waMessage = encodeURIComponent(
-    `Olá! Vi seu anúncio "${ad.title}" na Qwip. Ainda está disponível?`
-  );
-  const waHref = `https://wa.me/${ad.phone}?text=${waMessage}`;
-
-  const priceBRL = ad.price.toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  });
+  const thumbs = validImages.slice(0, 6);
+  const priceBRL = ad.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-8">
@@ -203,7 +201,7 @@ export default function AnuncioPage({ params }: PageProps) {
             />
           </div>
 
-          {/* Miniaturas — APARECE APENAS se houver mais de 1 imagem válida */}
+          {/* Miniaturas — só se houver mais de 1 imagem válida */}
           {thumbs.length > 1 && (
             <div className="flex gap-3 mt-4">
               {thumbs.map((src, idx) => (
