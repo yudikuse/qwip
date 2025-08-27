@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-// Reaproveito o mesmo mock daqui (para MVP real a gente extrai para um módulo compartilhado)
+// ---------- Tipos e mock (MVP) ----------
 type Ad = {
   id: string;
   title: string;
@@ -121,7 +121,7 @@ const ADS: Ad[] = [
   },
 ];
 
-// utils
+// ---------- Utils ----------
 function formatBRL(value: number) {
   return value.toLocaleString("pt-BR", {
     style: "currency",
@@ -156,6 +156,7 @@ export async function generateMetadata({
   };
 }
 
+// ---------- Página ----------
 export default function VitrinePage({
   searchParams,
 }: {
@@ -210,7 +211,7 @@ export default function VitrinePage({
   results = results.sort((a, b) => {
     if (sort === "price_asc") return a.price - b.price;
     if (sort === "price_desc") return b.price - a.price;
-    // newest (pelo updatedAt desc)
+    // newest
     return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
   });
 
@@ -220,7 +221,7 @@ export default function VitrinePage({
   const start = (safePage - 1) * perPage;
   const pageItems = results.slice(start, start + perPage);
 
-  // helpers para montar links de paginação mantendo filtros
+  // helpers (preserva filtros)
   const buildUrl = (nextPage: number) => {
     const p = new URLSearchParams();
     if (q) p.set("q", q);
@@ -233,7 +234,7 @@ export default function VitrinePage({
     return `/vitrine?${p.toString()}`;
   };
 
-  // share URL sem usar `any`
+  // share URL
   const shareParams = new URLSearchParams();
   if (q) shareParams.set("q", q);
   if (loc) shareParams.set("loc", loc);
@@ -250,7 +251,7 @@ export default function VitrinePage({
     <div className="mx-auto max-w-6xl px-4 py-10">
       <h1 className="mb-6 text-3xl font-bold tracking-tight">Vitrine</h1>
 
-      {/* Barra de filtros (form GET) */}
+      {/* Filtros */}
       <form method="GET" className="mb-6 grid gap-3 md:grid-cols-6">
         <input
           name="q"
@@ -321,49 +322,60 @@ export default function VitrinePage({
         {start + 1}–{Math.min(start + perPage, total)} de {total} resultados.
       </div>
 
-      {/* Grid de cards (cada card inteiro clicável) */}
+      {/* Cards (sem Link envolvendo tudo, e sem onClick) */}
       <div className="grid gap-4 md:grid-cols-2">
         {pageItems.map((ad) => (
-          <Link
+          <article
             key={ad.id}
-            href={`/anuncio/${ad.id}`}
-            className="group flex items-start gap-4 rounded-xl border p-4 transition hover:bg-gray-50"
+            className="rounded-xl border p-4 transition hover:bg-gray-50"
           >
-            <div className="h-28 w-40 overflow-hidden rounded-lg border">
-              <img
-                src={ad.images[0] ?? "https://picsum.photos/320/224"}
-                alt={ad.title}
-                className="h-full w-full object-cover transition group-hover:scale-105"
-                loading="lazy"
-              />
+            <div className="flex items-start gap-4">
+              <Link
+                href={`/anuncio/${ad.id}`}
+                className="flex flex-1 items-start gap-4"
+              >
+                <div className="h-28 w-40 overflow-hidden rounded-lg border shrink-0">
+                  <img
+                    src={ad.images[0] ?? "https://picsum.photos/320/224"}
+                    alt={ad.title}
+                    className="h-full w-full object-cover transition group-hover:scale-105"
+                    loading="lazy"
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-lg font-medium">{ad.title}</div>
+                  <div className="text-sm text-gray-600">
+                    {ad.city} - {ad.state}
+                  </div>
+                  <div className="mt-2 font-semibold">{formatBRL(ad.price)}</div>
+                </div>
+              </Link>
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-lg font-medium">{ad.title}</div>
-              <div className="text-sm text-gray-600">
-                {ad.city} - {ad.state}
-              </div>
-              <div className="mt-2 font-semibold">{formatBRL(ad.price)}</div>
 
-              {/* Ações secundárias */}
-              <div className="mt-3 flex flex-wrap gap-2">
-                <a
-                  href={`https://wa.me/${ad.phone}?text=${encodeURIComponent(
-                    `Olá! Tenho interesse no anúncio: ${ad.title}`
-                  )}`}
-                  onClick={(e) => e.stopPropagation()}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
-                >
-                  Chamar no WhatsApp
-                </a>
-                <span className="rounded-lg border px-3 py-1.5 text-sm text-gray-600">
-                  Atualizado em{" "}
-                  {new Date(ad.updatedAt).toLocaleDateString("pt-BR")}
-                </span>
-              </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <a
+                href={`https://wa.me/${ad.phone}?text=${encodeURIComponent(
+                  `Olá! Tenho interesse no anúncio: ${ad.title}`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+              >
+                Chamar no WhatsApp
+              </a>
+
+              <Link
+                href={`/anuncio/${ad.id}`}
+                className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+              >
+                Ver detalhes
+              </Link>
+
+              <span className="rounded-lg border px-3 py-1.5 text-sm text-gray-600">
+                Atualizado em {new Date(ad.updatedAt).toLocaleDateString("pt-BR")}
+              </span>
             </div>
-          </Link>
+          </article>
         ))}
       </div>
 
@@ -392,7 +404,7 @@ export default function VitrinePage({
         </Link>
       </div>
 
-      {/* Link de compartilhar (sem `any`) */}
+      {/* Compartilhar */}
       <div className="mt-6 text-sm text-gray-600">
         Compartilhar esta busca:
         <div className="mt-2 flex gap-2">
