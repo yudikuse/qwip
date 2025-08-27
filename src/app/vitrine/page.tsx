@@ -182,10 +182,16 @@ export default function VitrinePage({
     | "price_asc"
     | "price_desc"
     | "newest") ?? "newest";
-  const page = Math.max(1, Number.isFinite(Number(searchParams?.page)) ? Number(searchParams?.page) : 1);
+  const page = Math.max(
+    1,
+    Number.isFinite(Number(searchParams?.page)) ? Number(searchParams?.page) : 1
+  );
   const perPage = Math.min(
     24,
-    Math.max(3, Number.isFinite(Number(searchParams?.per)) ? Number(searchParams?.per) : 6)
+    Math.max(
+      3,
+      Number.isFinite(Number(searchParams?.per)) ? Number(searchParams?.per) : 6
+    )
   );
 
   // filter
@@ -226,6 +232,19 @@ export default function VitrinePage({
     p.set("page", String(nextPage));
     return `/vitrine?${p.toString()}`;
   };
+
+  // share URL sem usar `any`
+  const shareParams = new URLSearchParams();
+  if (q) shareParams.set("q", q);
+  if (loc) shareParams.set("loc", loc);
+  if (typeof min === "number") shareParams.set("min", String(min));
+  if (typeof max === "number") shareParams.set("max", String(max));
+  if (sort && sort !== "newest") shareParams.set("sort", sort);
+  if (perPage !== 6) shareParams.set("per", String(perPage));
+  if (safePage !== 1) shareParams.set("page", String(safePage));
+  const shareUrl = `https://qwip.pro/vitrine${
+    shareParams.toString() ? `?${shareParams.toString()}` : ""
+  }`;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -373,13 +392,13 @@ export default function VitrinePage({
         </Link>
       </div>
 
-      {/* Link de compartilhar (sem JS: campo visível para copiar) */}
+      {/* Link de compartilhar (sem `any`) */}
       <div className="mt-6 text-sm text-gray-600">
         Compartilhar esta busca:
         <div className="mt-2 flex gap-2">
           <input
             readOnly
-            value={`https://qwip.pro/vitrine${searchParams && Object.keys(searchParams).length ? `?${new URLSearchParams(searchParams as any).toString()}` : ""}`}
+            value={shareUrl}
             className="w-full rounded-lg border px-3 py-2"
           />
         </div>
