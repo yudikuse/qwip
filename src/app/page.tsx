@@ -1,29 +1,22 @@
-// src/app/page.tsx
+import Link from "next/link";
+
 export default function Home() {
   return (
-    <main className="min-h-screen grid place-items-center p-10">
-      <div className="max-w-xl text-center">
-        <h1 className="text-4xl font-extrabold">Qwip MVP online ✅</h1>
-        <p className="mt-3 text-lg text-gray-600">
+    <main className="min-h-screen flex items-center justify-center">
+      <div className="text-center space-y-6">
+        <h1 className="text-4xl font-bold">Qwip MVP online ✅</h1>
+        <p className="text-gray-600 max-w-xl mx-auto">
           Deploy funcionando na Vercel. Agora vamos plugar o layout do Figma e as rotas da vitrine.
         </p>
-
-        <div className="mt-8 inline-flex gap-3">
-          <a
-            href="/dashboard"
-            className="rounded-lg px-5 py-3 bg-black text-white hover:opacity-90"
-          >
+        <div className="flex gap-3 justify-center">
+          <Link href="/dashboard" className="bg-black text-white px-4 py-2 rounded">
             Abrir Dashboard (placeholder)
-          </a>
-          <a
-            href="/vitrine"
-            className="rounded-lg px-5 py-3 border border-gray-300 hover:bg-gray-50"
-          >
+          </Link>
+          <Link href="/vitrine" className="border px-4 py-2 rounded">
             Ver Vitrine (placeholder)
-          </a>
+          </Link>
         </div>
       </div>
     </main>
   );
 }
-
