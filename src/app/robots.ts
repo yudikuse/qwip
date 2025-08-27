@@ -1,7 +1,12 @@
+import { BASE_URL } from "@/lib/site";
+
 export default function robots() {
   return {
-    rules: [{ userAgent: "*", allow: "/" }],
-    sitemap: "https://qwip.pro/sitemap.xml",
-    host: "https://qwip.pro",
+    rules: {
+      userAgent: "*",
+      allow: "/",
+    },
+    sitemap: `${BASE_URL}/sitemap.xml`,
+    host: BASE_URL,
   };
 }
