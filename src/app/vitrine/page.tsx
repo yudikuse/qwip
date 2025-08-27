@@ -1,419 +1,169 @@
 import Link from "next/link";
+import { buildWhatsAppUrl } from "@/lib/whatsapp";
+import { BASE_URL } from "@/lib/site";
 
-// ---------- Tipos e mock (MVP) ----------
 type Ad = {
-  id: string;
-  title: string;
-  city: string;
-  state: string;
-  price: number;
-  description: string;
-  phone: string;
-  images: string[];
-  updatedAt: string;
-  category?: string;
-  condition?: "novo" | "usado";
+  id: number;
+  titulo: string;
+  cidade: string;
+  estado: string;
+  preco: number;
+  categoria: string;
+  imagens: string[];
+  atualizadoEm: string; // ISO
 };
 
 const ADS: Ad[] = [
   {
-    id: "1",
-    title: "Geladeira Brastemp 375L",
-    city: "Florianópolis",
-    state: "SC",
-    price: 1900,
-    description:
-      "Geladeira Brastemp em ótimo estado, 375L, frost free. Único dono. Motivo da venda: mudança.",
-    phone: "5547999999999",
-    images: [
-      "https://picsum.photos/id/1069/1200/800",
-      "https://picsum.photos/id/1074/1200/800",
-      "https://picsum.photos/id/1080/1200/800",
+    id: 1,
+    titulo: "Geladeira Brastemp 375L",
+    cidade: "Florianópolis",
+    estado: "SC",
+    preco: 1900,
+    categoria: "Eletrodomésticos",
+    imagens: [
+      "https://images.unsplash.com/photo-1544551763-7ef56a923595?q=80&w=600&auto=format&fit=crop",
     ],
-    updatedAt: "2025-08-27T12:00:00Z",
-    category: "Eletrodomésticos",
-    condition: "usado",
+    atualizadoEm: new Date().toISOString(),
   },
   {
-    id: "2",
-    title: "Sofá 3 lugares",
-    city: "São José",
-    state: "SC",
-    price: 750,
-    description:
-      "Sofá confortável, 3 lugares, tecido suede. Sem manchas. Inclui 2 almofadas.",
-    phone: "5547999999999",
-    images: [
-      "https://picsum.photos/id/1060/1200/800",
-      "https://picsum.photos/id/1059/1200/800",
+    id: 2,
+    titulo: "Sofá 3 lugares",
+    cidade: "São José",
+    estado: "SC",
+    preco: 750,
+    categoria: "Móveis",
+    imagens: [
+      "https://images.unsplash.com/photo-1503602642458-232111445657?q=80&w=600&auto=format&fit=crop",
     ],
-    updatedAt: "2025-08-27T12:00:00Z",
-    category: "Móveis",
-    condition: "usado",
+    atualizadoEm: new Date().toISOString(),
   },
   {
-    id: "3",
-    title: "Notebook i5 8GB/256GB",
-    city: "Palhoça",
-    state: "SC",
-    price: 1650,
-    description:
-      "Notebook i5 10ª geração, 8GB RAM e SSD 256GB. Bateria boa, acompanha carregador original.",
-    phone: "5547999999999",
-    images: [
-      "https://picsum.photos/id/180/1200/800",
-      "https://picsum.photos/id/0/1200/800",
+    id: 3,
+    titulo: "Bicicleta aro 29",
+    cidade: "Florianópolis",
+    estado: "SC",
+    preco: 890,
+    categoria: "Esportes",
+    imagens: [
+      "https://images.unsplash.com/photo-1460353581641-37baddab0fa2?q=80&w=600&auto=format&fit=crop",
     ],
-    updatedAt: "2025-08-27T12:00:00Z",
-    category: "Informática",
-    condition: "usado",
+    atualizadoEm: new Date().toISOString(),
   },
   {
-    id: "4",
-    title: "Bicicleta aro 29",
-    city: "Florianópolis",
-    state: "SC",
-    price: 890,
-    description:
-      "Bike aro 29 com suspensão e 21 marchas. Ótima para trilhas leves e cidade.",
-    phone: "5547999999999",
-    images: [
-      "https://picsum.photos/id/102/1200/800",
-      "https://picsum.photos/id/103/1200/800",
+    id: 4,
+    titulo: "Notebook i5 8GB/256GB",
+    cidade: "Palhoça",
+    estado: "SC",
+    preco: 1650,
+    categoria: "Informática",
+    imagens: [
+      "https://images.unsplash.com/photo-1515879218367-8466d910aaa4?q=80&w=600&auto=format&fit=crop",
     ],
-    updatedAt: "2025-08-27T12:00:00Z",
-    category: "Esportes",
-    condition: "usado",
+    atualizadoEm: new Date().toISOString(),
   },
   {
-    id: "5",
-    title: "Cadeira gamer",
-    city: "Biguaçu",
-    state: "SC",
-    price: 520,
-    description:
-      "Cadeira gamer reclinável com apoio para braços. Pequeno desgaste no assento.",
-    phone: "5547999999999",
-    images: [
-      "https://picsum.photos/id/1011/1200/800",
-      "https://picsum.photos/id/1010/1200/800",
+    id: 5,
+    titulo: "Cadeira gamer",
+    cidade: "Biguaçu",
+    estado: "SC",
+    preco: 520,
+    categoria: "Games",
+    imagens: [
+      "https://images.unsplash.com/photo-1551033406-611cf9a28f67?q=80&w=600&auto=format&fit=crop",
     ],
-    updatedAt: "2025-08-27T12:00:00Z",
-    category: "Móveis",
-    condition: "usado",
+    atualizadoEm: new Date().toISOString(),
   },
   {
-    id: "6",
-    title: "Mesa de jantar 6 cadeiras",
-    city: "Florianópolis",
-    state: "SC",
-    price: 1200,
-    description:
-      "Mesa de jantar com tampo de vidro + 6 cadeiras estofadas. Sem avarias.",
-    phone: "5547999999999",
-    images: [
-      "https://picsum.photos/id/1018/1200/800",
-      "https://picsum.photos/id/1015/1200/800",
+    id: 6,
+    titulo: "Mesa de jantar 6 cadeiras",
+    cidade: "Florianópolis",
+    estado: "SC",
+    preco: 1200,
+    categoria: "Móveis",
+    imagens: [
+      "https://images.unsplash.com/photo-1549187774-b4e9b0445b41?q=80&w=600&auto=format&fit=crop",
     ],
-    updatedAt: "2025-08-27T12:00:00Z",
-    category: "Móveis",
-    condition: "usado",
+    atualizadoEm: new Date().toISOString(),
   },
 ];
 
-// ---------- Utils ----------
-function formatBRL(value: number) {
-  return value.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 0,
-  });
-}
+export const metadata = {
+  title: "Vitrine • Qwip",
+  description: "Encontre anúncios locais e chame no WhatsApp.",
+  openGraph: {
+    title: "Vitrine • Qwip",
+    description: "Encontre anúncios locais e chame no WhatsApp.",
+    url: `${BASE_URL}/vitrine`,
+    siteName: "Qwip",
+    type: "website",
+    locale: "pt_BR",
+  },
+};
 
-export const dynamic = "force-static";
-
-export async function generateMetadata({
-  searchParams,
-}: {
-  searchParams?: {
-    q?: string;
-    loc?: string;
-    min?: string;
-    max?: string;
-    sort?: string;
-    page?: string;
-    per?: string;
-  };
-}) {
-  const q = (searchParams?.q ?? "").trim();
-  const title = q ? `Vitrine – buscando por "${q}"` : "Vitrine – Qwip";
-  return {
-    title,
-    description: "Vitrine local com filtros e WhatsApp.",
-    alternates: {
-      canonical: `https://qwip.pro/vitrine`,
-    },
-  };
-}
-
-// ---------- Página ----------
-export default function VitrinePage({
-  searchParams,
-}: {
-  searchParams?: {
-    q?: string;
-    loc?: string;
-    min?: string;
-    max?: string;
-    sort?: "price_asc" | "price_desc" | "newest";
-    page?: string;
-    per?: string;
-  };
-}) {
-  // parse params
-  const q = (searchParams?.q ?? "").toLowerCase().trim();
-  const loc = (searchParams?.loc ?? "").toLowerCase().trim();
-  const min = Number.isFinite(Number(searchParams?.min))
-    ? Number(searchParams?.min)
-    : undefined;
-  const max = Number.isFinite(Number(searchParams?.max))
-    ? Number(searchParams?.max)
-    : undefined;
-  const sort = (searchParams?.sort as
-    | "price_asc"
-    | "price_desc"
-    | "newest") ?? "newest";
-  const page = Math.max(
-    1,
-    Number.isFinite(Number(searchParams?.page)) ? Number(searchParams?.page) : 1
-  );
-  const perPage = Math.min(
-    24,
-    Math.max(
-      3,
-      Number.isFinite(Number(searchParams?.per)) ? Number(searchParams?.per) : 6
-    )
-  );
-
-  // filter
-  let results = ADS.filter((ad) => {
-    const matchesQ = q
-      ? ad.title.toLowerCase().includes(q) ||
-        ad.description.toLowerCase().includes(q)
-      : true;
-    const matchesLoc = loc ? ad.city.toLowerCase().includes(loc) : true;
-    const matchesMin = typeof min === "number" ? ad.price >= min : true;
-    const matchesMax = typeof max === "number" ? ad.price <= max : true;
-    return matchesQ && matchesLoc && matchesMin && matchesMax;
-  });
-
-  // sort
-  results = results.sort((a, b) => {
-    if (sort === "price_asc") return a.price - b.price;
-    if (sort === "price_desc") return b.price - a.price;
-    // newest
-    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-  });
-
-  const total = results.length;
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
-  const safePage = Math.min(page, totalPages);
-  const start = (safePage - 1) * perPage;
-  const pageItems = results.slice(start, start + perPage);
-
-  // helpers (preserva filtros)
-  const buildUrl = (nextPage: number) => {
-    const p = new URLSearchParams();
-    if (q) p.set("q", q);
-    if (loc) p.set("loc", loc);
-    if (typeof min === "number") p.set("min", String(min));
-    if (typeof max === "number") p.set("max", String(max));
-    if (sort && sort !== "newest") p.set("sort", sort);
-    if (perPage !== 6) p.set("per", String(perPage));
-    p.set("page", String(nextPage));
-    return `/vitrine?${p.toString()}`;
-  };
-
-  // share URL
-  const shareParams = new URLSearchParams();
-  if (q) shareParams.set("q", q);
-  if (loc) shareParams.set("loc", loc);
-  if (typeof min === "number") shareParams.set("min", String(min));
-  if (typeof max === "number") shareParams.set("max", String(max));
-  if (sort && sort !== "newest") shareParams.set("sort", sort);
-  if (perPage !== 6) shareParams.set("per", String(perPage));
-  if (safePage !== 1) shareParams.set("page", String(safePage));
-  const shareUrl = `https://qwip.pro/vitrine${
-    shareParams.toString() ? `?${shareParams.toString()}` : ""
-  }`;
-
+export default async function VitrinePage() {
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="mb-6 text-3xl font-bold tracking-tight">Vitrine</h1>
+    <div className="max-w-5xl mx-auto px-4 py-10">
+      <h1 className="text-3xl font-bold mb-6">Vitrine</h1>
 
-      {/* Filtros */}
-      <form method="GET" className="mb-6 grid gap-3 md:grid-cols-6">
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="Buscar por título..."
-          className="rounded-lg border px-3 py-2 md:col-span-2"
-        />
-        <input
-          name="loc"
-          defaultValue={loc}
-          placeholder="Cidade (ex: Florianópolis)"
-          className="rounded-lg border px-3 py-2"
-        />
-        <input
-          name="min"
-          defaultValue={min ?? ""}
-          placeholder="Preço mín. (R$)"
-          inputMode="numeric"
-          className="rounded-lg border px-3 py-2"
-        />
-        <input
-          name="max"
-          defaultValue={max ?? ""}
-          placeholder="Preço máx. (R$)"
-          inputMode="numeric"
-          className="rounded-lg border px-3 py-2"
-        />
-        <select
-          name="sort"
-          defaultValue={sort}
-          className="rounded-lg border px-3 py-2"
-        >
-          <option value="newest">Mais recentes</option>
-          <option value="price_asc">Menor preço</option>
-          <option value="price_desc">Maior preço</option>
-        </select>
-        <div className="flex items-center gap-2">
-          <button
-            type="submit"
-            className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
-          >
-            Filtrar
-          </button>
-          <Link
-            href="/vitrine"
-            className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
-          >
-            Limpar
-          </Link>
-        </div>
-        <div className="md:col-span-6 flex items-center gap-2">
-          <label className="text-sm text-gray-600">Itens por página:</label>
-          <select
-            name="per"
-            defaultValue={String(perPage)}
-            className="rounded-lg border px-2 py-1"
-          >
-            <option>6</option>
-            <option>9</option>
-            <option>12</option>
-            <option>24</option>
-          </select>
-        </div>
-      </form>
+      <div className="space-y-5">
+        {ADS.map((ad) => {
+          const adUrl = `${BASE_URL}/anuncio/${ad.id}`;
+          const whatsappUrl = buildWhatsAppUrl({
+            phoneE164: "5548999999999", // troque por número real
+            title: ad.titulo,
+            adUrl,
+          });
 
-      {/* Contador */}
-      <div className="mb-4 text-sm text-gray-600">
-        {start + 1}–{Math.min(start + perPage, total)} de {total} resultados.
-      </div>
+          return (
+            <div key={ad.id} className="border rounded-lg p-4 flex gap-4">
+              <div className="w-40 h-28 overflow-hidden rounded border">
+                <img
+                  src={ad.imagens[0]}
+                  alt={ad.titulo}
+                  className="w-full h-full object-cover"
+                />
+              </div>
 
-      {/* Cards (sem Link envolvendo tudo, e sem onClick) */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {pageItems.map((ad) => (
-          <article
-            key={ad.id}
-            className="rounded-xl border p-4 transition hover:bg-gray-50"
-          >
-            <div className="flex items-start gap-4">
-              <Link
-                href={`/anuncio/${ad.id}`}
-                className="flex flex-1 items-start gap-4"
-              >
-                <div className="h-28 w-40 overflow-hidden rounded-lg border shrink-0">
-                  <img
-                    src={ad.images[0] ?? "https://picsum.photos/320/224"}
-                    alt={ad.title}
-                    className="h-full w-full object-cover transition group-hover:scale-105"
-                    loading="lazy"
-                  />
+              <div className="flex-1">
+                <h2 className="text-lg font-semibold">{ad.titulo}</h2>
+                <p className="text-sm text-gray-600">
+                  {ad.cidade} - {ad.estado} • {ad.categoria}
+                </p>
+                <p className="mt-1 font-semibold">
+                  R$ {ad.preco.toLocaleString("pt-BR")}
+                </p>
+
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <a
+                    href={whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-2 rounded border bg-green-50 hover:bg-green-100 text-sm"
+                  >
+                    Chamar no WhatsApp
+                  </a>
+                  <Link
+                    href={`/anuncio/${ad.id}`}
+                    className="px-3 py-2 rounded border hover:bg-gray-50 text-sm"
+                  >
+                    Ver detalhes
+                  </Link>
+                  <span className="text-xs text-gray-500 self-center">
+                    Atualizado em{" "}
+                    {new Date(ad.atualizadoEm).toLocaleDateString("pt-BR")}
+                  </span>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-lg font-medium">{ad.title}</div>
-                  <div className="text-sm text-gray-600">
-                    {ad.city} - {ad.state}
-                  </div>
-                  <div className="mt-2 font-semibold">{formatBRL(ad.price)}</div>
-                </div>
-              </Link>
+              </div>
             </div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <a
-                href={`https://wa.me/${ad.phone}?text=${encodeURIComponent(
-                  `Olá! Tenho interesse no anúncio: ${ad.title}`
-                )}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
-              >
-                Chamar no WhatsApp
-              </a>
-
-              <Link
-                href={`/anuncio/${ad.id}`}
-                className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
-              >
-                Ver detalhes
-              </Link>
-
-              <span className="rounded-lg border px-3 py-1.5 text-sm text-gray-600">
-                Atualizado em {new Date(ad.updatedAt).toLocaleDateString("pt-BR")}
-              </span>
-            </div>
-          </article>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Paginação */}
-      <div className="mt-6 flex items-center gap-2">
-        <Link
-          href={buildUrl(Math.max(1, safePage - 1))}
-          className={`rounded-lg border px-3 py-1.5 ${
-            safePage <= 1 ? "pointer-events-none opacity-40" : "hover:bg-gray-50"
-          }`}
-        >
-          ← Anterior
+      <div className="mt-6">
+        <Link href="/" className="underline text-sm">
+          ← Voltar para a Home
         </Link>
-        <span className="text-sm text-gray-700">
-          Página {safePage} de {totalPages}
-        </span>
-        <Link
-          href={buildUrl(Math.min(totalPages, safePage + 1))}
-          className={`rounded-lg border px-3 py-1.5 ${
-            safePage >= totalPages
-              ? "pointer-events-none opacity-40"
-              : "hover:bg-gray-50"
-          }`}
-        >
-          Próxima →
-        </Link>
-      </div>
-
-      {/* Compartilhar */}
-      <div className="mt-6 text-sm text-gray-600">
-        Compartilhar esta busca:
-        <div className="mt-2 flex gap-2">
-          <input
-            readOnly
-            value={shareUrl}
-            className="w-full rounded-lg border px-3 py-2"
-          />
-        </div>
       </div>
     </div>
   );
