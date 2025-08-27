@@ -1,334 +1,271 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { BASE_URL } from "@/lib/site";
+import { buildWhatsAppUrl } from "@/lib/whatsapp";
 
-// -----------------------------
-// MOCK: "base de dados" local
-// -----------------------------
+// —————————————————————————————————————————————
+// MOCK: os mesmos anúncios usados na vitrine
+// (mantenha alinhado ao que está em /app/vitrine/page.tsx)
 type Ad = {
-  id: string;
-  title: string;
-  city: string;
-  state: string;
-  price: number; // em reais
-  description: string;
-  phone: string; // Whats com DDI, ex: 5547999999999
-  images: string[]; // URLs públicas
-  updatedAt: string; // ISO
-  category?: string;
-  condition?: "novo" | "usado";
+  id: number;
+  titulo: string;
+  cidade: string;
+  estado: string;
+  preco: number;
+  condicao: "novo" | "usado";
+  categoria: string;
+  descricao: string;
+  imagens: string[];
+  atualizadoEm: string; // ISO
 };
 
 const ADS: Ad[] = [
   {
-    id: "1",
-    title: "Geladeira Brastemp 375L",
-    city: "Florianópolis",
-    state: "SC",
-    price: 1900,
-    description:
+    id: 1,
+    titulo: "Geladeira Brastemp 375L",
+    cidade: "Florianópolis",
+    estado: "SC",
+    preco: 1900,
+    condicao: "usado",
+    categoria: "Eletrodomésticos",
+    descricao:
       "Geladeira Brastemp em ótimo estado, 375L, frost free. Único dono. Motivo da venda: mudança.",
-    phone: "5547999999999",
-    images: [
-      "https://picsum.photos/id/1069/1200/800",
-      "https://picsum.photos/id/1074/1200/800",
-      "https://picsum.photos/id/1080/1200/800",
+    imagens: [
+      "https://images.unsplash.com/photo-1544551763-7ef56a923595?q=80&w=1200&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1544551763-7ef56a923595?q=80&w=600&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1543363136-7a8c9b4f5f5f?q=80&w=600&auto=format&fit=crop",
     ],
-    updatedAt: "2025-08-27T12:00:00Z",
-    category: "Eletrodomésticos",
-    condition: "usado",
+    atualizadoEm: new Date().toISOString(),
   },
   {
-    id: "2",
-    title: "Sofá 3 lugares",
-    city: "São José",
-    state: "SC",
-    price: 750,
-    description:
+    id: 2,
+    titulo: "Sofá 3 lugares",
+    cidade: "São José",
+    estado: "SC",
+    preco: 750,
+    condicao: "usado",
+    categoria: "Móveis",
+    descricao:
       "Sofá confortável, 3 lugares, tecido suede. Sem manchas. Inclui 2 almofadas.",
-    phone: "5547999999999",
-    images: [
-      "https://picsum.photos/id/1060/1200/800",
-      "https://picsum.photos/id/1059/1200/800",
+    imagens: [
+      "https://images.unsplash.com/photo-1503602642458-232111445657?q=80&w=1200&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1503602642458-232111445657?q=80&w=600&auto=format&fit=crop",
     ],
-    updatedAt: "2025-08-27T12:00:00Z",
-    category: "Móveis",
-    condition: "usado",
+    atualizadoEm: new Date().toISOString(),
   },
   {
-    id: "3",
-    title: "Notebook i5 8GB/256GB",
-    city: "Palhoça",
-    state: "SC",
-    price: 1650,
-    description:
-      "Notebook i5 10ª geração, 8GB RAM e SSD 256GB. Bateria boa, acompanha carregador original.",
-    phone: "5547999999999",
-    images: [
-      "https://picsum.photos/id/180/1200/800",
-      "https://picsum.photos/id/0/1200/800",
+    id: 3,
+    titulo: "Bicicleta aro 29",
+    cidade: "Florianópolis",
+    estado: "SC",
+    preco: 890,
+    condicao: "usado",
+    categoria: "Esportes",
+    descricao:
+      "Bike aro 29 em ótimo estado. Trocas recentes na transmissão. Pronta para pedalar.",
+    imagens: [
+      "https://images.unsplash.com/photo-1460353581641-37baddab0fa2?q=80&w=1200&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1460353581641-37baddab0fa2?q=80&w=600&auto=format&fit=crop",
     ],
-    updatedAt: "2025-08-27T12:00:00Z",
-    category: "Informática",
-    condition: "usado",
+    atualizadoEm: new Date().toISOString(),
   },
   {
-    id: "4",
-    title: "Bicicleta aro 29",
-    city: "Florianópolis",
-    state: "SC",
-    price: 890,
-    description:
-      "Bike aro 29 com suspensão e 21 marchas. Ótima para trilhas leves e cidade.",
-    phone: "5547999999999",
-    images: [
-      "https://picsum.photos/id/102/1200/800",
-      "https://picsum.photos/id/103/1200/800",
+    id: 4,
+    titulo: "Notebook i5 8GB/256GB",
+    cidade: "Palhoça",
+    estado: "SC",
+    preco: 1650,
+    condicao: "usado",
+    categoria: "Informática",
+    descricao:
+      "Notebook leve com SSD 256GB e 8GB RAM. Bateria OK. Perfeito para estudos e trabalho.",
+    imagens: [
+      "https://images.unsplash.com/photo-1515879218367-8466d910aaa4?q=80&w=1200&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1515879218367-8466d910aaa4?q=80&w=600&auto=format&fit=crop",
     ],
-    updatedAt: "2025-08-27T12:00:00Z",
-    category: "Esportes",
-    condition: "usado",
+    atualizadoEm: new Date().toISOString(),
   },
   {
-    id: "5",
-    title: "Cadeira gamer",
-    city: "Biguaçu",
-    state: "SC",
-    price: 520,
-    description:
-      "Cadeira gamer reclinável com apoio para braços. Pequeno desgaste no assento.",
-    phone: "5547999999999",
-    images: [
-      "https://picsum.photos/id/1011/1200/800",
-      "https://picsum.photos/id/1010/1200/800",
+    id: 5,
+    titulo: "Cadeira gamer",
+    cidade: "Biguaçu",
+    estado: "SC",
+    preco: 520,
+    condicao: "usado",
+    categoria: "Games",
+    descricao: "Cadeira gamer reclinável, em ótimo estado. Sem rasgos.",
+    imagens: [
+      "https://images.unsplash.com/photo-1551033406-611cf9a28f67?q=80&w=1200&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1551033406-611cf9a28f67?q=80&w=600&auto=format&fit=crop",
     ],
-    updatedAt: "2025-08-27T12:00:00Z",
-    category: "Móveis",
-    condition: "usado",
+    atualizadoEm: new Date().toISOString(),
   },
   {
-    id: "6",
-    title: "Mesa de jantar 6 cadeiras",
-    city: "Florianópolis",
-    state: "SC",
-    price: 1200,
-    description:
-      "Mesa de jantar com tampo de vidro + 6 cadeiras estofadas. Sem avarias.",
-    phone: "5547999999999",
-    images: [
-      "https://picsum.photos/id/1018/1200/800",
-      "https://picsum.photos/id/1015/1200/800",
+    id: 6,
+    titulo: "Mesa de jantar 6 cadeiras",
+    cidade: "Florianópolis",
+    estado: "SC",
+    preco: 1200,
+    condicao: "usado",
+    categoria: "Móveis",
+    descricao: "Mesa de jantar de madeira com 6 cadeiras estofadas.",
+    imagens: [
+      "https://images.unsplash.com/photo-1549187774-b4e9b0445b41?q=80&w=1200&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1549187774-b4e9b0445b41?q=80&w=600&auto=format&fit=crop",
     ],
-    updatedAt: "2025-08-27T12:00:00Z",
-    category: "Móveis",
-    condition: "usado",
+    atualizadoEm: new Date().toISOString(),
   },
 ];
 
-// -----------------------------
-// utils
-// -----------------------------
-function formatBRL(value: number) {
-  return value.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 0,
-  });
+function getAdById(id: number) {
+  return ADS.find((a) => a.id === id) || null;
 }
 
-function waLink(phone: string, title: string) {
-  const msg = encodeURIComponent(`Olá! Tenho interesse no anúncio: ${title}`);
-  return `https://wa.me/${phone}?text=${msg}`;
-}
+// —————————————————————————————————————————————
+// SEO dinâmico por anúncio
+export async function generateMetadata({ params }: { params: { id: string } }) {
+  const id = Number(params.id);
+  const ad = getAdById(id);
+  if (!ad) return { title: "Anúncio não encontrado • Qwip" };
 
-function getAdById(id: string): Ad | undefined {
-  return ADS.find((a) => a.id === id);
-}
-
-// -----------------------------
-// SEO dinâmico
-// -----------------------------
-export async function generateMetadata({
-  params,
-  searchParams,
-}: {
-  params: { id: string };
-  searchParams?: { img?: string };
-}) {
-  const ad = getAdById(params.id);
-  if (!ad) {
-    return {
-      title: "Anúncio não encontrado – Qwip",
-      description: "O anúncio solicitado não foi localizado.",
-    };
-  }
-
-  const idx = Math.max(
-    0,
-    Math.min(Number.isFinite(Number(searchParams?.img)) ? Number(searchParams?.img) : 0, ad.images.length - 1)
-  );
-  const ogImage = ad.images[idx] ?? ad.images[0];
-
-  const url = `https://qwip.pro/anuncio/${ad.id}${idx ? `?img=${idx}` : ""}`;
+  const url = `${BASE_URL}/anuncio/${ad.id}`;
+  const description = `${ad.categoria} • ${ad.cidade} - ${ad.estado} • R$ ${ad.preco.toLocaleString("pt-BR")}`;
 
   return {
-    title: `${ad.title} – Qwip`,
-    description: `${ad.title} por ${formatBRL(ad.price)} em ${ad.city} - ${ad.state}`,
+    title: `${ad.titulo} • Qwip`,
+    description,
     alternates: { canonical: url },
     openGraph: {
-      title: `${ad.title} – Qwip`,
-      description: `${ad.title} por ${formatBRL(ad.price)} em ${ad.city} - ${ad.state}`,
-      images: ogImage ? [ogImage] : undefined,
+      title: ad.titulo,
+      description,
       url,
+      siteName: "Qwip",
+      images: ad.imagens?.length
+        ? [{ url: ad.imagens[0], width: 1200, height: 630, alt: ad.titulo }]
+        : [],
+      locale: "pt_BR",
+      type: "product",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: ad.titulo,
+      description,
+      images: ad.imagens?.length ? [ad.imagens[0]] : [],
     },
   };
 }
 
-// -----------------------------
+// —————————————————————————————————————————————
 // Página
-// -----------------------------
-export default function AdPage({
-  params,
-  searchParams,
-}: {
-  params: { id: string };
-  searchParams?: { img?: string };
-}) {
-  const ad = getAdById(params.id);
+export default async function AnuncioPage({ params }: { params: { id: string } }) {
+  const id = Number(params.id);
+  const ad = getAdById(id);
   if (!ad) {
-    notFound();
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-10">
+        <h1 className="text-2xl font-semibold mb-4">Anúncio não encontrado</h1>
+        <Link href="/vitrine" className="underline">← Voltar para a Vitrine</Link>
+      </div>
+    );
   }
 
-  const idx = Math.max(
-    0,
-    Math.min(Number.isFinite(Number(searchParams?.img)) ? Number(searchParams?.img) : 0, ad.images.length - 1)
-  );
+  const adUrl = `${BASE_URL}/anuncio/${ad.id}`;
+  // Troque por um número real quando for pra produção (E.164)
+  const whatsappUrl = buildWhatsAppUrl({
+    phoneE164: "5548999999999",
+    title: ad.titulo,
+    adUrl,
+  });
 
-  const selectedImg = ad.images[idx] ?? "https://picsum.photos/1200/800";
+  // JSON-LD Product
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: ad.titulo,
+    category: ad.categoria,
+    description: ad.descricao,
+    url: adUrl,
+    image: ad.imagens?.length ? ad.imagens[0] : undefined,
+    offers: {
+      "@type": "Offer",
+      priceCurrency: "BRL",
+      price: ad.preco,
+      availability: "http://schema.org/InStock",
+      url: adUrl,
+    },
+    itemCondition:
+      ad.condicao === "novo"
+        ? "https://schema.org/NewCondition"
+        : "https://schema.org/UsedCondition",
+    brand: "Qwip", // opcional
+  };
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      {/* Breadcrumb */}
-      <nav className="mb-6 text-sm">
-        <Link
-          href="/vitrine"
-          className="text-gray-600 hover:text-black underline-offset-2 hover:underline"
-        >
-          ← Voltar para a Vitrine
-        </Link>
-      </nav>
+    <div className="max-w-6xl mx-auto px-4 py-10">
+      <script
+        type="application/ld+json"
+        // @ts-expect-error JSON
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <Link href="/vitrine" className="underline text-sm">← Voltar para a Vitrine</Link>
 
-      {/* Cabeçalho */}
-      <header className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">{ad.title}</h1>
-        <p className="mt-1 text-gray-600">
-          {ad.city} - {ad.state}
-        </p>
-      </header>
+      <h1 className="text-3xl font-bold mt-4 mb-2">{ad.titulo}</h1>
+      <p className="text-gray-600 mb-6">
+        {ad.cidade} - {ad.estado}
+      </p>
 
-      {/* Conteúdo */}
-      <section className="grid gap-8 md:grid-cols-2">
-        {/* Galeria com troca via searchParams (?img=) */}
-        <div>
-          <div className="overflow-hidden rounded-xl border">
-            <img
-              src={selectedImg}
-              alt={ad.title}
-              className="h-auto w-full object-cover"
-              loading="eager"
-            />
+      <div className="grid grid-cols-12 gap-6">
+        <div className="col-span-12 md:col-span-7">
+          <div className="rounded-lg overflow-hidden border">
+            <img src={ad.imagens[0]} alt={ad.titulo} className="w-full h-auto" />
           </div>
 
-          {ad.images.length > 1 && (
-            <div className="mt-3 grid grid-cols-4 gap-3">
-              {ad.images.slice(0, 4).map((src, i) => {
-                const href = i === 0 ? `/anuncio/${ad.id}` : `/anuncio/${ad.id}?img=${i}`;
-                const isActive = i === idx;
-                return (
-                  <Link
-                    key={i}
-                    href={href}
-                    className={`block overflow-hidden rounded-lg border hover:opacity-80 ${
-                      isActive ? "ring-2 ring-black" : ""
-                    }`}
-                  >
-                    <img
-                      src={src}
-                      alt={`${ad.title} - foto ${i + 1}`}
-                      className="h-24 w-full object-cover"
-                      loading="lazy"
-                    />
-                  </Link>
-                );
-              })}
+          {ad.imagens.length > 1 && (
+            <div className="flex gap-3 mt-3">
+              {ad.imagens.slice(0, 3).map((src, i) => (
+                <div key={i} className="w-28 h-20 rounded-lg overflow-hidden border">
+                  <img src={src} alt={`${ad.titulo} ${i + 1}`} className="w-full h-full object-cover" />
+                </div>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Painel de infos */}
-        <div className="space-y-6">
-          <div className="rounded-xl border p-5">
-            <div className="text-2xl font-semibold">{formatBRL(ad.price)}</div>
-            <div className="mt-2 text-sm text-gray-600">
-              {ad.category ? `${ad.category} • ` : ""}
-              {ad.condition ? `Estado: ${ad.condition}` : ""}
+        <div className="col-span-12 md:col-span-5">
+          <div className="border rounded-lg p-4 mb-4">
+            <div className="text-xl font-semibold mb-4">
+              R$ {ad.preco.toLocaleString("pt-BR")}
             </div>
-
-            <div className="mt-5 flex flex-wrap gap-3">
+            <p className="text-sm text-gray-600 mb-4">
+              {ad.categoria} • Estado: {ad.condicao}
+            </p>
+            <div className="flex flex-wrap gap-3">
               <a
-                href={waLink(ad.phone, ad.title)}
+                href={whatsappUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
+                className="px-4 py-2 rounded border bg-green-50 hover:bg-green-100"
               >
                 Chamar no WhatsApp
               </a>
               <Link
                 href="/vitrine"
-                className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
+                className="px-4 py-2 rounded border hover:bg-gray-50"
               >
                 Ver outros anúncios
               </Link>
             </div>
           </div>
 
-          <div className="rounded-xl border p-5">
-            <h2 className="mb-2 text-lg font-semibold">Descrição</h2>
-            <p className="whitespace-pre-line text-gray-800">{ad.description}</p>
+          <div className="border rounded-lg p-4">
+            <h2 className="font-semibold mb-2">Descrição</h2>
+            <p className="text-gray-700">{ad.descricao}</p>
           </div>
 
-          <div className="text-sm text-gray-500">
-            Atualizado em{" "}
-            {new Date(ad.updatedAt).toLocaleDateString("pt-BR", {
-              day: "2-digit",
-              month: "2-digit",
-              year: "numeric",
-            })}
-          </div>
+          <p className="text-xs text-gray-500 mt-3">
+            Atualizado em {new Date(ad.atualizadoEm).toLocaleDateString("pt-BR")}
+          </p>
         </div>
-      </section>
-
-      {/* JSON-LD para SEO */}
-      <script
-        type="application/ld+json"
-        // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "Product",
-            name: ad.title,
-            image: ad.images,
-            description: ad.description,
-            offers: {
-              "@type": "Offer",
-              priceCurrency: "BRL",
-              price: ad.price,
-              availability: "https://schema.org/InStock",
-            },
-            areaServed: `${ad.city} - ${ad.state}`,
-            url: `https://qwip.pro/anuncio/${ad.id}${idx ? `?img=${idx}` : ""}`,
-          }),
-        }}
-      />
+      </div>
     </div>
   );
 }
