@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 
 // -----------------------------
 // MOCK: "base de dados" local
-// (mesmos itens da sua Vitrine)
 // -----------------------------
 type Ad = {
   id: string;
@@ -150,8 +149,10 @@ function getAdById(id: string): Ad | undefined {
 // -----------------------------
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: { id: string };
+  searchParams?: { img?: string };
 }) {
   const ad = getAdById(params.id);
   if (!ad) {
@@ -160,13 +161,24 @@ export async function generateMetadata({
       description: "O anúncio solicitado não foi localizado.",
     };
   }
+
+  const idx = Math.max(
+    0,
+    Math.min(Number.isFinite(Number(searchParams?.img)) ? Number(searchParams?.img) : 0, ad.images.length - 1)
+  );
+  const ogImage = ad.images[idx] ?? ad.images[0];
+
+  const url = `https://qwip.pro/anuncio/${ad.id}${idx ? `?img=${idx}` : ""}`;
+
   return {
     title: `${ad.title} – Qwip`,
     description: `${ad.title} por ${formatBRL(ad.price)} em ${ad.city} - ${ad.state}`,
+    alternates: { canonical: url },
     openGraph: {
       title: `${ad.title} – Qwip`,
       description: `${ad.title} por ${formatBRL(ad.price)} em ${ad.city} - ${ad.state}`,
-      images: ad.images.slice(0, 1),
+      images: ogImage ? [ogImage] : undefined,
+      url,
     },
   };
 }
@@ -174,13 +186,24 @@ export async function generateMetadata({
 // -----------------------------
 // Página
 // -----------------------------
-export default function AdPage({ params }: { params: { id: string } }) {
+export default function AdPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams?: { img?: string };
+}) {
   const ad = getAdById(params.id);
   if (!ad) {
     notFound();
   }
 
-  const mainImg = ad.images[0] ?? "https://picsum.photos/1200/800";
+  const idx = Math.max(
+    0,
+    Math.min(Number.isFinite(Number(searchParams?.img)) ? Number(searchParams?.img) : 0, ad.images.length - 1)
+  );
+
+  const selectedImg = ad.images[idx] ?? "https://picsum.photos/1200/800";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -204,11 +227,11 @@ export default function AdPage({ params }: { params: { id: string } }) {
 
       {/* Conteúdo */}
       <section className="grid gap-8 md:grid-cols-2">
-        {/* Galeria simples (sem client JS) */}
+        {/* Galeria com troca via searchParams (?img=) */}
         <div>
           <div className="overflow-hidden rounded-xl border">
             <img
-              src={mainImg}
+              src={selectedImg}
               alt={ad.title}
               className="h-auto w-full object-cover"
               loading="eager"
@@ -217,22 +240,26 @@ export default function AdPage({ params }: { params: { id: string } }) {
 
           {ad.images.length > 1 && (
             <div className="mt-3 grid grid-cols-4 gap-3">
-              {ad.images.slice(0, 4).map((src, i) => (
-                <a
-                  key={i}
-                  href={src}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block overflow-hidden rounded-lg border hover:opacity-80"
-                >
-                  <img
-                    src={src}
-                    alt={`${ad.title} - foto ${i + 1}`}
-                    className="h-24 w-full object-cover"
-                    loading="lazy"
-                  />
-                </a>
-              ))}
+              {ad.images.slice(0, 4).map((src, i) => {
+                const href = i === 0 ? `/anuncio/${ad.id}` : `/anuncio/${ad.id}?img=${i}`;
+                const isActive = i === idx;
+                return (
+                  <Link
+                    key={i}
+                    href={href}
+                    className={`block overflow-hidden rounded-lg border hover:opacity-80 ${
+                      isActive ? "ring-2 ring-black" : ""
+                    }`}
+                  >
+                    <img
+                      src={src}
+                      alt={`${ad.title} - foto ${i + 1}`}
+                      className="h-24 w-full object-cover"
+                      loading="lazy"
+                    />
+                  </Link>
+                );
+              })}
             </div>
           )}
         </div>
@@ -298,7 +325,7 @@ export default function AdPage({ params }: { params: { id: string } }) {
               availability: "https://schema.org/InStock",
             },
             areaServed: `${ad.city} - ${ad.state}`,
-            url: `https://qwip.pro/anuncio/${ad.id}`,
+            url: `https://qwip.pro/anuncio/${ad.id}${idx ? `?img=${idx}` : ""}`,
           }),
         }}
       />
