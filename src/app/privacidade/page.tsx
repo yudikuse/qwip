@@ -3,20 +3,12 @@ import Link from "next/link";
 export default function PrivacidadePage() {
   return (
     <main className="container mx-auto max-w-3xl px-4 py-10">
-      <h1 className="text-3xl font-bold mb-4">Política de Privacidade</h1>
+      <h1 className="text-2xl font-semibold mb-4">Política de Privacidade</h1>
 
-      <p className="text-gray-700 mb-4">
-        Descreva aqui como os dados dos usuários são coletados, utilizados e
-        armazenados. Ajuste este texto conforme a política do seu produto.
+      {/* Coloque aqui o texto completo da sua política, se quiser manter o seu conteúdo atual */}
+      <p className="text-gray-700 mb-8">
+        Esta é a nossa política de privacidade. Ajuste o conteúdo conforme sua necessidade.
       </p>
-
-      <ul className="list-disc pl-6 space-y-2 text-gray-700 mb-8">
-        <li>Quais dados coletamos</li>
-        <li>Base legal e finalidade</li>
-        <li>Compartilhamento com terceiros</li>
-        <li>Armazenamento e segurança</li>
-        <li>Direitos do titular e contato</li>
-      </ul>
 
       <Link
         href="/"

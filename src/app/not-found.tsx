@@ -8,7 +8,6 @@ export default function NotFound() {
         <p className="text-gray-600 mb-6">
           A página que você tentou acessar não existe ou foi movida.
         </p>
-
         <Link
           href="/"
           className="inline-block rounded-md border px-4 py-2 hover:bg-gray-50"
