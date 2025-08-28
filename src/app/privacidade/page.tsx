@@ -1,21 +1,20 @@
-// src/app/privacidade/page.tsx
-export const metadata = { title: 'Política de Privacidade • Qwip' };
+import Link from "next/link";
 
-export default function Page() {
+export default function PrivacidadePage() {
   return (
-    <main className="max-w-3xl mx-auto px-4 py-10">
-      <h1 className="text-3xl font-bold mb-4">Política de Privacidade</h1>
-      <p className="text-gray-700 mb-4">
-        Explicamos aqui como coletamos, usamos e protegemos suas informações.
+    <main className="mx-auto max-w-3xl py-16 px-4">
+      <h1 className="text-2xl font-semibold mb-4">Política de Privacidade</h1>
+      <p className="text-slate-700 mb-4">
+        Versão placeholder. Descreva coleta, uso, armazenamento e direitos.
       </p>
-      <ul className="list-disc pl-6 space-y-2 text-gray-700">
-        <li>Armazenamos dados mínimos para funcionamento básico.</li>
-        <li>Você pode solicitar remoção/alteração de dados.</li>
-        <li>Utilizamos cookies estritamente necessários.</li>
+      <ul className="list-disc pl-6 space-y-2 text-slate-700 mb-8">
+        <li>Tipos de dados coletados;</li>
+        <li>Base legal e finalidades;</li>
+        <li>Compartilhamento com terceiros;</li>
+        <li>Direitos dos titulares;</li>
+        <li>Retenção e segurança.</li>
       </ul>
-      <div className="mt-8">
-        <a className="underline" href="/">← Voltar para a Home</a>
-      </div>
+      <Link href="/" className="underline text-sm">← Voltar para a Home</Link>
     </main>
   );
 }
