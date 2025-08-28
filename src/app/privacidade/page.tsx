@@ -2,19 +2,20 @@ import Link from "next/link";
 
 export default function PrivacidadePage() {
   return (
-    <main className="mx-auto max-w-3xl py-16 px-4">
+    <main className="container mx-auto max-w-3xl px-4 py-10">
       <h1 className="text-2xl font-semibold mb-4">Política de Privacidade</h1>
-      <p className="text-slate-700 mb-4">
-        Versão placeholder. Descreva coleta, uso, armazenamento e direitos.
+
+      {/* Coloque aqui o texto completo da sua política, se quiser manter o seu conteúdo atual */}
+      <p className="text-gray-700 mb-8">
+        Esta é a nossa política de privacidade. Ajuste o conteúdo conforme sua necessidade.
       </p>
-      <ul className="list-disc pl-6 space-y-2 text-slate-700 mb-8">
-        <li>Tipos de dados coletados;</li>
-        <li>Base legal e finalidades;</li>
-        <li>Compartilhamento com terceiros;</li>
-        <li>Direitos dos titulares;</li>
-        <li>Retenção e segurança.</li>
-      </ul>
-      <Link href="/" className="underline text-sm">← Voltar para a Home</Link>
+
+      <Link
+        href="/"
+        className="inline-block rounded-md border px-4 py-2 hover:bg-gray-50"
+      >
+        ← Voltar para a Home
+      </Link>
     </main>
   );
 }
