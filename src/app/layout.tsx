@@ -1,13 +1,9 @@
-// src/app/layout.tsx
 import "./globals.css";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
+// fontes Geist (já instaladas no projeto)
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 
 export const metadata: Metadata = {
   title: "Qwip — Venda HOJE",
@@ -16,8 +12,16 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${inter.variable}`}>
-      <body className="font-sans bg-background text-text">{children}</body>
+    <html lang="pt-BR" className="dark">
+      <body
+        className={[
+          GeistSans.variable,
+          GeistMono.variable,
+          "font-sans bg-page text-zinc-200 antialiased selection:bg-brand/30",
+        ].join(" ")}
+      >
+        {children}
+      </body>
     </html>
   );
 }
