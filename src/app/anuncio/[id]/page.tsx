@@ -20,8 +20,7 @@ export default async function AnuncioPage({
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
         <h1 className="text-2xl font-semibold tracking-tight">Anúncio #{id}</h1>
         <p className="mt-2 text-zinc-400">
-          (Placeholder) Renderize aqui os dados reais do anúncio buscados pelo
-          ID.
+          (Placeholder) Renderize aqui os dados reais do anúncio buscados pelo ID.
         </p>
       </div>
     </main>
