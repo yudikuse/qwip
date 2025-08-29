@@ -2,41 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Tokens para o tema dark */
-:root {
-  --bg: #0B0F0E;
-  --surface: #0F1514;
-  --border: #1C2422;
-  --text: #E7ECEB;
-  --muted: #8CA39E;
-  --primary: #00E6A8;
-  --primary2: #13FFA7;
+/* Fundo com leve vinheta/ruído para aproximar do Figma */
+:root { --grain: rgba(255,255,255,.03); }
+
+body {
+  background-image:
+    radial-gradient(1200px 600px at 70% 80%, rgba(22,199,132,.08), transparent 60%),
+    radial-gradient(800px 400px at 15% 20%, rgba(22,199,132,.05), transparent 55%),
+    linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.00)),
+    repeating-linear-gradient(0deg, var(--grain) 0px, var(--grain) 1px, transparent 1px, transparent 2px);
+  background-blend-mode: screen, screen, normal, overlay;
 }
 
-* { @apply antialiased; }
-
-html, body {
-  background: var(--bg);
-  color: var(--text);
+/* Botão padrão da marca */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl2 px-5 h-11 font-medium transition shadow-soft;
+  @apply bg-brand text-zinc-900 hover:bg-brand/90 active:shadow-glow;
 }
 
-/* Botões */
-.btn-primary {
-  @apply inline-flex items-center justify-center rounded-lg px-5 py-3 font-medium
-         bg-[--primary] text-black hover:opacity-90 transition;
-}
-.btn-outline {
-  @apply inline-flex items-center justify-center rounded-lg px-5 py-3 font-medium
-         border border-[--border] text-[--text] hover:bg-[--surface] transition;
+/* Botão contornado */
+.btn-ghost {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl2 px-5 h-11 font-medium transition;
+  @apply bg-transparent border border-zinc-700/70 text-zinc-100 hover:bg-white/5;
 }
 
-/* Badges e chips */
+/* Badge pill */
 .badge {
-  @apply inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs
-         border border-[--border] bg-[--surface] text-[--muted];
+  @apply inline-flex items-center gap-2 rounded-full px-3 h-7 text-[13px] font-medium bg-zinc-800/70 border border-zinc-700/60;
 }
 
-/* Cards */
+/* Cards em vidro */
 .card {
-  @apply rounded-xl2 border border-[--border] bg-[--surface] shadow-card;
+  @apply rounded-xl2 border border-zinc-700/60 bg-zincglass shadow-soft;
 }
