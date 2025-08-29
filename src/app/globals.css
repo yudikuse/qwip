@@ -88,8 +88,11 @@
 
 /* Base */
 @layer base {
-  * { @apply border-border outline-ring/50; }
+  /* REMOVIDO: outline-ring/50 (não existe). Mantemos só a cor da borda global. */
+  * { @apply border-border; }
+
   html { font-size: var(--font-size); }
+
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
@@ -97,20 +100,23 @@
   }
 }
 
-/* Componentes utilitários que usamos no layout */
+/* Componentes utilitários usados no layout */
 @layer components {
   /* Botão padrão da marca (CTA verde) */
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 h-11
            font-semibold transition shadow-soft
-           bg-primary text-primary-foreground hover:opacity-95 active:shadow-glow;
+           bg-primary text-primary-foreground hover:opacity-95
+           focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0
+           active:shadow-glow;
   }
 
   /* Botão secundário (cinza escuro) */
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 h-11
            font-semibold transition
-           bg-secondary text-secondary-foreground hover:opacity-95;
+           bg-secondary text-secondary-foreground hover:opacity-95
+           focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0;
   }
 
   /* Chip/badge arredondado */
@@ -127,7 +133,6 @@
 
   /* Título super grande do herói */
   .hero-title {
-    /* clamp para escalar bonito em telas menores */
     font-weight: 800;
     line-height: 1.05;
     letter-spacing: -0.02em;
