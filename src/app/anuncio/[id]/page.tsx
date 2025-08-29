@@ -1,14 +1,14 @@
 // src/app/anuncio/[id]/page.tsx
 import Link from "next/link";
 
-type Params = Promise<{ id: string }>;
+type ParamsObj = { id: string };
+type Params = ParamsObj | Promise<ParamsObj>;
 
 export default async function Page({ params }: { params: Params }) {
-  const { id } = await params;
+  // cobre tanto { id: string } quanto Promise<{ id: string }>
+  const { id } = await Promise.resolve(params);
 
-  // TODO: troque pelo fetch real do anúncio
-  // const ad = await getAdById(id);
-
+  // TODO: trocar pelo fetch real do anúncio (ex.: await getAdById(id))
   return (
     <main className="container mx-auto px-4 py-10">
       <h1 className="text-2xl font-semibold mb-4">Anúncio #{id}</h1>
