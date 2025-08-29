@@ -1,144 +1,70 @@
-/* src/app/globals.css */
+/* src/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ===============================
-   Tokens / Theme (pixel-like Figma)
-   =============================== */
+/* ========= Theme tokens ========= */
 :root {
-  /* cores principais */
-  --bg: #0b0f0d;                 /* fundo geral */
-  --surface: rgba(255,255,255,.05);
-  --surface-weak: rgba(255,255,255,.03);
-  --surface-strong: rgba(255,255,255,.08);
+  --radius: 12px;
 
-  --foreground: #e6edf3;         /* texto base */
-  --muted: #9aa7ad;              /* texto secundário */
-
-  --border: rgba(255,255,255,.08);
-  --ring: rgba(16,185,129,.35);
-
-  /* acentos (Figma) */
-  --emerald-300: #86efac;
-  --emerald-400: #34d399;
-  --emerald-500: #10b981;
-
-  --cyan-400: #22d3ee;
-
-  /* raios/curvaturas */
-  --radius: 14px;
+  /* Cores base do layout do Figma (dark) */
+  --bg: #0b0f0d;
+  --fg: #e2e8f0;
+  --muted: #94a3b8;
+  --panel: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.08);
+  --brand: #10b981;  /* emerald-500 */
+  --brand-2: #06b6d4; /* cyan-500 */
 }
 
-/* ===============================
-   Base resets + tipografia
-   =============================== */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  border-color: var(--border);
-}
-
-html, body, #__next {
-  height: 100%;
-}
+/* ========= Reset/Defaults ========= */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
 
 body {
   background: var(--bg);
-  color: var(--foreground);
-  /* fonte: Geist > Inter > sistema (pixel-match) */
-  font-family:
-    var(--font-geist-sans),       /* via geist/font/sans */
-    var(--font-inter),            /* via next/font/google */
-    ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  color: var(--fg);
+  /* as fontes vêm do next/font (variáveis) */
+  font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system,
+    Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
 }
 
-/* monospace (quando usar <code> ou logs) */
-code, pre {
-  font-family:
-    var(--font-geist-mono),       /* via geist/font/mono */
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-}
-
-/* seleção bonitinha (verde Qwip) */
-::selection {
-  background: var(--ring);
-  color: #fff;
-}
-
-/* links suaves */
-a {
-  @apply transition-colors;
-}
-
-/* botões focados (ring consistente) */
-button:focus-visible,
-a:focus-visible,
-[role="button"]:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--ring);
-  border-radius: calc(var(--radius) - 6px);
-}
-
-/* cartões padrão com “vidro” leve */
-.card {
-  border: 1px solid var(--border);
-  background: var(--surface-weak);
-  backdrop-filter: blur(6px);
-  border-radius: var(--radius);
-}
-
-/* sombras/realces usados na página */
-.shadow-inset-1 {
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
-}
-.glow-emerald {
-  box-shadow:
-    0 0 0 1px rgba(16,185,129,.12) inset,
-    0 20px 60px -15px rgba(16,185,129,.25);
-}
-
-/* scroll minimal (dark) */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--surface-strong) transparent;
-}
-::-webkit-scrollbar {
-  height: 10px;
-  width: 10px;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--surface-strong);
+/* Seleção + scrollbars discretos */
+::selection { background: rgba(16,185,129,.35); color: #eafff5; }
+*::-webkit-scrollbar { width: 12px; height: 12px; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(148,163,184,.25);
   border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ========= Helpers para os componentes do layout ========= */
+.card { @apply rounded-2xl border border-white/10 bg-white/5; }
+
+.btn { @apply inline-flex items-center justify-center rounded-lg px-4 py-2 font-medium; }
+.btn-ghost { @apply border border-white/10 bg-white/5 text-white hover:bg-white/10; }
+.btn-brand { @apply bg-emerald-500 text-black hover:bg-emerald-400; }
+
+/* Título grande suave (quando precisar fora do Tailwind utilitário) */
+.h1 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-size: clamp(2.25rem, 1.2rem + 3vw, 3.75rem);
+  line-height: 1.1;
 }
 
-/* utilitários rápidos que usamos no layout */
-.badge {
-  border: 1px solid var(--surface-strong);
-  background: var(--surface-weak);
-  color: var(--muted);
-  border-radius: 999px;
-  font-size: 12px;
-  padding: 6px 10px;
+/* Mono para trechos de código (caso use) */
+code, pre, kbd, samp {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", "Courier New", monospace;
 }
-.btn-primary {
-  background: var(--emerald-500);
-  color: #0b0f0d;
-  border-radius: 10px;
-  font-weight: 700;
+
+/* Container opcional (se preferir usar em vez do max-w-7xl) */
+.container {
+  width: 100%;
+  margin-inline: auto;
+  padding-inline: 1rem;
+  max-width: 80rem; /* ~1280px */
 }
-.btn-primary:hover { background: var(--emerald-400); }
-.btn-ghost {
-  border: 1px solid var(--surface-strong);
-  background: var(--surface-weak);
-  color: var(--foreground);
-  border-radius: 10px;
-}
-.btn-ghost:hover { background: var(--surface); }
