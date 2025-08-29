@@ -1,70 +1,42 @@
-/* src/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ========= Theme tokens ========= */
+/* Tokens para o tema dark */
 :root {
-  --radius: 12px;
-
-  /* Cores base do layout do Figma (dark) */
-  --bg: #0b0f0d;
-  --fg: #e2e8f0;
-  --muted: #94a3b8;
-  --panel: rgba(255, 255, 255, 0.04);
-  --border: rgba(255, 255, 255, 0.08);
-  --brand: #10b981;  /* emerald-500 */
-  --brand-2: #06b6d4; /* cyan-500 */
+  --bg: #0B0F0E;
+  --surface: #0F1514;
+  --border: #1C2422;
+  --text: #E7ECEB;
+  --muted: #8CA39E;
+  --primary: #00E6A8;
+  --primary2: #13FFA7;
 }
 
-/* ========= Reset/Defaults ========= */
-* { box-sizing: border-box; }
-html, body { height: 100%; }
+* { @apply antialiased; }
 
-body {
+html, body {
   background: var(--bg);
-  color: var(--fg);
-  /* as fontes vêm do next/font (variáveis) */
-  font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system,
-    Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  color: var(--text);
 }
 
-/* Seleção + scrollbars discretos */
-::selection { background: rgba(16,185,129,.35); color: #eafff5; }
-*::-webkit-scrollbar { width: 12px; height: 12px; }
-*::-webkit-scrollbar-thumb {
-  background: rgba(148,163,184,.25);
-  border-radius: 999px;
-  border: 3px solid transparent;
-  background-clip: content-box;
+/* Botões */
+.btn-primary {
+  @apply inline-flex items-center justify-center rounded-lg px-5 py-3 font-medium
+         bg-[--primary] text-black hover:opacity-90 transition;
 }
-*::-webkit-scrollbar-track { background: transparent; }
-
-/* ========= Helpers para os componentes do layout ========= */
-.card { @apply rounded-2xl border border-white/10 bg-white/5; }
-
-.btn { @apply inline-flex items-center justify-center rounded-lg px-4 py-2 font-medium; }
-.btn-ghost { @apply border border-white/10 bg-white/5 text-white hover:bg-white/10; }
-.btn-brand { @apply bg-emerald-500 text-black hover:bg-emerald-400; }
-
-/* Título grande suave (quando precisar fora do Tailwind utilitário) */
-.h1 {
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  font-size: clamp(2.25rem, 1.2rem + 3vw, 3.75rem);
-  line-height: 1.1;
+.btn-outline {
+  @apply inline-flex items-center justify-center rounded-lg px-5 py-3 font-medium
+         border border-[--border] text-[--text] hover:bg-[--surface] transition;
 }
 
-/* Mono para trechos de código (caso use) */
-code, pre, kbd, samp {
-  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
-    Consolas, "Liberation Mono", "Courier New", monospace;
+/* Badges e chips */
+.badge {
+  @apply inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs
+         border border-[--border] bg-[--surface] text-[--muted];
 }
 
-/* Container opcional (se preferir usar em vez do max-w-7xl) */
-.container {
-  width: 100%;
-  margin-inline: auto;
-  padding-inline: 1rem;
-  max-width: 80rem; /* ~1280px */
+/* Cards */
+.card {
+  @apply rounded-xl2 border border-[--border] bg-[--surface] shadow-card;
 }
