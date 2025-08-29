@@ -1,26 +1,38 @@
+// src/app/anuncio/[id]/page.tsx
+import Link from "next/link";
 
+type Params = { id: string };
 
-type ParamsObj = { id: string };
-type Params = ParamsObj | Promise<ParamsObj>;
+// Normaliza `params`: o Next 15 pode entregar objeto OU Promise<objeto>
+async function normalizeParams(
+  params?: Params | Promise<Params>
+): Promise<Params> {
+  if (!params) return { id: "" };
+  return await Promise.resolve(params as any);
+}
 
-export default async function Page({ params }: { params: Params }) {
-  // cobre tanto { id: string } quanto Promise<{ id: string }>
-  const { id } = await Promise.resolve(params);
+export default async function AnuncioPage(
+  props: { params?: Params } | { params?: Promise<Params> }
+) {
+  const { id } = await normalizeParams((props as any).params);
 
-  // TODO: trocar pelo fetch real do anúncio (ex.: await getAdById(id))
+  // TODO: plugue aqui a busca real do anúncio, ex.:
+  // const anuncio = await getAnuncioById(id);
+
   return (
-    <main className="container mx-auto px-4 py-10">
-      <h1 className="text-2xl font-semibold mb-4">Anúncio #{id}</h1>
-
-      <div className="rounded-lg border border-white/10 bg-black/30 p-6">
-        <p className="text-white/80">
-          Conteúdo do anúncio aqui (substituir pelo real).
-        </p>
+    <main className="container mx-auto max-w-5xl px-4 py-10">
+      <div className="mb-6">
+        <Link href="/vitrine" className="text-sm text-zinc-400 hover:text-white">
+          ← Voltar para a Vitrine
+        </Link>
       </div>
 
-      <Link href="/vitrine" className="mt-8 inline-block underline">
-        ← Voltar para a Vitrine
-      </Link>
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
+        <h1 className="text-2xl font-semibold tracking-tight">Anúncio #{id}</h1>
+        <p className="mt-2 text-zinc-400">
+          (Placeholder) Troque este bloco para renderizar os dados reais do anúncio.
+        </p>
+      </div>
     </main>
   );
 }
