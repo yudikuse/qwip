@@ -1,8 +1,5 @@
-// src/app/layout.tsx
 import "./globals.css";
 import type { Metadata } from "next";
-
-// IMPORT CORRETO DO PACOTE `geist`:
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 
@@ -16,9 +13,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="pt-BR" className="dark">
       <body
         className={[
-          GeistSans.variable, // expõe --font-geist-sans
-          GeistMono.variable, // expõe --font-geist-mono
-          "font-sans bg-background text-foreground antialiased"
+          GeistSans.variable,    // --font-geist-sans
+          GeistMono.variable,    // --font-geist-mono
+          "font-sans bg-background text-foreground antialiased",
         ].join(" ")}
       >
         {children}
