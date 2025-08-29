@@ -1,286 +1,244 @@
-/* eslint-disable @next/next/no-img-element */
+// src/app/page.tsx
+import Link from "next/link";
 
-// Home – QWIP (pixel aligned ao Figma)
-export default function Page() {
+export const dynamic = "force-static";
+
+export default function HomePage() {
   return (
     <main className="relative">
-      {/* NAV mínima */}
-      <div className="sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-page/55 border-b border-zinc-800/70">
-        <div className="container flex h-14 items-center justify-between">
-          <div className="flex items-center gap-2 text-zinc-100">
-            <div className="h-6 w-6 rounded-md grid place-items-center bg-zinc-900 border border-zinc-700/70">
-              <span className="text-[13px]">Q</span>
-            </div>
-            <span className="font-semibold tracking-tight">Qwip</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <a href="/vitrine" className="btn-ghost">Vitrine</a>
-            <a href="/dashboard" className="btn-ghost">Dashboard</a>
-            <a href="#cta" className="btn">Começar grátis</a>
-          </div>
-        </div>
-      </div>
-
       {/* HERO */}
-      <section className="pt-16 pb-8">
-        <div className="container grid lg:grid-cols-2 gap-10 items-center">
-          <div className="max-w-xl">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="badge">Powered by AI</span>
-              <span className="badge">Menos de 60s para publicar</span>
+      <section className="container mx-auto max-w-6xl px-6 pt-16 pb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+          {/* Texto */}
+          <div>
+            <div className="flex gap-2 mb-6">
+              <span className="chip">Powered by AI</span>
+              <span className="chip">🚀 Menos de 60s para publicar</span>
             </div>
 
-            <h1 className="text-hero md:text-hero font-extrabold tracking-tight">
-              Anúncios rápidos.<br />
-              <span className="text-brand">Link direto pro</span><br />
-              WhatsApp.
+            <h1 className="hero-title">
+              <span className="block">Anúncios rápidos.</span>
+              <span className="block text-primary">Link direto pro</span>
+              <span className="block text-primary">WhatsApp.</span>
             </h1>
 
-            <p className="mt-5 text-zinc-300 max-w-lg">
+            <p className="mt-4 max-w-[52ch] text-sm text-muted-foreground">
               Publique em menos de 60 segundos. O anúncio expira
               automaticamente, gerando urgência e mantendo a vitrine sempre atual.
             </p>
 
-            <div className="mt-7 flex flex-wrap gap-3">
-              <a href="#cta" className="btn">⚡ Criar Anúncio Grátis</a>
-              <a href="/vitrine" className="btn-ghost">Ver Vitrine de Anúncios</a>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link href="/dashboard" className="btn">Criar Anúncio Grátis</Link>
+              <Link href="/vitrine" className="btn-secondary">Ver Vitrine de Anúncios</Link>
             </div>
 
-            <div className="mt-6 flex flex-wrap gap-3 text-[13px] text-zinc-300/90">
-              <span className="badge">100% direto no WhatsApp — sem taxas sobre a venda</span>
-              <span className="badge">Menos de 60s</span>
-              <span className="badge">Link compartilhável</span>
-              <span className="badge">Expira automaticamente</span>
+            <div className="mt-6 flex flex-wrap gap-3 text-xs">
+              <span className="chip">✅ 100% direto no WhatsApp — sem taxas sobre a venda</span>
+              <span className="chip">⏱️ Menos de 60s</span>
+              <span className="chip">🔗 Link compartilhável</span>
+              <span className="chip">⏳ Expira automaticamente</span>
             </div>
           </div>
 
-          {/* Mock do cartão (lado direito) */}
-          <div className="card p-4">
-            <div className="border border-zinc-700/70 rounded-lg overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-2 bg-zinc-900/60 border-b border-zinc-800">
-                <div className="text-sm font-medium text-zinc-300">QWIP Vendas</div>
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="badge">Melhorado com IA</span>
-                  <span className="badge">⏳ Expira em 23h 45min</span>
+          {/* Mock do card (direita) */}
+          <div className="relative">
+            <div className="card p-4">
+              <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="chip">🧠 Melhorado com IA</span>
                 </div>
+                <span className="chip" style={{background: "var(--accent)", color: "var(--accent-foreground)"}}>
+                  ⏰ Expira em 23h 45min
+                </span>
               </div>
-              <div className="h-[260px] w-full bg-zinc-800/80 grid place-items-center text-zinc-400">
+
+              <div className="aspect-video w-full rounded-xl bg-zinc-800/40 border border-border grid place-items-center text-zinc-500">
                 Prévia do anúncio
               </div>
-              <div className="px-4 py-3 text-sm">
+
+              <div className="mt-4 text-sm">
                 <div className="font-semibold">Marmita Caseira Completa</div>
-                <div className="text-zinc-400">Centro, Rio de Janeiro • Entrega 30min</div>
-              </div>
-              <div className="flex items-center justify-between px-4 pb-4">
-                <div className="text-brand font-semibold">R$ 18,50</div>
-                <div className="flex gap-2">
-                  <a className="btn-ghost" href="https://wa.me/" target="_blank">WhatsApp</a>
-                  <button className="btn-ghost">Compartilhar</button>
+                <div className="text-muted-foreground text-xs">
+                  Centro, Rio de Janeiro • Entrega 30min
                 </div>
+                <div className="mt-1 text-primary font-semibold">R$ 18,50</div>
+              </div>
+
+              <div className="mt-4 flex gap-3">
+                <button className="btn grow">WhatsApp</button>
+                <button className="btn-secondary grow">Compartilhar</button>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* “Perfeito para você” */}
-      <section className="py-10">
-        <div className="container">
-          <h2 className="text-2xl md:text-3xl font-semibold text-center">Perfeito para você</h2>
-          <p className="text-zinc-400 text-center mt-2">Não importa o que você venda, o QWIP funciona.</p>
+      {/* PERFEITO PARA VOCÊ */}
+      <section className="container mx-auto max-w-6xl px-6 py-10">
+        <h2 className="text-center text-2xl font-semibold">Perfeito para você</h2>
+        <p className="text-center text-muted-foreground text-sm mt-2">
+          Não importa o que você venda, o Qwip funciona
+        </p>
 
-          <div className="grid md:grid-cols-3 gap-4 mt-8">
-            {[
-              {
-                t: "Vendedores Autônomos",
-                d: "Roupas, cosméticos, artesanato. Venda no seu tempo.",
-              },
-              {
-                t: "Lojistas Locais",
-                d: "Promoções rápidas, liquidações, produtos sazonais.",
-              },
-              {
-                t: "Vendas Pessoais",
-                d: "Usados, freelas e serviços pontuais.",
-              },
-            ].map((c, i) => (
-              <div key={i} className="card p-5">
-                <div className="h-9 w-9 rounded-lg bg-brand/15 text-brand grid place-items-center mb-3">✔</div>
-                <div className="font-semibold">{c.t}</div>
-                <div className="text-zinc-400 text-sm mt-1">{c.d}</div>
-              </div>
-            ))}
-          </div>
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-5">
+          {[
+            {title: "Vendedores Autônomos", desc: "Roupas, cosméticos, artesanato. Venda no seu tempo.", ex: "Ex: roupas infantis, maquiagem, bijuterias."},
+            {title: "Lojistas Locais", desc: "Promoções rápidas, liquidações, produtos sazonais.", ex: "Ex: açaí, farmácia, corte de cabelo."},
+            {title: "Vendas Pessoais", desc: "Usados, freelas e serviços pontuais.", ex: "Ex: móveis usados, aulas particulares, pet sitting."},
+          ].map((c) => (
+            <div key={c.title} className="card p-6">
+              <div className="text-primary mb-3">✔</div>
+              <div className="font-semibold">{c.title}</div>
+              <div className="text-sm text-muted-foreground mt-1">{c.desc}</div>
+              <div className="text-xs text-muted-foreground mt-2 opacity-80">{c.ex}</div>
+            </div>
+          ))}
         </div>
       </section>
 
-      {/* Como funciona */}
-      <section className="py-8">
-        <div className="container">
-          <h2 className="text-2xl md:text-3xl font-semibold text-center">Como funciona</h2>
-          <p className="text-zinc-400 text-center mt-2">
-            Em 3 passos simples, seu anúncio entra no ar com urgência real
-          </p>
+      {/* COMO FUNCIONA */}
+      <section className="container mx-auto max-w-6xl px-6 py-10">
+        <h2 className="text-center text-2xl font-semibold">Como funciona</h2>
+        <p className="text-center text-muted-foreground text-sm mt-2">
+          Em 3 passos simples, seu anúncio entra no ar com urgência real
+        </p>
 
-          <div className="grid md:grid-cols-3 gap-4 mt-8">
-            {[
-              { n: "01", t: "Crie seu anúncio em 60s", d: "Foto, título, preço e endereço. Pronto." },
-              { n: "02", t: "Compartilhe o link", d: "Envie no WhatsApp, redes sociais e onde quiser." },
-              { n: "03", t: "Receba no WhatsApp", d: "O comprador fala direto com você, sem intermediação." },
-            ].map((s) => (
-              <div key={s.n} className="card p-5">
-                <div className="text-zinc-500 text-sm">{s.n}</div>
-                <div className="mt-2 font-semibold">{s.t}</div>
-                <div className="text-zinc-400 text-sm mt-1">{s.d}</div>
-              </div>
-            ))}
-          </div>
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-5">
+          {[
+            {n:"01", t:"Crie seu anúncio em 60s", d:"Foto, título, preço e endereço. Pronto."},
+            {n:"02", t:"Compartilhe o link", d:"Envie no WhatsApp, redes sociais e onde quiser."},
+            {n:"03", t:"Receba no WhatsApp", d:"O comprador fala direto com você, sem intermediação."},
+          ].map(s => (
+            <div key={s.n} className="card p-6">
+              <div className="text-xs text-muted-foreground">{s.n}</div>
+              <div className="font-semibold mt-1">{s.t}</div>
+              <div className="text-sm text-muted-foreground mt-1">{s.d}</div>
+            </div>
+          ))}
         </div>
       </section>
 
-      {/* Vitrine de Anúncios (exemplos) */}
-      <section className="py-10">
-        <div className="container">
-          <h2 className="text-2xl md:text-3xl font-semibold text-center">Vitrine de Anúncios</h2>
-          <p className="text-zinc-400 text-center mt-2">
-            Veja como ficam os anúncios reais no Qwip
-          </p>
+      {/* VITRINE DE ANÚNCIOS */}
+      <section className="container mx-auto max-w-6xl px-6 py-10">
+        <h2 className="text-center text-2xl font-semibold">Vitrine de Anúncios</h2>
+        <p className="text-center text-muted-foreground text-sm mt-2">
+          Veja como ficam os anúncios reais no Qwip
+        </p>
 
-          <div className="grid md:grid-cols-3 gap-5 mt-8">
-            {[
-              { img: "/img/demo-1.jpg", t: "Marmita Caseira Completa", price: "R$ 18,50" },
-              { img: "/img/demo-2.jpg", t: "Manicure & Pedicure", price: "R$ 35,00" },
-              { img: "/img/demo-3.jpg", t: "Açaí Premium c/ Frutas", price: "R$ 15,50" },
-            ].map((a, i) => (
-              <article key={i} className="card overflow-hidden">
-                <div className="relative aspect-[4/3] bg-zinc-800/60" />
-                <div className="p-4">
-                  <div className="text-sm text-zinc-400">Vila Madalena, SP</div>
-                  <div className="font-semibold mt-1">{a.t}</div>
-                  <div className="flex items-center justify-between mt-2">
-                    <div className="text-brand font-semibold">{a.price}</div>
-                    <a className="btn-ghost" href="/vitrine">Falar no WhatsApp</a>
-                  </div>
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-5">
+          {[
+            {t:"Marmita Caseira Completa", p:"R$ 18,50", tag:"Últimas 4"},
+            {t:"Manicure & Pedicure", p:"R$ 35,00", tag:"Expira hoje"},
+            {t:"Açaí Premium c/ Frutas", p:"R$ 15,50", tag:"Expira em 45min"},
+          ].map((a) => (
+            <div key={a.t} className="card overflow-hidden">
+              <div className="relative">
+                <div className="aspect-[16/10] w-full bg-zinc-800/40 grid place-items-center text-zinc-500">
+                  Foto do anúncio
                 </div>
-              </article>
-            ))}
-          </div>
+                <span className="absolute top-2 right-2 chip" style={{background:"var(--accent)", color:"var(--accent-foreground)"}}>
+                  {a.tag}
+                </span>
+              </div>
+              <div className="p-4">
+                <div className="text-sm font-semibold">{a.t}</div>
+                <div className="mt-1 text-primary font-semibold">{a.p}</div>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <button className="btn w-full">Falar no WhatsApp</button>
+                  <button className="btn-secondary w-full">Compartilhar</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
 
-          <div className="text-center mt-6">
-            <a href="/vitrine" className="btn-ghost">Ver todos os anúncios</a>
-          </div>
+        <div className="flex justify-center mt-8">
+          <Link href="/vitrine" className="btn-secondary">Ver todos os anúncios</Link>
         </div>
       </section>
 
-      {/* Depoimentos */}
-      <section className="py-10">
-        <div className="container">
-          <div className="badge mx-auto mb-3">+1249 vendedores ativos neste mês</div>
-          <h2 className="text-2xl md:text-3xl font-semibold text-center">O que dizem nossos usuários</h2>
-          <p className="text-zinc-400 text-center mt-2">
-            Resultados reais de pequenos negócios como você
-          </p>
+      {/* DEPOIMENTOS */}
+      <section className="container mx-auto max-w-6xl px-6 py-10">
+        <div className="flex justify-center">
+          <span className="chip">📈 +1249 vendedores ativos neste mês</span>
+        </div>
+        <h2 className="text-center text-2xl font-semibold mt-4">O que dizem nossos usuários</h2>
+        <p className="text-center text-muted-foreground text-sm mt-2">
+          Resultados reais de pequenos negócios como você
+        </p>
 
-          <div className="grid md:grid-cols-3 gap-4 mt-8">
-            {[
-              {
-                ini: "F",
-                nome: "Fernanda Couto",
-                cargo: "Marmitaria Caseira",
-                texto:
-                  "Vendi em 2h pelo Qwip! Publiquei a marmita às 10h, às 12h já tinha 3 clientes.",
-              },
-              {
-                ini: "C",
-                nome: "Carlos Mendes",
-                cargo: "Assistência Técnica",
-                texto:
-                  "O que mais gosto é que expira automaticamente. Nunca mais anúncio velho na internet.",
-              },
-              {
-                ini: "M",
-                nome: "Mariana Silva",
-                cargo: "Studio de Beleza",
-                texto:
-                  "Menos de 1 minuto para criar. Mais tempo vendendo, menos tempo perdendo com tecnologia.",
-              },
-            ].map((p, i) => (
-              <div key={i} className="card p-5">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-brand/15 text-brand grid place-items-center font-semibold">
-                    {p.ini}
-                  </div>
-                  <div>
-                    <div className="font-medium">{p.nome}</div>
-                    <div className="text-xs text-zinc-400">{p.cargo}</div>
-                  </div>
-                </div>
-                <div className="mt-3 text-zinc-300 text-sm leading-relaxed">“{p.texto}”</div>
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-5">
+          {[
+            {n:"Fernanda Couto", r:"Marmitaria Caseira", q:"Vendi em 2h pelo Qwip! Publiquei a marmita às 10h, às 12h já tinha 3 clientes."},
+            {n:"Carlos Mendes", r:"Assistência Técnica", q:"O que mais gosto é que expira automaticamente. Nunca mais anúncio velho na internet."},
+            {n:"Mariana Silva", r:"Studio de Beleza", q:"Menos de 1 minuto para criar. Mais tempo vendendo, menos tempo perdendo com tecnologia."},
+          ].map((d) => (
+            <div key={d.n} className="card p-6">
+              <div className="text-yellow-400">★★★★★</div>
+              <p className="mt-3 text-sm text-muted-foreground">“{d.q}”</p>
+              <div className="mt-4 text-sm">
+                <div className="font-semibold">{d.n}</div>
+                <div className="text-xs text-muted-foreground">{d.r}</div>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       </section>
 
       {/* FAQ */}
-      <section className="py-12">
-        <div className="container">
-          <h2 className="text-2xl md:text-3xl font-semibold text-center">Perguntas Frequentes</h2>
-          <p className="text-zinc-400 text-center mt-2">
-            Respondemos as principais dúvidas sobre o QWIP
-          </p>
+      <section className="container mx-auto max-w-4xl px-6 py-10">
+        <h2 className="text-center text-2xl font-semibold">Perguntas Frequentes</h2>
+        <p className="text-center text-muted-foreground text-sm mt-2">
+          Respondemos as principais dúvidas sobre o QWIP
+        </p>
 
-          <div className="mx-auto mt-8 max-w-3xl space-y-3">
-            {[
-              ["Por que o anúncio expira automaticamente?",
-               "Para manter a vitrine sempre atual e aumentar a urgência de compra."],
-              ["O Qwip é seguro? Como funciona a moderação?",
-               "Temos moderação automática e denúncias da comunidade."],
-              ["Posso denunciar anúncios impróprios?",
-               "Sim. Cada anúncio tem um menu com opção de denúncia."],
-              ["Preciso instalar aplicativo?",
-               "Não. É tudo no navegador e os clientes falam direto no seu WhatsApp."],
-              ["Como o Qwip ganha dinheiro? Há taxas sobre vendas?",
-               "Planos por assinatura. Não cobramos taxa sobre a sua venda."],
-              ["Posso cancelar minha assinatura a qualquer momento?",
-               "Pode sim, sem fidelidade e sem burocracia."],
-            ].map(([q, a], i) => (
-              <details key={i} className="card">
-                <summary className="cursor-pointer select-none list-none px-5 py-4 font-medium">
-                  {q}
-                </summary>
-                <div className="px-5 pb-5 text-zinc-300">{a}</div>
-              </details>
-            ))}
-          </div>
+        <div className="mt-6 divide-y divide-border rounded-2xl border border-border overflow-hidden">
+          {[
+            ["Por que o anúncio expira automaticamente?",
+             "Para gerar urgência real e manter sua vitrine sempre atual — sem anúncios velhos."],
+            ["O Qwip é seguro? Como funciona a moderação?",
+             "Aplicamos filtros automáticos e revisões humanas quando necessário."],
+            ["Posso denunciar anúncios impróprios?",
+             "Sim. Cada card tem um menu para sinalizar conteúdo. Agimos rapidamente."],
+            ["Preciso instalar aplicativo?",
+             "Não. É 100% web e funciona no seu celular."],
+            ["Como o Qwip ganha dinheiro? Há taxas sobre vendas?",
+             "Não cobramos taxa sobre sua venda. Temos planos com benefícios extras."],
+            ["Posso cancelar minha assinatura a qualquer momento?",
+             "Pode, sem fidelidade."],
+            ["O que acontece se eu esquecer de renovar um anúncio importante?",
+             "Você receberá lembretes e pode republicar em 1 clique."],
+            ["Funciona para qualquer tipo de produto/serviço?",
+             "Sim, desde autônomos até pequenos comércios locais."],
+          ].map(([q, a], i) => (
+            <details key={i} className="group open:bg-card">
+              <summary className="cursor-pointer list-none select-none px-5 py-4 text-sm font-medium flex items-center justify-between">
+                {q}
+                <span className="ml-4 text-muted-foreground group-open:rotate-180 transition">⌄</span>
+              </summary>
+              <div className="px-5 pb-4 text-sm text-muted-foreground">{a}</div>
+            </details>
+          ))}
         </div>
       </section>
 
-      {/* CTA final / footer */}
-      <section id="cta" className="py-14">
-        <div className="container text-center">
-          <h3 className="text-2xl md:text-3xl font-semibold">Pronto para vender mais rápido?</h3>
-          <p className="text-zinc-400 mt-2">
+      {/* CTA FINAL */}
+      <section className="container mx-auto max-w-6xl px-6 py-14">
+        <div className="card p-8 text-center">
+          <h3 className="text-xl font-semibold">Pronto para vender mais rápido?</h3>
+          <p className="text-sm text-muted-foreground mt-2">
             Junte-se a centenas de vendedores que já usam urgência real.
           </p>
-          <div className="mt-6 flex justify-center gap-3">
-            <a className="btn" href="/dashboard">Começar Agora — Grátis</a>
-            <a className="btn-ghost" href="/vitrine">Ver Mais Exemplos</a>
+          <div className="mt-6 flex flex-wrap gap-3 justify-center">
+            <Link href="/dashboard" className="btn">Começar Agora — Grátis</Link>
+            <Link href="/vitrine" className="btn-secondary">Ver Mais Exemplos</Link>
           </div>
-          <p className="text-[13px] text-zinc-500 mt-3">
-            Plano gratuito para sempre • Sem taxas sobre vendas • Cancele quando quiser
-          </p>
         </div>
 
-        <footer className="mt-12 border-t border-zinc-800/70">
-          <div className="container py-6 text-sm text-zinc-400 flex flex-wrap items-center justify-between gap-3">
-            <div>Qwip © 2025 — Feito com ❤️</div>
-            <nav className="flex gap-5">
-              <a className="hover:text-zinc-200" href="/termos">Termos de Uso</a>
-              <a className="hover:text-zinc-200" href="/privacidade">Política de Privacidade</a>
-              <a className="hover:text-zinc-200" href="/contato">Contato</a>
-            </nav>
-          </div>
+        <footer className="text-center text-xs text-muted-foreground mt-6">
+          Qwip © 2025 — Feito com ❤️ • <Link href="/termos" className="underline">Termos de Uso</Link> •{" "}
+          <Link href="/privacidade" className="underline">Política de Privacidade</Link> •{" "}
+          <Link href="/contato" className="underline">Contato</Link>
         </footer>
       </section>
     </main>
