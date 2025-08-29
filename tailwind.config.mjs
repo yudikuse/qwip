@@ -36,8 +36,6 @@ export default {
         "input-background": "var(--input-background)",
         "switch-background": "var(--switch-background)",
         ring: "var(--ring)",
-
-        // extras que usamos em cards/menus
         sidebar: "var(--sidebar)",
         "sidebar-foreground": "var(--sidebar-foreground)",
         "sidebar-primary": "var(--sidebar-primary)",
@@ -54,7 +52,6 @@ export default {
         xl: "calc(var(--radius) + 4px)",
       },
       fontFamily: {
-        // você já importa Inter no globals.css — aqui só padroniza
         sans: ["Inter", "system-ui", "Arial", "sans-serif"],
       },
     },
