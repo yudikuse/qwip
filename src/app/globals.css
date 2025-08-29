@@ -1,37 +1,149 @@
+/* src/app/globals.css */
+
+/* Tailwind directives */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Fundo com leve vinheta/ruído para aproximar do Figma */
-:root { --grain: rgba(255,255,255,.03); }
+/* Fonte */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-body {
-  background-image:
-    radial-gradient(1200px 600px at 70% 80%, rgba(22,199,132,.08), transparent 60%),
-    radial-gradient(800px 400px at 15% 20%, rgba(22,199,132,.05), transparent 55%),
-    linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.00)),
-    repeating-linear-gradient(0deg, var(--grain) 0px, var(--grain) 1px, transparent 1px, transparent 2px);
-  background-blend-mode: screen, screen, normal, overlay;
+/* Tema (tokens do Figma) */
+:root {
+  --font-size: 14px;
+
+  --background: #0F1115;
+  --foreground: #ffffff;
+
+  --card: #161a22;
+  --card-foreground: #ffffff;
+
+  --popover: #161a22;
+  --popover-foreground: #ffffff;
+
+  --primary: #20D177;               /* Verde Qwip */
+  --primary-foreground: #0F1115;
+
+  --secondary: #2a3441;
+  --secondary-foreground: #ffffff;
+
+  --muted: #2a3441;
+  --muted-foreground: #9ca3af;
+
+  --accent: #FFC857;                /* Amarelo dos badges */
+  --accent-foreground: #0F1115;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  --border: rgba(255,255,255,0.10);
+  --input: transparent;
+  --input-background: #1f2937;
+  --switch-background: #374151;
+
+  --ring: #20D177;
+
+  --radius: 0.625rem;               /* ~10px */
+
+  --sidebar: #161a22;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #20D177;
+  --sidebar-primary-foreground: #0F1115;
+  --sidebar-accent: #2a3441;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255,255,255,0.10);
+  --sidebar-ring: #20D177;
 }
 
-/* Botão padrão da marca */
-.btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl2 px-5 h-11 font-medium transition shadow-soft;
-  @apply bg-brand text-zinc-900 hover:bg-brand/90 active:shadow-glow;
+.dark {
+  --background: #0F1115;
+  --foreground: #ffffff;
+
+  --card: #161a22;
+  --card-foreground: #ffffff;
+
+  --popover: #161a22;
+  --popover-foreground: #ffffff;
+
+  --primary: #20D177;
+  --primary-foreground: #0F1115;
+
+  --secondary: #2a3441;
+  --secondary-foreground: #ffffff;
+
+  --muted: #2a3441;
+  --muted-foreground: #9ca3af;
+
+  --accent: #FFC857;
+  --accent-foreground: #0F1115;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  --border: rgba(255,255,255,0.10);
+  --input: #1f2937;
+
+  --ring: #20D177;
 }
 
-/* Botão contornado */
-.btn-ghost {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl2 px-5 h-11 font-medium transition;
-  @apply bg-transparent border border-zinc-700/70 text-zinc-100 hover:bg-white/5;
+/* Base */
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { font-size: var(--font-size); }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    min-height: 100vh;
+  }
 }
 
-/* Badge pill */
-.badge {
-  @apply inline-flex items-center gap-2 rounded-full px-3 h-7 text-[13px] font-medium bg-zinc-800/70 border border-zinc-700/60;
+/* Componentes utilitários que usamos no layout */
+@layer components {
+  /* Botão padrão da marca (CTA verde) */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 h-11
+           font-semibold transition shadow-soft
+           bg-primary text-primary-foreground hover:opacity-95 active:shadow-glow;
+  }
+
+  /* Botão secundário (cinza escuro) */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 h-11
+           font-semibold transition
+           bg-secondary text-secondary-foreground hover:opacity-95;
+  }
+
+  /* Chip/badge arredondado */
+  .chip {
+    @apply inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium
+           bg-muted text-muted-foreground border border-border;
+  }
+
+  /* Cartão padrão (seções, reviews etc) */
+  .card {
+    @apply rounded-2xl bg-card text-foreground border border-border
+           shadow-[0_0_1px_rgba(255,255,255,0.06)];
+  }
+
+  /* Título super grande do herói */
+  .hero-title {
+    /* clamp para escalar bonito em telas menores */
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    font-size: clamp(2rem, 5vw, 3.5rem);
+  }
 }
 
-/* Cards em vidro */
-.card {
-  @apply rounded-xl2 border border-zinc-700/60 bg-zincglass shadow-soft;
+/* Sombras especiais (glow suave do CTA) */
+@layer utilities {
+  .shadow-soft { box-shadow: 0 0 20px rgba(32, 209, 119, 0.15); }
+  .shadow-glow { box-shadow: 0 0 24px rgba(32, 209, 119, 0.28); }
 }
+
+/* Animação opcional usada em alguns detalhes de fundo */
+@keyframes gradient-x {
+  0%,100% { transform: translateX(0%); }
+  50% { transform: translateX(-100%); }
+}
+.animate-gradient-x { animation: gradient-x 15s ease infinite; }
