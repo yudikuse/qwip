@@ -1,5 +1,6 @@
 // src/app/page.tsx
 import Link from "next/link";
+import Image from "next/image";
 
 export default function Home() {
   return (
@@ -35,18 +36,12 @@ export default function Home() {
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
-                <Link
-                  href="/anuncio/novo"
-                  className="btn-primary"
-                >
+                <Link href="/anuncio/novo" className="btn-primary">
                   <FlashIcon className="-ml-0.5 h-4 w-4" />
                   Criar Anúncio Grátis
                 </Link>
 
-                <Link
-                  href="/vitrine"
-                  className="btn-ghost"
-                >
+                <Link href="/vitrine" className="btn-ghost">
                   Ver Vitrine de Anúncios
                 </Link>
               </div>
@@ -93,14 +88,14 @@ export default function Home() {
 
                   {/* Imagem do produto */}
                   <div className="relative overflow-hidden rounded-lg">
-                    <img
+                    <Image
                       src="/images/hero-card.jpg"
                       alt="Marmita Caseira Completa"
+                      width={1200}
+                      height={650}
                       className="h-56 w-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src =
-                          "/images/placeholders/hero.jpg";
-                      }}
+                      sizes="(min-width: 1024px) 560px, 100vw"
+                      priority
                     />
                     <div className="absolute right-2 top-2 rounded-md bg-amber-400 px-2 py-0.5 text-[11px] font-semibold text-zinc-900">
                       Expira em 23h 45min
@@ -209,7 +204,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Vitrine de Anúncios (3 cards com badges) */}
+      {/* Vitrine de Anúncios */}
       <section id="vitrine" className="py-14">
         <div className="container mx-auto max-w-6xl px-6">
           <h2 className="text-center text-3xl font-bold">Vitrine de Anúncios</h2>
@@ -220,7 +215,6 @@ export default function Home() {
           <div className="mt-10 grid gap-6 md:grid-cols-3">
             <AdCard
               img="/images/vitrine-1.jpg"
-              fallback="/images/placeholders/vitrine1.jpg"
               title="Marmita Caseira Completa"
               subtitle="Centro, Rio de Janeiro • Entrega 30min"
               price="R$ 18,50"
@@ -229,7 +223,6 @@ export default function Home() {
             />
             <AdCard
               img="/images/vitrine-2.jpg"
-              fallback="/images/placeholders/vitrine2.jpg"
               title="Manicure & Pedicure"
               subtitle="Centro, Rio de Janeiro"
               price="R$ 35,00"
@@ -237,7 +230,6 @@ export default function Home() {
             />
             <AdCard
               img="/images/vitrine-3.jpg"
-              fallback="/images/placeholders/vitrine3.jpg"
               title="Açaí Premium c/ Frutas"
               subtitle="Copacabana, RJ"
               price="R$ 15,50"
@@ -256,7 +248,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Planos (FREE / LITE / PRO / BUSINESS) */}
+      {/* Planos */}
       <section id="planos" className="py-16">
         <div className="container mx-auto max-w-6xl px-6">
           <h2 className="text-center text-3xl font-bold">Planos</h2>
@@ -264,7 +256,7 @@ export default function Home() {
             Do primeiro anúncio ao catálogo da sua loja
           </p>
 
-          <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             <PlanCard
               title="FREE"
               price="R$ 0"
@@ -339,7 +331,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* FAQ – itens completos como no Figma */}
+      {/* FAQ */}
       <section id="faq" className="py-14">
         <div className="container mx-auto max-w-5xl px-6">
           <h2 className="text-2xl font-semibold">Perguntas Frequentes</h2>
@@ -356,7 +348,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Footer enxuto com links */}
+      {/* Footer */}
       <footer className="border-t border-white/10 py-10 text-sm text-zinc-400">
         <div className="container mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6">
           <span>© 2025 Qwip</span>
@@ -371,9 +363,7 @@ export default function Home() {
   );
 }
 
-/* --------------------------------- */
-/* Componentes pequenos (sem libs)   */
-/* --------------------------------- */
+/* ---------- Componentes ---------- */
 
 function FeatureCard({
   icon,
@@ -420,7 +410,6 @@ function HowCard({
 
 function AdCard({
   img,
-  fallback,
   title,
   subtitle,
   price,
@@ -428,7 +417,6 @@ function AdCard({
   sideBadge,
 }: {
   img: string;
-  fallback: string;
   title: string;
   subtitle: string;
   price: string;
@@ -438,13 +426,13 @@ function AdCard({
   return (
     <div className="rounded-2xl border border-white/10 bg-card p-4">
       <div className="relative overflow-hidden rounded-lg">
-        <img
+        <Image
           src={img}
           alt={title}
+          width={1200}
+          height={650}
           className="h-56 w-full object-cover"
-          onError={(e) => {
-            (e.target as HTMLImageElement).src = fallback;
-          }}
+          sizes="(min-width: 1024px) 360px, 100vw"
         />
         {topBadge ? (
           <div className="absolute right-2 top-2 rounded-md bg-amber-400 px-2 py-0.5 text-[11px] font-semibold text-zinc-900">
