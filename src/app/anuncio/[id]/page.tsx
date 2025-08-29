@@ -1,5 +1,4 @@
-// src/app/anuncio/[id]/page.tsx
-import Link from "next/link";
+
 
 type ParamsObj = { id: string };
 type Params = ParamsObj | Promise<ParamsObj>;
