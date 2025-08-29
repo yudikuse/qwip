@@ -1,154 +1,163 @@
-/* src/app/globals.css */
+// src/app/page.tsx
+import Link from "next/link";
 
-/* Tailwind directives */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+export default function Home() {
+  return (
+    <main className="min-h-screen">
+      {/* HERO */}
+      <section className="relative">
+        <div className="absolute inset-0 -z-10">
+          <div
+            className="pointer-events-none absolute inset-0 opacity-10"
+            style={{
+              background:
+                "radial-gradient(60% 50% at 50% 0%, rgba(32,209,119,0.20) 0%, rgba(32,209,119,0.00) 60%), radial-gradient(40% 40% at 80% 20%, rgba(255,200,87,0.18) 0%, rgba(255,200,87,0.00) 60%)",
+            }}
+          />
+        </div>
 
-/* Fonte */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        <div className="mx-auto max-w-7xl px-4 py-20 md:px-6 md:py-28">
+          <div className="chip border border-border/60 bg-muted/40 text-[12px] md:text-xs">
+            Venda hoje pelo WhatsApp • link expira por tempo
+          </div>
 
-/* Tema (tokens do Figma) */
-:root {
-  --font-size: 14px;
+          <h1 className="hero-title mt-5 tracking-tight">
+            Anúncios rápidos que{" "}
+            <span className="whitespace-nowrap text-primary">viram conversas</span>
+            <br className="hidden sm:block" />
+            no WhatsApp
+          </h1>
 
-  --background: #0F1115;
-  --foreground: #ffffff;
+          <p className="mt-4 max-w-2xl text-base text-muted-foreground md:text-lg">
+            Crie um link em 30s, compartilhe e receba leads. Sem cadastro demorado,
+            sem complicação. Boost opcional para aparecer primeiro.
+          </p>
 
-  --card: #161a22;
-  --card-foreground: #ffffff;
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <Link href="/criar" className="btn">
+              Criar anúncio grátis
+            </Link>
+            <Link href="/#planos" className="btn-secondary border border-border/60">
+              Ver planos
+            </Link>
+          </div>
 
-  --popover: #161a22;
-  --popover-foreground: #ffffff;
+          <div className="mt-10 flex flex-wrap gap-4 text-sm text-muted-foreground">
+            <span className="inline-flex items-center gap-2">
+              <span className="inline-block h-2 w-2 rounded-full bg-primary" />
+              Link expira em até 72h
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span className="inline-block h-2 w-2 rounded-full bg-accent" />
+              Vitrine por cidade/bairro
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span className="inline-block h-2 w-2 rounded-full bg-zinc-500" />
+              Sem taxas sobre a venda
+            </span>
+          </div>
+        </div>
+      </section>
 
-  --primary: #20D177;               /* Verde Qwip */
-  --primary-foreground: #0F1115;
+      {/* FEATURES */}
+      <section className="mx-auto max-w-7xl px-4 pb-10 md:px-6 md:pb-16">
+        <div className="grid gap-4 md:grid-cols-4">
+          {[
+            { t: "Crie em 30s", d: "Título, preço, fotos e pronto. Link pronto para compartilhar." },
+            { t: "Link que expira", d: "Controle de urgência: 24–72h ou por estoque." },
+            { t: "Vitrine local", d: "Compradores por cidade/bairro primeiro." },
+            { t: "Boost opcional", d: "Pague para subir no topo quando precisar vender rápido." },
+          ].map((f, i) => (
+            <div key={i} className="card p-5">
+              <div className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-secondary/70">
+                <div className="h-3 w-3 rounded-[2px] bg-primary" />
+              </div>
+              <h3 className="text-base font-semibold">{f.t}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{f.d}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
-  --secondary: #2a3441;
-  --secondary-foreground: #ffffff;
+      {/* PLANOS RESUMO */}
+      <section id="planos" className="mx-auto max-w-7xl px-4 py-8 md:px-6 md:py-14">
+        <div className="grid gap-4 md:grid-cols-4">
+          {[
+            { nome: "FREE", preco: "R$ 0", desc: "Anúncios básicos com selo opcional." },
+            { nome: "LITE", preco: "R$ 49,90/mês", desc: "Mais destaque e métricas simples." },
+            { nome: "PRO", preco: "R$ 99,90/mês", desc: "Vitrine priorizada e automações." },
+            { nome: "BUSINESS", preco: "R$ 199,90/mês", desc: "Multi-loja, times e relatórios." },
+          ].map((p, i) => (
+            <div key={i} className="card p-5">
+              <div className="text-xs text-muted-foreground">{p.nome}</div>
+              <div className="mt-1 text-xl font-bold tracking-tight">{p.preco}</div>
+              <p className="mt-2 text-sm text-muted-foreground">{p.desc}</p>
+              <Link href={`/dashboard/${p.nome.toLowerCase()}`} className="btn mt-4 w-full">
+                Acessar {p.nome}
+              </Link>
+            </div>
+          ))}
+        </div>
+      </section>
 
-  --muted: #2a3441;
-  --muted-foreground: #9ca3af;
+      {/* DEPOIMENTOS */}
+      <section className="mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-12">
+        <h2 className="text-2xl font-semibold tracking-tight">Quem vendeu com o Qwip</h2>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          {[
+            { nome: "Carla • Brechó Zona Sul", txt: "Postei às 10h e às 15h já tinha 12 conversas. Vendi 3 peças no mesmo dia." },
+            { nome: "Diego • Auto Peças Centro", txt: "O boost valeu muito. Fiquei no topo e acabou o estoque rápido." },
+            { nome: "Nayara • Decor São José", txt: "Gostei do link expirar. Cria urgência e me livra de ficar respondendo depois." },
+          ].map((r, i) => (
+            <div key={i} className="card p-5">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary/70 to-accent/70" />
+                <div className="text-sm font-medium">{r.nome}</div>
+              </div>
+              <p className="mt-3 text-sm text-muted-foreground leading-6">“{r.txt}”</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
-  --accent: #FFC857;                /* Amarelo dos badges */
-  --accent-foreground: #0F1115;
+      {/* FAQ */}
+      <section className="mx-auto max-w-5xl px-4 pb-16 md:px-6">
+        <h2 className="text-2xl font-semibold tracking-tight">Perguntas frequentes</h2>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          {[
+            { q: "O Qwip cobra taxa sobre a venda?", a: "Não. O Qwip gera leads e conversas no seu WhatsApp. Você fecha a venda direto." },
+            { q: "Por quanto tempo o link vale?", a: "Você escolhe: 24, 48 ou 72 horas. Também dá para encerrar por estoque." },
+            { q: "O que é o Boost?", a: "Um impulso pago para seu anúncio aparecer primeiro nas vitrines locais por um período." },
+            { q: "Consigo medir resultados?", a: "Sim. Contamos visualizações, cliques, conversas iniciadas e origem (orgânico/boost)." },
+          ].map((f, i) => (
+            <details key={i} className="card group p-4 open:ring-1 open:ring-primary/20">
+              <summary className="cursor-pointer list-none text-sm font-semibold">
+                {f.q}
+              </summary>
+              <p className="mt-2 text-sm text-muted-foreground">{f.a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
 
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
-
-  --border: rgba(255,255,255,0.10);
-  --input: transparent;
-  --input-background: #1f2937;
-  --switch-background: #374151;
-
-  --ring: #20D177;
-
-  --radius: 0.625rem;               /* ~10px */
-
-  --sidebar: #161a22;
-  --sidebar-foreground: #ffffff;
-  --sidebar-primary: #20D177;
-  --sidebar-primary-foreground: #0F1115;
-  --sidebar-accent: #2a3441;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgba(255,255,255,0.10);
-  --sidebar-ring: #20D177;
+      {/* FOOTER */}
+      <footer className="border-t border-border/60">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-6 text-sm text-muted-foreground md:flex-row md:px-6">
+          <div>© {new Date().getFullYear()} Qwip</div>
+          <nav className="flex items-center gap-5">
+            <Link href="/termos" className="hover:text-foreground">Termos</Link>
+            <Link href="/privacidade" className="hover:text-foreground">Privacidade</Link>
+            <a
+              href="https://wa.me/5500000000000"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground"
+            >
+              Fale no WhatsApp
+            </a>
+          </nav>
+        </div>
+      </footer>
+    </main>
+  );
 }
-
-.dark {
-  --background: #0F1115;
-  --foreground: #ffffff;
-
-  --card: #161a22;
-  --card-foreground: #ffffff;
-
-  --popover: #161a22;
-  --popover-foreground: #ffffff;
-
-  --primary: #20D177;
-  --primary-foreground: #0F1115;
-
-  --secondary: #2a3441;
-  --secondary-foreground: #ffffff;
-
-  --muted: #2a3441;
-  --muted-foreground: #9ca3af;
-
-  --accent: #FFC857;
-  --accent-foreground: #0F1115;
-
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
-
-  --border: rgba(255,255,255,0.10);
-  --input: #1f2937;
-
-  --ring: #20D177;
-}
-
-/* Base */
-@layer base {
-  /* REMOVIDO: outline-ring/50 (não existe). Mantemos só a cor da borda global. */
-  * { @apply border-border; }
-
-  html { font-size: var(--font-size); }
-
-  body {
-    @apply bg-background text-foreground;
-    font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    min-height: 100vh;
-  }
-}
-
-/* Componentes utilitários usados no layout */
-@layer components {
-  /* Botão padrão da marca (CTA verde) */
-  .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 h-11
-           font-semibold transition shadow-soft
-           bg-primary text-primary-foreground hover:opacity-95
-           focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0
-           active:shadow-glow;
-  }
-
-  /* Botão secundário (cinza escuro) */
-  .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 h-11
-           font-semibold transition
-           bg-secondary text-secondary-foreground hover:opacity-95
-           focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0;
-  }
-
-  /* Chip/badge arredondado */
-  .chip {
-    @apply inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium
-           bg-muted text-muted-foreground border border-border;
-  }
-
-  /* Cartão padrão (seções, reviews etc) */
-  .card {
-    @apply rounded-2xl bg-card text-foreground border border-border
-           shadow-[0_0_1px_rgba(255,255,255,0.06)];
-  }
-
-  /* Título super grande do herói */
-  .hero-title {
-    font-weight: 800;
-    line-height: 1.05;
-    letter-spacing: -0.02em;
-    font-size: clamp(2rem, 5vw, 3.5rem);
-  }
-}
-
-/* Sombras especiais (glow suave do CTA) */
-@layer utilities {
-  .shadow-soft { box-shadow: 0 0 20px rgba(32, 209, 119, 0.15); }
-  .shadow-glow { box-shadow: 0 0 24px rgba(32, 209, 119, 0.28); }
-}
-
-/* Animação opcional usada em alguns detalhes de fundo */
-@keyframes gradient-x {
-  0%,100% { transform: translateX(0%); }
-  50% { transform: translateX(-100%); }
-}
-.animate-gradient-x { animation: gradient-x 15s ease infinite; }
