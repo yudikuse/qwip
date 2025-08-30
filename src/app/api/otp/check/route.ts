@@ -1,10 +1,3 @@
-export const runtime = 'nodejs'; // <- adicione esta linha
-import { NextResponse } from 'next/server';
-import twilio from 'twilio';
-
-// ... resto do código
-
-
 import { NextResponse } from 'next/server';
 import twilio from 'twilio';
 
@@ -14,9 +7,14 @@ const serviceSid = process.env.TWILIO_VERIFY_SID!;
 export async function POST(req: Request) {
   try {
     const { to, code } = await req.json();
-    const c = await client.verify.v2.services(serviceSid).verificationChecks.create({ to, code });
-    return NextResponse.json({ status: c.status, valid: c.valid });
+    if (!to || !code) return NextResponse.json({ error: 'to and code are required' }, { status: 400 });
+
+    const c = await client.verify.v2
+      .services(serviceSid)
+      .verificationChecks.create({ to, code });
+
+    return NextResponse.json({ status: c.status, valid: c.valid }); // valid = true/false
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? 'error' }, { status: 400 });
+    return NextResponse.json({ error: err.message ?? 'error' }, { status: 400 });
   }
 }
