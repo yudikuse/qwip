@@ -2,10 +2,18 @@
 
 import { useState } from 'react';
 
-type ApiResult =
-  | { status: string } // start: { status: "pending" }
-  | { status: string; valid: boolean }; // check: { status, valid }
+// ===== Tipos seguros p/ API =====
+type StartOk = { status: string };                // ex: { status: 'pending' }
+type StartErr = { error?: string };
 
+type CheckOk = { status: string; valid: boolean };// ex: { status: 'approved', valid: true }
+type CheckErr = { error?: string };
+
+function isErrorWithMessage(x: unknown): x is { message: string } {
+  return typeof x === 'object' && x !== null && 'message' in x && typeof (x as any).message === 'string';
+}
+
+// ===== Helpers de telefone =====
 function onlyDigits(s: string) {
   return s.replace(/\D/g, '');
 }
@@ -65,15 +73,16 @@ export default function VerifyPage() {
         body: JSON.stringify({ to }),
       });
 
-      const data: ApiResult | any = await r.json();
+      const data = (await r.json()) as StartOk | StartErr;
+
       if (r.ok) {
         setSent(true);
         setMsg('Código enviado! Confira seu WhatsApp (ou SMS se estiver temporário).');
       } else {
-        setMsg(data?.error ?? 'Falhou ao enviar o código.');
+        setMsg((data as StartErr)?.error ?? 'Falhou ao enviar o código.');
       }
-    } catch (e: any) {
-      setMsg(e?.message ?? 'Erro inesperado.');
+    } catch (e: unknown) {
+      setMsg(isErrorWithMessage(e) ? e.message : 'Erro inesperado.');
     } finally {
       setSending(false);
     }
@@ -91,14 +100,19 @@ export default function VerifyPage() {
         body: JSON.stringify({ to, code }),
       });
 
-      const data: any = await r.json();
-      if (r.ok && data?.valid) {
-        setMsg('✅ Verificado com sucesso!');
+      const data = (await r.json()) as CheckOk | CheckErr;
+
+      if (r.ok && 'valid' in data && typeof data.valid === 'boolean') {
+        if (data.valid) {
+          setMsg('✅ Verificado com sucesso!');
+        } else {
+          setMsg('Código inválido. Tente novamente.');
+        }
       } else {
-        setMsg('Código inválido. Tente novamente.');
+        setMsg((data as CheckErr)?.error ?? 'Falha ao verificar o código.');
       }
-    } catch (e: any) {
-      setMsg(e?.message ?? 'Erro inesperado.');
+    } catch (e: unknown) {
+      setMsg(isErrorWithMessage(e) ? e.message : 'Erro inesperado.');
     } finally {
       setChecking(false);
     }
