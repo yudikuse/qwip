@@ -1,10 +1,3 @@
-export const runtime = 'nodejs'; // <- adicione esta linha
-import { NextResponse } from 'next/server';
-import twilio from 'twilio';
-
-// ... resto do código
-
-
 import { NextResponse } from 'next/server';
 import twilio from 'twilio';
 
@@ -13,10 +6,15 @@ const serviceSid = process.env.TWILIO_VERIFY_SID!;
 
 export async function POST(req: Request) {
   try {
-    const { to, channel = 'sms' } = await req.json(); // to em E.164: +55DDDNUMERO
-    const v = await client.verify.v2.services(serviceSid).verifications.create({ to, channel });
-    return NextResponse.json({ status: v.status });
+    const { to } = await req.json(); // to = "+55DDDNÚMERO"
+    if (!to) return NextResponse.json({ error: 'to is required' }, { status: 400 });
+
+    const v = await client.verify.v2
+      .services(serviceSid)
+      .verifications.create({ to, channel: 'whatsapp', locale: 'pt' });
+
+    return NextResponse.json({ status: v.status }); // "pending"
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? 'error' }, { status: 400 });
+    return NextResponse.json({ error: err.message ?? 'error' }, { status: 400 });
   }
 }
