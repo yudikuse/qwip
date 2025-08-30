@@ -1,3 +1,10 @@
+export const runtime = 'nodejs'; // <- adicione esta linha
+import { NextResponse } from 'next/server';
+import twilio from 'twilio';
+
+// ... resto do código
+
+
 import { NextResponse } from 'next/server';
 import twilio from 'twilio';
 
