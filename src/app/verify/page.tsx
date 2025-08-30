@@ -9,8 +9,12 @@ type StartErr = { error?: string };
 type CheckOk = { status: string; valid: boolean };// ex: { status: 'approved', valid: true }
 type CheckErr = { error?: string };
 
+// ===== Type guards sem `any` =====
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === 'object' && x !== null;
+}
 function isErrorWithMessage(x: unknown): x is { message: string } {
-  return typeof x === 'object' && x !== null && 'message' in x && typeof (x as any).message === 'string';
+  return isRecord(x) && typeof x.message === 'string';
 }
 
 // ===== Helpers de telefone =====
