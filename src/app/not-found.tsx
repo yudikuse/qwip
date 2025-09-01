@@ -1,19 +1,25 @@
-import Link from "next/link";
+import Link from 'next/link';
 
 export default function NotFound() {
   return (
-    <main className="min-h-[60vh] flex items-center justify-center px-4">
-      <div className="max-w-xl text-center">
-        <h1 className="text-3xl font-bold mb-2">Página não encontrada</h1>
-        <p className="text-gray-600 mb-6">
-          A página que você tentou acessar não existe ou foi movida.
-        </p>
+    <main className="mx-auto max-w-lg px-4 py-24 text-center">
+      <h1 className="mb-3 text-3xl font-semibold">Página não encontrada</h1>
+      <p className="mb-8 text-neutral-400">
+        O link pode estar incorreto ou o conteúdo não existe mais.
+      </p>
+      <div className="flex items-center justify-center gap-3">
         <Link
           href="/"
-          className="inline-block rounded-md border px-4 py-2 hover:bg-gray-50"
+          className="rounded-lg border border-neutral-700 px-4 py-2 hover:bg-neutral-800"
         >
-          ← Voltar para a Home
+          Ir para a Home
         </Link>
+        <a
+          href="mailto:suporte@qwip.pro"
+          className="rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-500"
+        >
+          Falar com o suporte
+        </a>
       </div>
     </main>
   );
