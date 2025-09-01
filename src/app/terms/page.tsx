@@ -1,154 +1,136 @@
-'use client';
+// src/app/terms/page.tsx
+import Link from "next/link";
 
 export default function TermsPage() {
   return (
-    <main className="min-h-screen bg-neutral-900 text-neutral-100">
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <header className="mb-8">
-          <h1 className="text-3xl font-semibold">Termos de Uso — Qwip</h1>
-          <p className="text-neutral-300 mt-2">
-            Última atualização: 30/08/2025 • Versão: v1
-          </p>
-        </header>
+    <main className="min-h-screen bg-background text-foreground">
+      {/* Hero */}
+      <section className="relative">
+        <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(60%_60%_at_50%_-10%,rgba(32,209,119,0.25),transparent_60%)]" />
+        <div className="container mx-auto px-4 pt-16 pb-10">
+          <div className="max-w-3xl">
+            <div className="flex items-center gap-2 text-sm text-zinc-400">
+              <Link href="/" className="hover:underline">Início</Link>
+              <span className="opacity-50">/</span>
+              <span>Termos de Uso</span>
+            </div>
 
-        <article className="prose prose-invert prose-neutral max-w-none">
-          <p>
-            Estes Termos de Uso (“<strong>Termos</strong>”) regulam o acesso e o uso da plataforma Qwip
-            (“<strong>Qwip</strong>”, “<strong>nós</strong>” ou “<strong>nosso</strong>”). Ao utilizar o Qwip, você
-            (“<strong>Usuário</strong>” ou “<strong>você</strong>”) concorda com as condições abaixo. Se não concordar,
-            não utilize a plataforma.
-          </p>
+            <h1 className="mt-4 text-3xl md:text-4xl font-semibold tracking-tight">
+              Termos de Uso <span className="text-[var(--color-primary)]">Qwip</span>
+            </h1>
+            <p className="mt-3 text-zinc-400">
+              Leia atentamente. Ao utilizar o Qwip, você concorda com estes termos.
+            </p>
 
-          <h2>1. Objeto do Serviço</h2>
-          <p>
-            O Qwip oferece recursos para criação, gestão e divulgação de anúncios por meio de links
-            compartilháveis (inclusive via WhatsApp), bem como funcionalidades auxiliares de validação
-            de contato, antifraude e monitoramento básico.
-          </p>
+            <div className="mt-4 inline-flex items-center gap-2 text-xs text-zinc-400">
+              <span className="inline-block h-2 w-2 rounded-full bg-[var(--color-primary)]" />
+              Última atualização: 30/08/2025
+            </div>
+          </div>
+        </div>
+      </section>
 
-          <h2>2. Elegibilidade e Cadastro</h2>
-          <ul>
-            <li>Você declara ter pelo menos 18 anos ou ser legalmente capaz conforme a legislação aplicável.</li>
-            <li>
-              Para certos recursos, poderemos solicitar validação do seu número de celular/WhatsApp
-              via envio de código (OTP).
-            </li>
-            <li>
-              Você é responsável por todas as atividades realizadas a partir da sua conta e/ou número
-              verificado.
-            </li>
-          </ul>
+      {/* Conteúdo */}
+      <section className="container mx-auto px-4 pb-24">
+        <div className="mx-auto max-w-3xl space-y-6">
+          <article className="rounded-xl border border-border bg-card p-6 md:p-8 shadow-lg/10">
+            <h2 className="text-xl font-semibold">1. Sobre o Qwip</h2>
+            <p className="mt-3 text-zinc-300">
+              O Qwip é uma plataforma para criação de anúncios e vitrine com
+              compartilhamento e verificação via WhatsApp. Prestamos serviços de
+              disponibilização de interface, integração e hospedagem do conteúdo
+              criado por você (“Usuário”).
+            </p>
+          </article>
 
-          <h2>3. Verificação via WhatsApp (OTP)</h2>
-          <ul>
-            <li>
-              O Qwip pode enviar um código de verificação para o número informado, com o objetivo de
-              confirmar a titularidade e reduzir fraude/spam.
-            </li>
-            <li>
-              A não conclusão da verificação pode limitar ou impedir o uso de certos recursos do Qwip.
-            </li>
-          </ul>
+          <article className="rounded-xl border border-border bg-card p-6 md:p-8 shadow-lg/10">
+            <h3 className="text-lg font-semibold">2. Cadastro e Verificação</h3>
+            <ul className="mt-3 space-y-2 text-zinc-300">
+              <li>• O uso pode exigir verificação do número via WhatsApp (OTP).</li>
+              <li>• Você se responsabiliza pela veracidade dos dados informados.</li>
+              <li>• Medidas antifraude podem ser aplicadas para proteger a plataforma.</li>
+            </ul>
+          </article>
 
-          <h2>4. Uso Aceitável</h2>
-          <ul>
-            <li>É proibido usar o Qwip para atividades ilícitas, enganosas, abusivas ou que infrinjam direitos de terceiros.</li>
-            <li>É vedado tentar burlar mecanismos de segurança, realizar engenharia reversa ou sobrecarregar a infraestrutura.</li>
-            <li>Podemos suspender, limitar ou encerrar contas que violem estes Termos ou a lei.</li>
-          </ul>
+          <article className="rounded-xl border border-border bg-card p-6 md:p-8 shadow-lg/10">
+            <h3 className="text-lg font-semibold">3. Uso Aceitável</h3>
+            <ul className="mt-3 space-y-2 text-zinc-300">
+              <li>• É proibido publicar conteúdo ilegal, ofensivo, fraudulento ou que viole direitos de terceiros.</li>
+              <li>• É vedado burlar sistemas de segurança ou explorar falhas.</li>
+              <li>• Podemos remover conteúdo e/ou suspender contas em caso de violação.</li>
+            </ul>
+          </article>
 
-          <h2>5. Conteúdo do Usuário</h2>
-          <ul>
-            <li>Você é o único responsável pelo conteúdo dos anúncios/links que criar e compartilhar.</li>
-            <li>
-              Você declara possuir todos os direitos necessários sobre textos, imagens e demais materiais publicados,
-              isentando o Qwip de quaisquer reclamações de terceiros.
-            </li>
-            <li>
-              Podemos remover conteúdos que violem estes Termos, leis ou direitos de terceiros.
-            </li>
-          </ul>
+          <article className="rounded-xl border border-border bg-card p-6 md:p-8 shadow-lg/10">
+            <h3 className="text-lg font-semibold">4. Propriedade Intelectual</h3>
+            <p className="mt-3 text-zinc-300">
+              A marca, logo, layout, software e elementos da interface do Qwip
+              pertencem ao Qwip ou a seus licenciantes. Você mantém a titularidade
+              do conteúdo que criar, concedendo licença necessária para operação e
+              exibição na plataforma.
+            </p>
+          </article>
 
-          <h2>6. Planos, Pagamentos e Reembolsos (se aplicável)</h2>
-          <p>
-            Caso existam planos pagos, as condições (preço, ciclo, limites, reembolso) serão exibidas durante a contratação.
-            Tributos e taxas poderão ser adicionados conforme a legislação aplicável. Podemos alterar preços e funcionalidades,
-            comunicando com antecedência razoável quando exigido.
-          </p>
+          <article className="rounded-xl border border-border bg-card p-6 md:p-8 shadow-lg/10">
+            <h3 className="text-lg font-semibold">5. Planos, Pagamentos e Reembolsos</h3>
+            <ul className="mt-3 space-y-2 text-zinc-300">
+              <li>• Recursos podem variar conforme o plano contratado.</li>
+              <li>• Cobranças recorrentes seguem a periodicidade do plano.</li>
+              <li>• Tributos e taxas de terceiros (ex.: WhatsApp/Twilio) podem se aplicar.</li>
+              <li>• Reembolsos seguem a legislação aplicável e políticas vigentes.</li>
+            </ul>
+          </article>
 
-          <h2>7. Suporte, Disponibilidade e SLA</h2>
-          <p>
-            Envidamos esforços para manter o Qwip disponível de forma contínua, mas não garantimos operação
-            ininterrupta. Eventuais paradas para manutenção, eventos de força maior ou falhas de terceiros podem ocorrer.
-          </p>
+          <article className="rounded-xl border border-border bg-card p-6 md:p-8 shadow-lg/10">
+            <h3 className="text-lg font-semibold">6. Responsabilidades</h3>
+            <ul className="mt-3 space-y-2 text-zinc-300">
+              <li>• Você é responsável pelo conteúdo dos seus anúncios e comunicações.</li>
+              <li>• O Qwip fornece a infraestrutura “como está”, sem garantias de disponibilidade ininterrupta.</li>
+              <li>• Não nos responsabilizamos por indisponibilidade de serviços de terceiros.</li>
+            </ul>
+          </article>
 
-          <h2>8. Propriedade Intelectual</h2>
-          <p>
-            Qwip, suas marcas, layout, código-fonte e componentes visuais são de nossa titularidade
-            ou licenciados. Você recebe uma licença limitada, não exclusiva e intransferível para uso do serviço,
-            conforme estes Termos. É proibido copiar, modificar ou explorar comercialmente partes do Qwip sem autorização.
-          </p>
+          <article className="rounded-xl border border-border bg-card p-6 md:p-8 shadow-lg/10">
+            <h3 className="text-lg font-semibold">7. Privacidade e Dados</h3>
+            <p className="mt-3 text-zinc-300">
+              Tratamos dados pessoais conforme a <Link href="/privacy" className="text-[var(--color-primary)] underline underline-offset-4">Política de Privacidade</Link> e a <Link href="/cookies" className="text-[var(--color-primary)] underline underline-offset-4">Política de Cookies</Link>, em linha com a LGPD.
+            </p>
+          </article>
 
-          <h2>9. Privacidade e Proteção de Dados (LGPD)</h2>
-          <p>
-            O tratamento de dados pessoais no Qwip é regido pelo nosso <a href="/privacy">Aviso de Privacidade</a>.
-            Em resumo: coletamos somente o necessário para funcionamento (ex.: verificação via WhatsApp),
-            adotamos medidas de segurança e utilizamos operadores como Twilio (envio de mensagens) e Vercel (hospedagem)
-            dentro de contratos adequados. Direitos do titular (acesso, correção, exclusão, revogação de consentimento,
-            etc.) podem ser exercidos pelo canal indicado na política.
-          </p>
+          <article className="rounded-xl border border-border bg-card p-6 md:p-8 shadow-lg/10">
+            <h3 className="text-lg font-semibold">8. Suspensão e Encerramento</h3>
+            <p className="mt-3 text-zinc-300">
+              Podemos suspender ou encerrar contas por violação destes termos,
+              risco jurídico, ordem de autoridade competente ou motivos técnicos
+              relevantes.
+            </p>
+          </article>
 
-          <h2>10. Responsabilidade</h2>
-          <ul>
-            <li>
-              Na extensão permitida pela lei, o Qwip não responde por danos indiretos, lucros cessantes, perda de dados,
-              interrupções, indisponibilidades ou conteúdos de terceiros.
-            </li>
-            <li>
-              O Qwip não se responsabiliza por negociações entre usuários e terceiros decorrentes dos anúncios/links.
-            </li>
-            <li>
-              Em qualquer hipótese, a responsabilidade total do Qwip se limitará ao montante efetivamente pago pelo usuário
-              nos 12 (doze) meses anteriores ao evento (se aplicável).
-            </li>
-          </ul>
+          <article className="rounded-xl border border-border bg-card p-6 md:p-8 shadow-lg/10">
+            <h3 className="text-lg font-semibold">9. Alterações</h3>
+            <p className="mt-3 text-zinc-300">
+              Estes termos podem ser atualizados com aviso prévio razoável quando
+              exigido pela legislação. O uso contínuo após alterações representa
+              concordância com a versão vigente.
+            </p>
+          </article>
 
-          <h2>11. Medidas Antifraude e Suspensão</h2>
-          <p>
-            Podemos empregar sistemas automáticos e revisões manuais para detectar abuso, spam e uso indevido.
-            Em caso de suspeita, podemos solicitar informações adicionais, limitar recursos, suspender ou encerrar o acesso.
-          </p>
-
-          <h2>12. Alterações dos Termos</h2>
-          <p>
-            Podemos atualizar estes Termos a qualquer momento. A versão vigente e a data de atualização constam no topo.
-            Mudanças relevantes poderão ser comunicadas por canais razoáveis (ex.: e-mail, aviso no site).
-            O uso contínuo após a publicação implica concordância.
-          </p>
-
-          <h2>13. Comunicações</h2>
-          <p>
-            Você concorda em receber comunicações operacionais relacionadas ao serviço por e-mail, WhatsApp ou dentro do Qwip.
-          </p>
-
-          <h2>14. Lei Aplicável e Foro</h2>
-          <p>
-            Estes Termos são regidos pelas leis do Brasil. Fica eleito o foro da comarca de São Paulo/SP, com renúncia
-            a qualquer outro, por mais privilegiado que seja, salvo disposições legais em contrário.
-          </p>
-
-          <h2>15. Contato</h2>
-          <p>
-            Dúvidas? Fale com nosso time ou com o DPO:{' '}
-            <a href="mailto:privacidade@qwip.pro">privacidade@qwip.pro</a>.
-          </p>
-
-          <hr />
-          <p className="text-xs text-neutral-400">
-            Este modelo é um ponto de partida e não constitui aconselhamento jurídico. Recomendamos revisão por um advogado.
-          </p>
-        </article>
-      </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-4">
+            <Link
+              href="/privacy"
+              className="inline-flex h-11 items-center justify-center rounded-xl px-5 font-medium bg-[var(--color-primary)] text-zinc-900 hover:opacity-90 transition"
+            >
+              Ver Política de Privacidade
+            </Link>
+            <Link
+              href="/"
+              className="text-sm text-zinc-400 hover:text-foreground transition underline underline-offset-4"
+            >
+              Voltar para a Home
+            </Link>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }
