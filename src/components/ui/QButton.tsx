@@ -1,3 +1,4 @@
+// src/components/ui/QButton.tsx
 "use client";
 
 import Link from "next/link";
@@ -19,7 +20,7 @@ type QButtonProps = {
 };
 
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-2xl font-medium transition-shadow " +
+  "inline-flex items-center justify-center gap-2 rounded-2xl font-semibold transition-colors " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 " +
   "disabled:opacity-50 disabled:cursor-not-allowed";
 
@@ -31,9 +32,9 @@ const sizes: Record<Size, string> = {
 
 const variants: Record<Variant, string> = {
   solid:
-    "bg-emerald-500 text-black shadow-[0_8px_18px_rgba(16,185,129,.35)] hover:bg-emerald-400",
+    "bg-emerald-500 text-[#0F1115] hover:bg-emerald-400 shadow-[0_8px_18px_rgba(16,185,129,.35)]",
   outline:
-    "border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10",
+    "border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10",
   ghost: "text-emerald-300 hover:bg-emerald-500/10",
 };
 
@@ -48,6 +49,7 @@ export default function QButton({
   children,
 }: QButtonProps) {
   const cls = cn(base, sizes[size], variants[variant], className);
+
   const content = (
     <>
       {icon ? <span className="shrink-0">{icon}</span> : null}
