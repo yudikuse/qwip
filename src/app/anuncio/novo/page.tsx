@@ -2,8 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import GeoMap, { LatLng } from "@/components/GeoMap";
+import dynamic from "next/dynamic";
 
+// 1) Carrega o mapa SOMENTE no cliente (evita "window is not defined")
+const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
+
+// 2) Evita o Next tentar pré-renderizar esta página
+export const dynamic = "force-dynamic";
+
+type LatLng = { lat: number; lng: number };
 type Limits = { minRadius: number; maxRadius: number };
 const LIMITS: Limits = { minRadius: 1, maxRadius: 20 };
 
@@ -20,20 +27,25 @@ export default function NovoAnuncioPage() {
 
   const [radius, setRadius] = useState<number>(5);
 
-  // Geolocalização: tenta pegar, se negar força CEP
+  // Geolocalização: se negar, obriga CEP
   useEffect(() => {
-    if (!("geolocation" in navigator)) { setPermDenied(true); return; }
+    if (!("geolocation" in navigator)) {
+      setPermDenied(true);
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setPermDenied(false);
       },
-      () => { setPermDenied(true); },
+      () => {
+        setPermDenied(true);
+      },
       { enableHighAccuracy: false, timeout: 8000 }
     );
   }, []);
 
-  // Garante raio dentro do limite (sem depender de LIMITS no array)
+  // Clampa o raio 1x ao montar
   useEffect(() => {
     setRadius((r) => Math.min(LIMITS.maxRadius, Math.max(LIMITS.minRadius, r)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -171,6 +183,8 @@ export default function NovoAnuncioPage() {
 
           {/* MAPA + PRÉVIA */}
           <div className="space-y-4">
+            {/* GeoMap só é carregado no cliente por causa do dynamic + ssr:false */}
+            {/* @ts-expect-error - o componente é dinâmico e carrega no client */}
             <GeoMap
               center={coords ?? null}
               cep={coords ? undefined : cepDigits}
@@ -203,7 +217,7 @@ export default function NovoAnuncioPage() {
                 </div>
               </div>
 
-              {/* Próximo passo: prévia do link real do WhatsApp com o número verificado (OTP) */}
+              {/* depois conectamos a prévia do link real do WhatsApp com o número verificado */}
             </div>
           </div>
         </div>
