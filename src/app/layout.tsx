@@ -1,31 +1,30 @@
-import './globals.css';
-import type { Metadata } from 'next';
-import CookieBanner from '@/components/CookieBanner';
-import ConsentScripts from '@/components/ConsentScripts';
-import AppFooter from '@/components/AppFooter';
+'use client';
 
-export const metadata: Metadata = {
-  title: 'Qwip — Venda HOJE',
-  description: 'Crie seu anúncio, compartilhe o link e receba no WhatsApp.',
-  metadataBase: new URL('https://qwip.pro'),
-};
+import Link from 'next/link';
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function NotFound() {
   return (
-    <html lang="pt-BR" className="dark">
-      <body className="bg-neutral-950 text-neutral-100 antialiased">
-        {/* Scripts que respeitam consentimento */}
-        <ConsentScripts />
+    <main className="mx-auto max-w-lg px-4 py-24 text-center">
+      <h1 className="mb-3 text-3xl font-semibold">Página não encontrada</h1>
+      <p className="mb-8 text-neutral-400">
+        O link pode estar incorreto ou o conteúdo não existe mais.
+      </p>
 
-        {/* Banner de cookies */}
-        <CookieBanner />
+      <div className="flex items-center justify-center gap-3">
+        <Link
+          href="/"
+          className="rounded-lg border border-neutral-700 px-4 py-2 hover:bg-neutral-800"
+        >
+          Ir para a Home
+        </Link>
 
-        {/* Conteúdo */}
-        {children}
-
-        {/* Rodapé (client component) */}
-        <AppFooter />
-      </body>
-    </html>
+        <a
+          href="mailto:suporte@qwip.pro"
+          className="rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-500"
+        >
+          Falar com o suporte
+        </a>
+      </div>
+    </main>
   );
 }
