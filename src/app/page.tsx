@@ -1,6 +1,7 @@
 // src/app/page.tsx
 import Link from "next/link";
 import Image from "next/image";
+import QButton from "@/components/ui/QButton";
 
 export default function Home() {
   return (
@@ -30,23 +31,32 @@ export default function Home() {
               </h1>
 
               <p className="mt-6 max-w-xl text-zinc-400">
-                Publique em menos de 60 segundos. O anúncio expira
-                automaticamente, gerando urgência e mantendo a vitrine sempre
-                atual.
+                Publique em menos de 60 segundos. O anúncio expira automaticamente,
+                gerando urgência e mantendo a vitrine sempre atual.
               </p>
 
+              {/* Botões do hero (igual ao Figma) */}
               <div className="mt-8 flex flex-wrap gap-3">
-                <Link href="/anuncio/novo" className="btn-primary">
-                  <FlashIcon className="-ml-0.5 h-4 w-4" />
+                <QButton
+                  href="/anuncio/novo"
+                  variant="solid"
+                  size="lg"
+                  icon={<FlashIcon className="-ml-0.5 h-4 w-4" />}
+                >
                   Criar Anúncio Grátis
-                </Link>
+                </QButton>
 
-                <Link href="/vitrine" className="btn-ghost">
+                <QButton
+                  href="/vitrine"
+                  variant="outline"
+                  size="lg"
+                  icon={<EyeIcon className="-ml-0.5 h-4 w-4" />}
+                >
                   Ver Vitrine de Anúncios
-                </Link>
+                </QButton>
               </div>
 
-              {/* Benefits row */}
+              {/* Benefícios */}
               <ul className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-zinc-400">
                 <li className="inline-flex items-center gap-2">
                   <CheckDot className="h-3.5 w-3.5 text-emerald-400" />
@@ -67,11 +77,11 @@ export default function Home() {
               </ul>
             </div>
 
-            {/* Mockup Card (igual ao Figma) */}
+            {/* Mockup Card */}
             <div className="relative">
               <div className="rounded-2xl border border-white/10 bg-card p-5 shadow-2xl">
                 <div className="rounded-xl border border-white/10 bg-[#0B0E12] p-4">
-                  {/* Header da vitrine simulada */}
+                  {/* Header */}
                   <div className="mb-3 flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm text-zinc-300">
                       <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold">
@@ -86,7 +96,7 @@ export default function Home() {
                     </span>
                   </div>
 
-                  {/* Imagem do produto */}
+                  {/* Imagem */}
                   <div className="relative overflow-hidden rounded-lg">
                     <Image
                       src="/images/hero-card.jpg"
@@ -102,7 +112,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Info footer do card */}
+                  {/* Footer do card */}
                   <div className="mt-3">
                     <div className="flex items-end justify-between">
                       <div>
@@ -137,7 +147,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* bolinhas decorativas como no Figma */}
+              {/* bolinhas decorativas */}
               <div className="pointer-events-none absolute -right-4 -top-4 h-6 w-6 rounded-full bg-emerald-500/15"></div>
               <div className="pointer-events-none absolute -left-3 bottom-10 h-4 w-4 rounded-full bg-amber-400/20"></div>
             </div>
@@ -145,208 +155,23 @@ export default function Home() {
         </div>
       </section>
 
-      {/* “Perfeito para você” */}
-      <section className="py-16">
-        <div className="container mx-auto max-w-6xl px-6">
-          <h2 className="text-center text-3xl font-bold">Perfeito para você</h2>
-          <p className="mx-auto mt-2 max-w-2xl text-center text-zinc-400">
-            Não importa o que você venda, o QWIP funciona
-          </p>
-
-          <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            <FeatureCard
-              icon={<UsersIcon className="h-5 w-5" />}
-              title="Vendedores Autônomos"
-              desc="Roupas, cosméticos, artesanato. Venda no seu tempo."
-              hint="Ex.: roupas infantis, maquiagem, bijuterias."
-            />
-            <FeatureCard
-              icon={<BagIcon className="h-5 w-5" />}
-              title="Lojistas Locais"
-              desc="Promoções rápidas, liquidações, produtos sazonais."
-              hint="Ex.: açaí, farmácia, corte de cabelo."
-            />
-            <FeatureCard
-              icon={<HomeIcon className="h-5 w-5" />}
-              title="Vendas Pessoais"
-              desc="Usados, freelas e serviços pontuais."
-              hint="Ex.: móveis usados, aulas particulares, pet sitting."
-            />
-          </div>
-        </div>
-      </section>
+      {/* Perfeito para você */}
+      <SectionPerfeitoParaVoce />
 
       {/* Como funciona */}
-      <section id="como-funciona" className="py-10">
-        <div className="container mx-auto max-w-6xl px-6">
-          <h2 className="text-center text-3xl font-bold">Como funciona</h2>
-          <p className="mx-auto mt-2 max-w-2xl text-center text-zinc-400">
-            Em 3 passos simples, seu anúncio entra no ar com urgência real
-          </p>
+      <SectionComoFunciona />
 
-          <div className="mt-10 grid gap-6 sm:grid-cols-3">
-            <HowCard
-              icon={<UploadIcon className="h-5 w-5" />}
-              title="Crie seu anúncio em 60s"
-              desc="Foto, título, preço e cidade. Pronto."
-            />
-            <HowCard
-              icon={<ShareIcon className="h-5 w-5" />}
-              title="Compartilhe o link"
-              desc="Envie no WhatsApp, redes sociais e onde quiser."
-            />
-            <HowCard
-              icon={<WhatsIcon className="h-5 w-5" />}
-              title="Receba no WhatsApp"
-              desc="O comprador fala direto com você, sem intermediação."
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* Vitrine de Anúncios */}
-      <section id="vitrine" className="py-14">
-        <div className="container mx-auto max-w-6xl px-6">
-          <h2 className="text-center text-3xl font-bold">Vitrine de Anúncios</h2>
-          <p className="mx-auto mt-2 max-w-2xl text-center text-zinc-400">
-            Veja como ficam os anúncios reais no Qwip
-          </p>
-
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
-            <AdCard
-              img="/images/vitrine-1.jpg"
-              title="Marmita Caseira Completa"
-              subtitle="Centro, Rio de Janeiro • Entrega 30min"
-              price="R$ 18,50"
-              topBadge="Expira em 2d 12h"
-              sideBadge="Últimas 4"
-            />
-            <AdCard
-              img="/images/vitrine-2.jpg"
-              title="Manicure & Pedicure"
-              subtitle="Centro, Rio de Janeiro"
-              price="R$ 35,00"
-              topBadge="Expira hoje"
-            />
-            <AdCard
-              img="/images/vitrine-3.jpg"
-              title="Açaí Premium c/ Frutas"
-              subtitle="Copacabana, RJ"
-              price="R$ 15,50"
-              topBadge="Expira em 45min"
-            />
-          </div>
-
-          <div className="mt-6 flex justify-center">
-            <Link
-              href="/vitrine"
-              className="inline-flex items-center justify-center rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-zinc-200 hover:bg-white/5"
-            >
-              Ver todos os anúncios
-            </Link>
-          </div>
-        </div>
-      </section>
+      {/* Vitrine */}
+      <SectionVitrine />
 
       {/* Planos */}
-      <section id="planos" className="py-16">
-        <div className="container mx-auto max-w-6xl px-6">
-          <h2 className="text-center text-3xl font-bold">Planos</h2>
-          <p className="mx-auto mt-2 max-w-2xl text-center text-zinc-400">
-            Do primeiro anúncio ao catálogo da sua loja
-          </p>
-
-        <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <PlanCard
-              title="FREE"
-              price="R$ 0"
-              cta="Acessar FREE"
-              features={[
-                "1 anúncio ativo",
-                "3 fotos por anúncio",
-                "Expira em 24h",
-                "0 boosts/mês",
-                "Analytics básico",
-              ]}
-            />
-            <PlanCard
-              title="LITE"
-              price="R$ 49,90/mês"
-              highlight
-              cta="Acessar LITE"
-              features={[
-                "Até 100 anúncios/mês",
-                "8 fotos por anúncio",
-                "Expira em 48h",
-                "1 boost/mês",
-                "Vitrine com filtros",
-              ]}
-            />
-            <PlanCard
-              title="PRO"
-              price="R$ 99,90/mês"
-              cta="Acessar PRO"
-              features={[
-                "Anúncios ilimitados",
-                "Prioridade na vitrine",
-                "Expira em 72h",
-                "2 boosts/mês",
-                "Dashboard avançado",
-              ]}
-            />
-            <PlanCard
-              title="BUSINESS"
-              price="R$ 199,90/mês"
-              cta="Acessar BUSINESS"
-              features={[
-                "Equipe/multi-usuário",
-                "Boosts e destaque",
-                "Expira em 72h",
-                "Vitrine priorizada",
-                "Integrações avançadas",
-              ]}
-            />
-          </div>
-        </div>
-      </section>
+      <SectionPlanos />
 
       {/* Depoimentos */}
-      <section className="py-10">
-        <div className="container mx-auto max-w-6xl px-6">
-          <h2 className="text-2xl font-semibold">Quem vendeu com o Qwip</h2>
-          <div className="mt-6 grid gap-6 md:grid-cols-3">
-            <Testimonial
-              name="Carla • Brechó Zona Sul"
-              text="Postei às 10h e às 15h já tinha 12 conversas. Vendi 3 peças no mesmo dia."
-            />
-            <Testimonial
-              name="Diego • Auto Peças Centro"
-              text="O boost valeu muito. Fiquei no topo e acabou o estoque rápido."
-            />
-            <Testimonial
-              name="Nayara • Decor São José"
-              text="Gostei do link expirar. Cria urgência e me livra de ficar respondendo depois."
-            />
-          </div>
-        </div>
-      </section>
+      <SectionDepoimentos />
 
       {/* FAQ */}
-      <section id="faq" className="py-14">
-        <div className="container mx-auto max-w-5xl px-6">
-          <h2 className="text-2xl font-semibold">Perguntas Frequentes</h2>
-          <div className="mt-6 grid gap-3">
-            <Accordion q="Por que o anúncio expira automaticamente?" a="Para gerar urgência real e manter a vitrine sempre atualizada. Você pode renovar ou repostar." />
-            <Accordion q="O Qwip é seguro? Como funciona a moderação?" a="Conteúdos são revisados de forma automática e manual. Denúncias são avaliadas rapidamente." />
-            <Accordion q="Posso denunciar anúncios impróprios?" a="Sim. Cada anúncio tem opção de denúncia. Conteúdos fora das regras são removidos." />
-            <Accordion q="Preciso instalar aplicativo?" a="Não. É 100% web e o link é compartilhável. O contato acontece no seu WhatsApp." />
-            <Accordion q="Como o Qwip ganha dinheiro? Há taxas sobre vendas?" a="Não cobramos taxa por venda. Temos planos de assinatura e boosts opcionais." />
-            <Accordion q="Posso cancelar minha assinatura a qualquer momento?" a="Sim, sem fidelidade. Você controla tudo no Dashboard." />
-            <Accordion q="O que acontece se eu esquecer de renovar um anúncio importante?" a="O anúncio expira e sai da vitrine. Você pode repostar em segundos." />
-            <Accordion q="Funciona para qualquer tipo de produto/serviço?" a="Sim. Pequenos negócios locais, autônomos, freelas e vendas pessoais." />
-          </div>
-        </div>
-      </section>
+      <SectionFAQ />
 
       {/* Footer */}
       <footer className="border-t border-white/10 py-10 text-sm text-zinc-400">
@@ -363,7 +188,230 @@ export default function Home() {
   );
 }
 
-/* ---------- Componentes ---------- */
+/* ===== Seções reaproveitando os componentes já definidos abaixo ===== */
+
+function SectionPerfeitoParaVoce() {
+  return (
+    <section className="py-16">
+      <div className="container mx-auto max-w-6xl px-6">
+        <h2 className="text-center text-3xl font-bold">Perfeito para você</h2>
+        <p className="mx-auto mt-2 max-w-2xl text-center text-zinc-400">
+          Não importa o que você venda, o QWIP funciona
+        </p>
+
+        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <FeatureCard
+            icon={<UsersIcon className="h-5 w-5" />}
+            title="Vendedores Autônomos"
+            desc="Roupas, cosméticos, artesanato. Venda no seu tempo."
+            hint="Ex.: roupas infantis, maquiagem, bijuterias."
+          />
+          <FeatureCard
+            icon={<BagIcon className="h-5 w-5" />}
+            title="Lojistas Locais"
+            desc="Promoções rápidas, liquidações, produtos sazonais."
+            hint="Ex.: açaí, farmácia, corte de cabelo."
+          />
+          <FeatureCard
+            icon={<HomeIcon className="h-5 w-5" />}
+            title="Vendas Pessoais"
+            desc="Usados, freelas e serviços pontuais."
+            hint="Ex.: móveis usados, aulas particulares, pet sitting."
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SectionComoFunciona() {
+  return (
+    <section id="como-funciona" className="py-10">
+      <div className="container mx-auto max-w-6xl px-6">
+        <h2 className="text-center text-3xl font-bold">Como funciona</h2>
+        <p className="mx-auto mt-2 max-w-2xl text-center text-zinc-400">
+          Em 3 passos simples, seu anúncio entra no ar com urgência real
+        </p>
+
+        <div className="mt-10 grid gap-6 sm:grid-cols-3">
+          <HowCard
+            icon={<UploadIcon className="h-5 w-5" />}
+            title="Crie seu anúncio em 60s"
+            desc="Foto, título, preço e cidade. Pronto."
+          />
+          <HowCard
+            icon={<ShareIcon className="h-5 w-5" />}
+            title="Compartilhe o link"
+            desc="Envie no WhatsApp, redes sociais e onde quiser."
+          />
+          <HowCard
+            icon={<WhatsIcon className="h-5 w-5" />}
+            title="Receba no WhatsApp"
+            desc="O comprador fala direto com você, sem intermediação."
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SectionVitrine() {
+  return (
+    <section id="vitrine" className="py-14">
+      <div className="container mx-auto max-w-6xl px-6">
+        <h2 className="text-center text-3xl font-bold">Vitrine de Anúncios</h2>
+        <p className="mx-auto mt-2 max-w-2xl text-center text-zinc-400">
+          Veja como ficam os anúncios reais no Qwip
+        </p>
+
+        <div className="mt-10 grid gap-6 md:grid-cols-3">
+          <AdCard
+            img="/images/vitrine-1.jpg"
+            title="Marmita Caseira Completa"
+            subtitle="Centro, Rio de Janeiro • Entrega 30min"
+            price="R$ 18,50"
+            topBadge="Expira em 2d 12h"
+            sideBadge="Últimas 4"
+          />
+          <AdCard
+            img="/images/vitrine-2.jpg"
+            title="Manicure & Pedicure"
+            subtitle="Centro, Rio de Janeiro"
+            price="R$ 35,00"
+            topBadge="Expira hoje"
+          />
+          <AdCard
+            img="/images/vitrine-3.jpg"
+            title="Açaí Premium c/ Frutas"
+            subtitle="Copacabana, RJ"
+            price="R$ 15,50"
+            topBadge="Expira em 45min"
+          />
+        </div>
+
+        <div className="mt-6 flex justify-center">
+          <Link
+            href="/vitrine"
+            className="inline-flex items-center justify-center rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-zinc-200 hover:bg-white/5"
+          >
+            Ver todos os anúncios
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SectionPlanos() {
+  return (
+    <section id="planos" className="py-16">
+      <div className="container mx-auto max-w-6xl px-6">
+        <h2 className="text-center text-3xl font-bold">Planos</h2>
+        <p className="mx-auto mt-2 max-w-2xl text-center text-zinc-400">
+          Do primeiro anúncio ao catálogo da sua loja
+        </p>
+
+        <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <PlanCard
+            title="FREE"
+            price="R$ 0"
+            cta="Acessar FREE"
+            features={[
+              "1 anúncio ativo",
+              "3 fotos por anúncio",
+              "Expira em 24h",
+              "0 boosts/mês",
+              "Analytics básico",
+            ]}
+          />
+          <PlanCard
+            title="LITE"
+            price="R$ 49,90/mês"
+            highlight
+            cta="Acessar LITE"
+            features={[
+              "Até 100 anúncios/mês",
+              "8 fotos por anúncio",
+              "Expira em 48h",
+              "1 boost/mês",
+              "Vitrine com filtros",
+            ]}
+          />
+          <PlanCard
+            title="PRO"
+            price="R$ 99,90/mês"
+            cta="Acessar PRO"
+            features={[
+              "Anúncios ilimitados",
+              "Prioridade na vitrine",
+              "Expira em 72h",
+              "2 boosts/mês",
+              "Dashboard avançado",
+            ]}
+          />
+          <PlanCard
+            title="BUSINESS"
+            price="R$ 199,90/mês"
+            cta="Acessar BUSINESS"
+            features={[
+              "Equipe/multi-usuário",
+              "Boosts e destaque",
+              "Expira em 72h",
+              "Vitrine priorizada",
+              "Integrações avançadas",
+            ]}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SectionDepoimentos() {
+  return (
+    <section className="py-10">
+      <div className="container mx-auto max-w-6xl px-6">
+        <h2 className="text-2xl font-semibold">Quem vendeu com o Qwip</h2>
+        <div className="mt-6 grid gap-6 md:grid-cols-3">
+          <Testimonial
+            name="Carla • Brechó Zona Sul"
+            text="Postei às 10h e às 15h já tinha 12 conversas. Vendi 3 peças no mesmo dia."
+          />
+          <Testimonial
+            name="Diego • Auto Peças Centro"
+            text="O boost valeu muito. Fiquei no topo e acabou o estoque rápido."
+          />
+          <Testimonial
+            name="Nayara • Decor São José"
+            text="Gostei do link expirar. Cria urgência e me livra de ficar respondendo depois."
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SectionFAQ() {
+  return (
+    <section id="faq" className="py-14">
+      <div className="container mx-auto max-w-5xl px-6">
+        <h2 className="text-2xl font-semibold">Perguntas Frequentes</h2>
+        <div className="mt-6 grid gap-3">
+          <Accordion q="Por que o anúncio expira automaticamente?" a="Para gerar urgência real e manter a vitrine sempre atualizada. Você pode renovar ou repostar." />
+          <Accordion q="O Qwip é seguro? Como funciona a moderação?" a="Conteúdos são revisados de forma automática e manual. Denúncias são avaliadas rapidamente." />
+          <Accordion q="Posso denunciar anúncios impróprios?" a="Sim. Cada anúncio tem opção de denúncia. Conteúdos fora das regras são removidos." />
+          <Accordion q="Preciso instalar aplicativo?" a="Não. É 100% web e o link é compartilhável. O contato acontece no seu WhatsApp." />
+          <Accordion q="Como o Qwip ganha dinheiro? Há taxas sobre vendas?" a="Não cobramos taxa por venda. Temos planos de assinatura e boosts opcionais." />
+          <Accordion q="Posso cancelar minha assinatura a qualquer momento?" a="Sim, sem fidelidade. Você controla tudo no Dashboard." />
+          <Accordion q="O que acontece se eu esquecer de renovar um anúncio importante?" a="O anúncio expira e sai da vitrine. Você pode repostar em segundos." />
+          <Accordion q="Funciona para qualquer tipo de produto/serviço?" a="Sim. Pequenos negócios locais, autônomos, freelas e vendas pessoais." />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- Componentes base ---------- */
 
 function FeatureCard({
   icon,
@@ -531,7 +579,7 @@ function Accordion({ q, a }: { q: string; a: string }) {
   );
 }
 
-/* ---------------- Icons (SVG inline) --------------- */
+/* ---------------- Icons ---------------- */
 function SparkleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -546,6 +594,13 @@ function BoltIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+function EyeIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M12 5C6 5 2 12 2 12s4 7 10 7 10-7 10-7-4-7-10-7zm0 11a4 4 0 110-8 4 4 0 010 8z" />
+    </svg>
+  );
+}
 function FlashIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -556,7 +611,7 @@ function FlashIcon(props: React.SVGProps<SVGSVGElement>) {
 function CheckDot(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 20 20" fill="currentColor" {...props}>
-      <circle cx="10" cy="10" r="10" fill="currentColor" />
+      <circle cx="10" cy="10" r="10" />
     </svg>
   );
 }
