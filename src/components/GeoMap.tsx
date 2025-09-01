@@ -1,73 +1,56 @@
 "use client";
 
+import { MapContainer, TileLayer, Circle, Marker } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import { MapContainer, TileLayer, Circle, useMap } from "react-leaflet";
+import { useMemo } from "react";
 import L from "leaflet";
-import { useEffect } from "react";
 
-type Props =
-  | {
-      center: { lat: number; lng: number } | null;
-      cep?: never;
-      radiusKm: number;
-    }
-  | {
-      center?: never;
-      cep: string; // se vier CEP, você pode geocodificar no backend depois. Aqui só centralizamos no Brasil.
-      radiusKm: number;
-    };
-
-// icone default do Leaflet (corrige issue de assets em bundlers)
 const DefaultIcon = L.icon({
-  iconUrl:
-    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl:
-    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconAnchor: [12, 41],
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-function FitOnCenter({ lat, lng }: { lat: number; lng: number }) {
-  const map = useMap();
-  useEffect(() => {
-    map.setView([lat, lng], 13, { animate: true });
-  }, [lat, lng, map]);
-  return null;
-}
+export type LatLng = { lat: number; lng: number };
 
-export default function GeoMap(props: Props) {
-  // fallback quando vem CEP (sem geocoder): centro aproximado do Brasil
-  const fallback = { lat: -14.235, lng: -51.9253 };
+type Props = {
+  center: LatLng | null;
+  radiusKm: number;
+  cep?: string;
+  className?: string;
+};
 
-  const center = "center" in props && props.center
-    ? props.center
-    : fallback;
-
-  const radiusMeters = (props.radiusKm ?? 5) * 1000;
+export default function GeoMap({ center, radiusKm, cep, className }: Props) {
+  const effectiveCenter = useMemo<LatLng>(
+    () => center ?? { lat: -23.55052, lng: -46.633308 },
+    [center]
+  );
+  const radiusMeters = Math.max(0, radiusKm) * 1000;
 
   return (
-    <div className="relative h-44 overflow-hidden rounded-lg border border-white/10">
+    <div className={className ?? "h-72 rounded-xl overflow-hidden border border-white/10"}>
       <MapContainer
-        center={[center.lat, center.lng]}
+        center={[effectiveCenter.lat, effectiveCenter.lng]}
         zoom={13}
         scrollWheelZoom={false}
-        style={{ height: "100%", width: "100%" }}
+        className="h-full w-full"
       >
-        {/* OSM tiles livres */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/">OSM</a> contributors'
+          attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <Circle
-          center={[center.lat, center.lng]}
-          radius={radiusMeters}
-          pathOptions={{ color: "#34d399", fillOpacity: 0.15 }}
-        />
-        {"center" in props && props.center ? (
-          <FitOnCenter lat={center.lat} lng={center.lng} />
-        ) : null}
+        <Marker position={[effectiveCenter.lat, effectiveCenter.lng]} />
+        {radiusMeters > 0 && (
+          <Circle
+            center={[effectiveCenter.lat, effectiveCenter.lng]}
+            radius={radiusMeters}
+            pathOptions={{ color: "#22c55e", fillColor: "#22c55e", fillOpacity: 0.15 }}
+          />
+        )}
       </MapContainer>
-      <div className="pointer-events-none absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400" />
     </div>
   );
 }
