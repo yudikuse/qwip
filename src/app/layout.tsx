@@ -26,10 +26,9 @@ export default function RootLayout({
         ].join(" ")}
       >
         {children}
-        {/* Tudo client-only renderiza aqui, sem dynamic/ssr:false */}
+        {/* Tudo client-only fica aqui */}
         <ClientRoot />
       </body>
     </html>
   );
 }
-
