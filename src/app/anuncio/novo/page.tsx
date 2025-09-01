@@ -1,9 +1,9 @@
-  // src/app/anuncio/novo/page.tsx
+// src/app/anuncio/novo/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import NextDynamic from "next/dynamic"; // 👈 renomeado para evitar conflito com `export const dynamic`
+import NextDynamic from "next/dynamic"; // renomeado para não colidir com `export const dynamic`
 
 // 1) Carrega o mapa SOMENTE no cliente (evita "window is not defined")
 const GeoMap = NextDynamic(() => import("@/components/GeoMap"), { ssr: false });
@@ -187,7 +187,6 @@ export default function NovoAnuncioPage() {
           {/* MAPA + PRÉVIA */}
           <div className="space-y-4">
             {/* GeoMap só é carregado no cliente por causa do dynamic + ssr:false */}
-            {/* @ts-expect-error - o componente é dinâmico e carrega no client */}
             <GeoMap
               center={coords ?? null}
               cep={coords ? undefined : cepDigits}
