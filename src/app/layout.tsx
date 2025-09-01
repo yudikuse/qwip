@@ -2,11 +2,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
-import dynamic from "next/dynamic";
-
-const CookieBanner = dynamic(() => import("@/components/CookieBanner"), {
-  ssr: false,
-});
+import ClientRoot from "@/components/ClientRoot";
 
 export const metadata: Metadata = {
   title: "Qwip — Venda HOJE",
@@ -30,9 +26,10 @@ export default function RootLayout({
         ].join(" ")}
       >
         {children}
-        {/* Renderiza apenas no client */}
-        <CookieBanner />
+        {/* Tudo client-only renderiza aqui, sem dynamic/ssr:false */}
+        <ClientRoot />
       </body>
     </html>
   );
 }
+
