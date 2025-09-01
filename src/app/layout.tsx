@@ -9,6 +9,11 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://qwip.pro'),
 };
 
+function openCookieManager() {
+  // Tipamos o window para evitar "any"
+  (window as Window & { qwipOpenCookieBanner?: () => void }).qwipOpenCookieBanner?.();
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" className="dark">
@@ -32,7 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/cookies" className="hover:text-neutral-200">Cookies</a>
               <button
                 type="button"
-                onClick={() => (window as any).qwipOpenCookieBanner?.()}
+                onClick={openCookieManager}
                 className="rounded-lg border border-neutral-700 px-3 py-1.5 hover:bg-neutral-800"
               >
                 Gerenciar cookies
