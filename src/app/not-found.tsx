@@ -1,29 +1,20 @@
-'use client';
-
-import Link from 'next/link';
+// src/app/not-found.tsx
+import Link from "next/link";
 
 export default function NotFound() {
   return (
-    <main className="mx-auto max-w-lg px-4 py-24 text-center">
-      <h1 className="mb-3 text-3xl font-semibold">Página não encontrada</h1>
-      <p className="mb-8 text-neutral-400">
-        O link pode estar incorreto ou o conteúdo não existe mais.
-      </p>
-
-      <div className="flex items-center justify-center gap-3">
+    <main className="min-h-[70vh] grid place-items-center px-6">
+      <div className="max-w-md text-center">
+        <h1 className="text-3xl font-semibold mb-2">Página não encontrada</h1>
+        <p className="text-zinc-400 mb-6">
+          A página que você tentou acessar não existe ou foi movida.
+        </p>
         <Link
           href="/"
-          className="rounded-lg border border-neutral-700 px-4 py-2 hover:bg-neutral-800"
+          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 font-medium hover:bg-emerald-500 transition-colors"
         >
-          Ir para a Home
+          ← Voltar para a página inicial
         </Link>
-
-        <a
-          href="mailto:suporte@qwip.pro"
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-500"
-        >
-          Falar com o suporte
-        </a>
       </div>
     </main>
   );
