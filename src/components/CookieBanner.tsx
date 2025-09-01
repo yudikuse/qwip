@@ -1,127 +1,186 @@
-'use client';
+// src/components/CookieBanner.tsx
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 
-type Consent = {
-  essential: true;
+type ConsentMap = {
+  necessary: boolean;
   analytics: boolean;
   marketing: boolean;
 };
 
-const COOKIE_NAME = 'qwip_consent';
-const MAX_AGE = 60 * 60 * 24 * 180; // 180 dias
+const KEY = "qwip.cookieConsent.v1";
 
-function readConsent(): Consent | null {
-  const match = document.cookie.split('; ').find(c => c.startsWith(`${COOKIE_NAME}=`));
-  if (!match) return null;
+function readStoredConsent(): ConsentMap | null {
   try {
-    return JSON.parse(decodeURIComponent(match.split('=')[1])) as Consent;
+    if (typeof window === "undefined") return null;
+    const raw = window.localStorage.getItem(KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ConsentMap>;
+    return {
+      necessary: true,
+      analytics: Boolean(parsed.analytics),
+      marketing: Boolean(parsed.marketing),
+    };
   } catch {
     return null;
   }
 }
 
-function writeConsent(c: Consent) {
-  document.cookie = `${COOKIE_NAME}=${encodeURIComponent(
-    JSON.stringify(c)
-  )}; Max-Age=${MAX_AGE}; Path=/; SameSite=Lax`;
-  // avisa o app para (des)carregar scripts
-  window.dispatchEvent(new Event('qwip-consent-changed'));
-}
-
-declare global {
-  interface Window {
-    qwipOpenCookieBanner?: () => void;
-  }
-}
-
 export default function CookieBanner() {
+  const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
-  const [analytics, setAnalytics] = useState(false);
-  const [marketing, setMarketing] = useState(false);
+  const [consent, setConsent] = useState<ConsentMap>({
+    necessary: true,
+    analytics: false,
+    marketing: false,
+  });
 
+  // Garante que nada SSR rode com window/localStorage
   useEffect(() => {
-    const c = readConsent();
-    if (!c) setOpen(true);
-
-    // função global para reabrir pelo botão “Gerenciar cookies”
-    window.qwipOpenCookieBanner = () => {
-      const current = readConsent();
-      setAnalytics(!!current?.analytics);
-      setMarketing(!!current?.marketing);
+    setMounted(true);
+    const stored = readStoredConsent();
+    if (!stored) {
       setOpen(true);
-    };
-
-    return () => {
-      delete window.qwipOpenCookieBanner;
-    };
+    } else {
+      setConsent(stored);
+    }
   }, []);
 
-  if (!open) return null;
+  const anythingOptionalSelected = useMemo(
+    () => consent.analytics || consent.marketing,
+    [consent],
+  );
+
+  if (!mounted || !open) return null;
+
+  const save = () => {
+    try {
+      window.localStorage.setItem(KEY, JSON.stringify(consent));
+    } catch {
+      /* ignore */
+    }
+    setOpen(false);
+  };
+
+  const acceptAll = () => {
+    setConsent({ necessary: true, analytics: true, marketing: true });
+    try {
+      window.localStorage.setItem(
+        KEY,
+        JSON.stringify({ necessary: true, analytics: true, marketing: true }),
+      );
+    } catch {
+      /* ignore */
+    }
+    setOpen(false);
+  };
+
+  const rejectAll = () => {
+    setConsent({ necessary: true, analytics: false, marketing: false });
+    try {
+      window.localStorage.setItem(
+        KEY,
+        JSON.stringify({ necessary: true, analytics: false, marketing: false }),
+      );
+    } catch {
+      /* ignore */
+    }
+    setOpen(false);
+  };
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50">
-      <div className="mx-auto mb-4 max-w-5xl rounded-2xl border border-neutral-800 bg-neutral-900/95 p-4 shadow-xl backdrop-blur">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="text-sm text-neutral-200">
-            Usamos <strong>cookies essenciais</strong> e, com seu consentimento,
-            <strong> analíticos</strong> e <strong>marketing</strong>. Saiba mais em{' '}
-            <a href="/cookies" className="underline">Cookies</a>,{' '}
-            <a href="/privacy" className="underline">Privacidade</a> e{' '}
-            <a href="/terms" className="underline">Termos</a>.
+    <div className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-5xl px-4 pb-6">
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950/90 backdrop-blur p-4 md:p-5 shadow-2xl">
+        <div className="md:flex md:items-start md:justify-between md:gap-6">
+          <div className="md:max-w-3xl">
+            <p className="font-medium">Usamos cookies essenciais.</p>
+            <p className="text-sm text-zinc-400 mt-1">
+              Para análises e marketing, pedimos seu consentimento.
+              Veja nossa{" "}
+              <a
+                href="/cookies"
+                className="underline decoration-zinc-600 hover:text-zinc-200"
+              >
+                Política de Cookies
+              </a>
+              ,{" "}
+              <a
+                href="/privacy"
+                className="underline decoration-zinc-600 hover:text-zinc-200"
+              >
+                Privacidade
+              </a>{" "}
+              e{" "}
+              <a
+                href="/terms"
+                className="underline decoration-zinc-600 hover:text-zinc-200"
+              >
+                Termos
+              </a>
+              .
+            </p>
+
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:max-w-md">
+              <label className="flex items-center gap-3 rounded-xl border border-zinc-800 px-3 py-2">
+                <input type="checkbox" checked disabled />
+                <span className="text-sm">
+                  Essenciais <span className="text-zinc-500">(obrigatório)</span>
+                </span>
+              </label>
+
+              <label className="flex items-center gap-3 rounded-xl border border-zinc-800 px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={consent.analytics}
+                  onChange={(e) =>
+                    setConsent((c) => ({ ...c, analytics: e.target.checked }))
+                  }
+                />
+                <span className="text-sm">Analíticos</span>
+              </label>
+
+              <label className="flex items-center gap-3 rounded-xl border border-zinc-800 px-3 py-2 col-span-2">
+                <input
+                  type="checkbox"
+                  checked={consent.marketing}
+                  onChange={(e) =>
+                    setConsent((c) => ({ ...c, marketing: e.target.checked }))
+                  }
+                />
+                <span className="text-sm">Marketing</span>
+              </label>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <div className="flex items-center gap-4 rounded-xl bg-neutral-800/60 px-3 py-2">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={analytics}
-                  onChange={(e) => setAnalytics(e.target.checked)}
-                />
-                Analíticos
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={marketing}
-                  onChange={(e) => setMarketing(e.target.checked)}
-                />
-                Marketing
-              </label>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  writeConsent({ essential: true, analytics: false, marketing: false });
-                  setOpen(false);
-                }}
-                className="rounded-xl border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-800"
-              >
-                Rejeitar
-              </button>
-
-              <button
-                onClick={() => {
-                  writeConsent({ essential: true, analytics, marketing });
-                  setOpen(false);
-                }}
-                className="rounded-xl bg-neutral-700 px-3 py-2 text-sm text-white hover:bg-neutral-600"
-              >
-                Salvar preferências
-              </button>
-
-              <button
-                onClick={() => {
-                  writeConsent({ essential: true, analytics: true, marketing: true });
-                  setOpen(false);
-                }}
-                className="rounded-xl bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500"
-              >
-                Aceitar tudo
-              </button>
-            </div>
+          <div className="mt-4 flex shrink-0 items-center gap-2 md:mt-0">
+            <button
+              type="button"
+              onClick={rejectAll}
+              className="rounded-xl border border-zinc-700 px-3 py-2 text-sm hover:bg-zinc-800"
+            >
+              Rejeitar
+            </button>
+            <button
+              type="button"
+              onClick={save}
+              className="rounded-xl border border-zinc-700 px-3 py-2 text-sm hover:bg-zinc-800 disabled:opacity-60"
+              disabled={!anythingOptionalSelected && consent.necessary}
+              title={
+                !anythingOptionalSelected
+                  ? "Você pode salvar mesmo sem analíticos/marketing marcados — use Rejeitar"
+                  : "Salvar preferências"
+              }
+            >
+              Salvar preferências
+            </button>
+            <button
+              type="button"
+              onClick={acceptAll}
+              className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium hover:bg-emerald-500"
+            >
+              Aceitar tudo
+            </button>
           </div>
         </div>
       </div>
