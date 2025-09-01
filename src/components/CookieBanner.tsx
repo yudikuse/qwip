@@ -22,7 +22,17 @@ function readConsent(): Consent | null {
 }
 
 function writeConsent(c: Consent) {
-  document.cookie = `${COOKIE_NAME}=${encodeURIComponent(JSON.stringify(c))}; Max-Age=${MAX_AGE}; Path=/; SameSite=Lax`;
+  document.cookie = `${COOKIE_NAME}=${encodeURIComponent(
+    JSON.stringify(c)
+  )}; Max-Age=${MAX_AGE}; Path=/; SameSite=Lax`;
+  // avisa o app para (des)carregar scripts
+  window.dispatchEvent(new Event('qwip-consent-changed'));
+}
+
+declare global {
+  interface Window {
+    qwipOpenCookieBanner?: () => void;
+  }
 }
 
 export default function CookieBanner() {
@@ -31,9 +41,20 @@ export default function CookieBanner() {
   const [marketing, setMarketing] = useState(false);
 
   useEffect(() => {
-    // mostra banner apenas se ainda não existe consentimento
     const c = readConsent();
     if (!c) setOpen(true);
+
+    // função global para reabrir pelo botão “Gerenciar cookies”
+    window.qwipOpenCookieBanner = () => {
+      const current = readConsent();
+      setAnalytics(!!current?.analytics);
+      setMarketing(!!current?.marketing);
+      setOpen(true);
+    };
+
+    return () => {
+      delete window.qwipOpenCookieBanner;
+    };
   }, []);
 
   if (!open) return null;
@@ -44,8 +65,8 @@ export default function CookieBanner() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="text-sm text-neutral-200">
             Usamos <strong>cookies essenciais</strong> e, com seu consentimento,
-            <strong> analíticos</strong> e <strong>marketing</strong>. Você pode saber mais em nossa{' '}
-            <a href="/cookies" className="underline">Política de Cookies</a>,{' '}
+            <strong> analíticos</strong> e <strong>marketing</strong>. Saiba mais em{' '}
+            <a href="/cookies" className="underline">Cookies</a>,{' '}
             <a href="/privacy" className="underline">Privacidade</a> e{' '}
             <a href="/terms" className="underline">Termos</a>.
           </div>
