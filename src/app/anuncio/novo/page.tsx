@@ -1,14 +1,13 @@
-// src/app/anuncio/novo/page.tsx
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
+import React, { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 
-/** PLANOS suportados na UI */
+// carrega o mapa só no client
+const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
+
 type Plan = "FREE" | "LITE" | "PRO" | "BUSINESS";
 
-/** Limites por plano (sem backend ainda) */
 const PLAN_LIMITS: Record<
   Plan,
   { maxPhotos: number; minRadius: number; maxRadius: number; expires: string }
@@ -20,33 +19,35 @@ const PLAN_LIMITS: Record<
 };
 
 export default function NewAdPage() {
-  /** Em produção você traria o plano do usuário da sessão.
-   *  Aqui: se não houver info, começamos em FREE e deixamos ele “simular” os outros. */
   const [plan, setPlan] = useState<Plan>("FREE");
+  const limits = PLAN_LIMITS[plan];
 
-  // FORM STATE
+  // form
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState<string>("");
   const [description, setDescription] = useState("");
   const [files, setFiles] = useState<File[]>([]);
 
-  // GEO STATE
+  // geo
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
     null
   );
   const [geoDenied, setGeoDenied] = useState(false);
   const [cep, setCep] = useState("");
-  const limits = PLAN_LIMITS[plan];
   const [radius, setRadius] = useState<number>(limits.minRadius);
 
-  // manter radius em sincronia quando muda o plano
+  // publish result
+  const [saving, setSaving] = useState(false);
+  const [publishLink, setPublishLink] = useState<string | null>(null);
+
+  // quando o plano muda, garante que o raio respeite os novos limites
   useEffect(() => {
     setRadius((r) =>
-      Math.min(Math.max(r, limits.minRadius), limits.maxRadius)
+      Math.min(Math.max(r, PLAN_LIMITS[plan].minRadius), PLAN_LIMITS[plan].maxRadius)
     );
   }, [plan]);
 
-  // Tenta obter geolocalização ao montar
+  // geolocalização real
   useEffect(() => {
     if (!("geolocation" in navigator)) {
       setGeoDenied(true);
@@ -54,20 +55,14 @@ export default function NewAdPage() {
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setCoords({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        });
+        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setGeoDenied(false);
       },
-      () => {
-        setGeoDenied(true);
-      },
+      () => setGeoDenied(true),
       { enableHighAccuracy: false, timeout: 6000 }
     );
   }, []);
 
-  // Validadores simples
   const errors = useMemo(() => {
     const list: string[] = [];
     if (!title.trim()) list.push("Informe um título.");
@@ -84,27 +79,49 @@ export default function NewAdPage() {
   function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const f = Array.from(e.target.files ?? []);
     if (f.length === 0) return;
-    const limited = f.slice(0, limits.maxPhotos); // corta no limite do plano
+    const limited = f.slice(0, limits.maxPhotos);
     setFiles(limited);
   }
 
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (errors.length) return;
-    // aqui você enviaria para o backend
-    console.log("NEW AD", {
+    if (errors.length || saving) return;
+
+    // mock de upload: mandamos só os nomes
+    const photos = files.map((f) => f.name);
+    const body = {
       plan,
       title,
-      price: priceBRLToNumber(price),
+      priceCents: Math.round(priceBRLToNumber(price) * 100),
       description,
-      photos: files.map((f) => f.name),
-      location:
-        coords ?? { cep: cepOnlyDigits(cep), radiusKm: Number(radius) },
-    });
-    alert("Salvamos o rascunho do anúncio (mock). Próximo passo: publicação.");
+      photos,
+      location: coords
+        ? { lat: coords.lat, lng: coords.lng, radiusKm: radius }
+        : { cep: cepOnlyDigits(cep), radiusKm: radius },
+    };
+
+    setSaving(true);
+    setPublishLink(null);
+    try {
+      const res = await fetch("/api/ads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Erro ao salvar.");
+
+      setPublishLink(json.shortUrl as string);
+      alert("Rascunho salvo! Link curto gerado.");
+    } catch (err: any) {
+      alert(err?.message || "Falha ao salvar anúncio.");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  const firstImageURL = files[0] ? URL.createObjectURL(files[0]) : "/images/hero-card.jpg";
+  const firstImageURL =
+    files[0] ? URL.createObjectURL(files[0]) : "/images/hero-card.jpg";
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -112,8 +129,6 @@ export default function NewAdPage() {
         <div className="mb-6 flex items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">Criar Anúncio</h1>
 
-          {/* Seletor de plano só altera a PRÉ-VISUALIZAÇÃO. 
-              O plano real do usuário continua FREE até upgrade explícito. */}
           <div className="flex items-center gap-2">
             {(["FREE", "LITE", "PRO", "BUSINESS"] as Plan[]).map((p) => (
               <button
@@ -133,14 +148,17 @@ export default function NewAdPage() {
         </div>
 
         <p className="mb-6 text-sm text-zinc-400">
-          Preencha os dados. O WhatsApp usado será o número já verificado na
-          sua conta. Título, preço, descrição e foto são obrigatórios. A
-          área de atendimento usa sua localização (ou CEP) + raio.
+          O WhatsApp é o número já verificado. Título, preço, descrição e foto
+          são obrigatórios. A área de atendimento usa sua localização (ou CEP)
+          + raio. O preview abaixo reflete o plano selecionado.
         </p>
 
         <div className="grid items-start gap-6 lg:grid-cols-2">
           {/* FORM */}
-          <form onSubmit={onSubmit} className="rounded-2xl border border-white/10 bg-card p-5">
+          <form
+            onSubmit={onSubmit}
+            className="rounded-2xl border border-white/10 bg-card p-5"
+          >
             {/* Fotos */}
             <div>
               <label className="mb-2 block text-sm font-medium">Fotos</label>
@@ -180,7 +198,7 @@ export default function NewAdPage() {
               </div>
             </div>
 
-            {/* Linha: Título / Preço */}
+            {/* Título / Preço */}
             <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_180px]">
               <div>
                 <label className="mb-2 block text-sm font-medium">Título</label>
@@ -218,38 +236,18 @@ export default function NewAdPage() {
               />
             </div>
 
-            {/* Geolocalização + Raio */}
+            {/* Geo + Raio (MAPA REAL) */}
             <div className="mt-6">
               <label className="mb-2 block text-sm font-medium">
                 Área de atendimento (raio)
               </label>
 
               <div className="grid gap-4 sm:grid-cols-[1fr_220px]">
-                {/* “Mapa” simples com círculo (sem libs) */}
-                <div className="relative h-44 overflow-hidden rounded-lg border border-white/10 bg-gradient-to-b from-zinc-900 to-zinc-950">
-                  <div className="absolute inset-0 grid grid-cols-6 grid-rows-4 opacity-10">
-                    {Array.from({ length: 24 }).map((_, i) => (
-                      <div key={i} className="border border-white/10" />
-                    ))}
-                  </div>
-                  {/* Centro simulando a posição */}
-                  <div className="pointer-events-none absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400" />
-                  {/* Círculo proporcional ao raio (só visual) */}
-                  <div
-                    className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-emerald-500/50"
-                    style={{
-                      width: `${circleSize(radius, limits.maxRadius)}%`,
-                      height: `${circleSize(radius, limits.maxRadius)}%`,
-                    }}
-                  />
-                  <div className="absolute bottom-2 left-2 rounded bg-black/40 px-2 py-0.5 text-[11px] text-zinc-300">
-                    {coords
-                      ? `Localização ativa • raio ${radius} km`
-                      : geoDenied
-                      ? "Localização negada"
-                      : "Detectando localização..."}
-                  </div>
-                </div>
+                <GeoMap
+                  center={coords ?? null}
+                  cep={coords ? undefined : cepOnlyDigits(cep)}
+                  radiusKm={radius}
+                />
 
                 <div>
                   <div className="rounded-lg border border-white/10 p-3">
@@ -271,7 +269,6 @@ export default function NewAdPage() {
                       className="mt-2 w-full"
                     />
 
-                    {/* CEP somente se a geolocalização não estiver disponível */}
                     {geoDenied && (
                       <div className="mt-3">
                         <label className="mb-1 block text-xs text-zinc-400">
@@ -305,23 +302,36 @@ export default function NewAdPage() {
 
             {/* Ações */}
             <div className="mt-6 flex items-center gap-3">
-              <Link
+              <a
                 href="/"
                 className="rounded-lg border border-white/10 px-4 py-2 text-sm text-zinc-300 hover:bg-white/5"
               >
                 Cancelar
-              </Link>
+              </a>
               <button
                 type="submit"
-                disabled={errors.length > 0}
+                disabled={errors.length > 0 || saving}
                 className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Salvar e continuar
+                {saving ? "Salvando..." : "Salvar e continuar"}
               </button>
             </div>
+
+            {publishLink && (
+              <div className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
+                Link curto gerado:{" "}
+                <a
+                  href={publishLink}
+                  target="_blank"
+                  className="underline decoration-emerald-300"
+                >
+                  {publishLink}
+                </a>
+              </div>
+            )}
           </form>
 
-          {/* PREVIEW */}
+          {/* PREVIEWS */}
           <div className="space-y-6">
             <div className="rounded-2xl border border-white/10 bg-card p-5">
               <div className="mb-3 flex items-center justify-between">
@@ -347,14 +357,13 @@ export default function NewAdPage() {
               />
             </div>
 
-            {/* WhatsApp Preview */}
             <div className="rounded-2xl border border-white/10 bg-card p-5">
               <div className="mb-3 text-sm font-medium text-zinc-200">
                 Pré-visualização (WhatsApp)
               </div>
               <WhatsPreview
                 title={title || "Vestido Midi Floral"}
-                link={"https://qwip.pro/preview-demo"}
+                link={publishLink ?? "https://qwip.pro/preview-demo"}
                 hour="14:32"
               />
             </div>
@@ -365,8 +374,7 @@ export default function NewAdPage() {
   );
 }
 
-/* ------------------ Componentes auxiliares ------------------ */
-
+/* ---------- componentes de preview ---------- */
 function AdCardPreview({
   img,
   title,
@@ -380,10 +388,8 @@ function AdCardPreview({
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-white/10">
-      <div className="relative h-56 w-full bg-black/20">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={img} alt={title} className="h-full w-full object-cover" />
-      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={img} alt={title} className="h-56 w-full object-cover" />
       <div className="space-y-2 p-4">
         <div className="text-sm font-semibold text-white">{title}</div>
         <div className="text-xs text-zinc-400">{subtitle}</div>
@@ -410,14 +416,12 @@ function WhatsPreview({
 }) {
   return (
     <div className="rounded-xl border border-white/10 bg-[#0B0E12] p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm text-zinc-300">
-          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold">
-            JS
-          </div>
-          <span className="font-medium">Boutique da Jéssica</span>
-          <span className="text-zinc-500">online</span>
+      <div className="mb-3 flex items-center gap-2 text-sm text-zinc-300">
+        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold">
+          JS
         </div>
+        <span className="font-medium">Boutique da Jéssica</span>
+        <span className="text-zinc-500">online</span>
       </div>
 
       <div className="flex justify-end">
@@ -431,8 +435,7 @@ function WhatsPreview({
   );
 }
 
-/* ------------------ Helpers ------------------ */
-
+/* ---------- helpers ---------- */
 function maskBRL(v: string) {
   const n = v.replace(/[^\d]/g, "");
   const int = n.slice(0, -2) || "0";
@@ -457,13 +460,8 @@ function cepOnlyDigits(v: string) {
 function validCep(v: string) {
   return /^\d{5}-?\d{3}$/.test(v);
 }
-/** Percentual do lado do círculo vs. raio máximo para o “mapa” fake */
-function circleSize(radiusKm: number, maxKm: number) {
-  const pct = Math.max(10, Math.min(100, (radiusKm / maxKm) * 100));
-  return pct;
-}
 
-/* ------------------ Ícones (inline) ------------------ */
+/* ---------- ícones ---------- */
 function WhatsIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
