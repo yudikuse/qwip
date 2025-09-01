@@ -1,219 +1,107 @@
-// src/components/CookieBanner.tsx
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
+import { useEffect, useState } from 'react';
 
-type Prefs = {
-  necessary: true;          // sempre ligado
-  analytics: boolean;       // alternável
-  marketing: boolean;       // opcional (já deixo aqui para futuro)
+type Consent = {
+  essential: true;
+  analytics: boolean;
+  marketing: boolean;
 };
 
-const COOKIE_NAME = "qwip_cc";
-const COOKIE_MAX_AGE_DAYS = 180;
+const COOKIE_NAME = 'qwip_consent';
+const MAX_AGE = 60 * 60 * 24 * 180; // 180 dias
 
-function getCookie(name: string): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
-  return match ? decodeURIComponent(match[2]) : null;
+function readConsent(): Consent | null {
+  const match = document.cookie.split('; ').find(c => c.startsWith(`${COOKIE_NAME}=`));
+  if (!match) return null;
+  try {
+    return JSON.parse(decodeURIComponent(match.split('=')[1])) as Consent;
+  } catch {
+    return null;
+  }
 }
 
-function setCookie(name: string, value: string, days: number) {
-  if (typeof document === "undefined") return;
-  const expires = new Date();
-  expires.setDate(expires.getDate() + days);
-  document.cookie = `${name}=${encodeURIComponent(
-    value
-  )}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
+function writeConsent(c: Consent) {
+  document.cookie = `${COOKIE_NAME}=${encodeURIComponent(JSON.stringify(c))}; Max-Age=${MAX_AGE}; Path=/; SameSite=Lax`;
 }
 
 export default function CookieBanner() {
   const [open, setOpen] = useState(false);
-  const [managing, setManaging] = useState(false);
-  const [prefs, setPrefs] = useState<Prefs>({
-    necessary: true,
-    analytics: false,
-    marketing: false,
-  });
+  const [analytics, setAnalytics] = useState(false);
+  const [marketing, setMarketing] = useState(false);
 
   useEffect(() => {
-    // se já existe cookie, não abre
-    const raw = getCookie(COOKIE_NAME);
-    if (!raw) {
-      setOpen(true);
-      return;
-    }
-    try {
-      const parsed = JSON.parse(raw) as Prefs;
-      // validação simples
-      if (typeof parsed.analytics === "boolean") {
-        setPrefs({ necessary: true, analytics: parsed.analytics, marketing: !!parsed.marketing });
-        setOpen(false);
-      } else {
-        setOpen(true);
-      }
-    } catch {
-      setOpen(true);
-    }
+    // mostra banner apenas se ainda não existe consentimento
+    const c = readConsent();
+    if (!c) setOpen(true);
   }, []);
-
-  function persist(next: Prefs) {
-    setPrefs(next);
-    setCookie(COOKIE_NAME, JSON.stringify(next), COOKIE_MAX_AGE_DAYS);
-  }
-
-  function acceptAll() {
-    persist({ necessary: true, analytics: true, marketing: true });
-    setOpen(false);
-  }
-
-  function onlyEssential() {
-    persist({ necessary: true, analytics: false, marketing: false });
-    setOpen(false);
-  }
-
-  function saveManaged() {
-    persist(prefs);
-    setOpen(false);
-  }
 
   if (!open) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 pb-5 sm:px-6 sm:pb-6"
-    >
-      <div className="w-full max-w-3xl rounded-2xl border border-zinc-800 bg-zinc-900/90 shadow-2xl backdrop-blur">
-        <div className="grid gap-4 p-4 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-6 sm:p-6">
-          <div>
-            <h3 className="text-base font-medium text-zinc-100">
-              Cookies no Qwip
-            </h3>
-            <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-              Usamos cookies essenciais para o funcionamento do site e, com seu
-              consentimento, cookies analíticos para melhorar a experiência.
-              Veja nossa{" "}
-              <a href="/privacy" className="text-emerald-400 underline">
-                Política de Privacidade
-              </a>
-              .
-            </p>
-
-            {/* Gerenciamento avançado */}
-            {managing && (
-              <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-zinc-100">
-                      Essenciais (sempre ativos)
-                    </p>
-                    <p className="text-xs text-zinc-400">
-                      Necessários para funcionalidades básicas e segurança.
-                    </p>
-                  </div>
-                  <span className="select-none rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
-                    ON
-                  </span>
-                </div>
-
-                <div className="mt-4 flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-zinc-100">
-                      Analíticos
-                    </p>
-                    <p className="text-xs text-zinc-400">
-                      Nos ajudam a entender uso e melhorar o produto (sem
-                      publicidade).
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    aria-pressed={prefs.analytics}
-                    onClick={() =>
-                      setPrefs((p) => ({ ...p, analytics: !p.analytics }))
-                    }
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                      prefs.analytics ? "bg-emerald-500/80" : "bg-zinc-700"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
-                        prefs.analytics ? "translate-x-6" : "translate-x-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="mt-4 flex items-start justify-between gap-4 opacity-60">
-                  <div>
-                    <p className="text-sm font-medium text-zinc-100">
-                      Marketing (não utilizado)
-                    </p>
-                    <p className="text-xs text-zinc-400">
-                      Reservado para futuras integrações. Mantemos desativado.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    aria-pressed={prefs.marketing}
-                    onClick={() =>
-                      setPrefs((p) => ({ ...p, marketing: !p.marketing }))
-                    }
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                      prefs.marketing ? "bg-emerald-500/80" : "bg-zinc-700"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
-                        prefs.marketing ? "translate-x-6" : "translate-x-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="mt-6 flex flex-wrap items-center gap-3">
-                  <button
-                    onClick={saveManaged}
-                    className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500"
-                  >
-                    Salvar preferências
-                  </button>
-                  <button
-                    onClick={() => setManaging(false)}
-                    className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800"
-                  >
-                    Voltar
-                  </button>
-                </div>
-              </div>
-            )}
+    <div className="fixed inset-x-0 bottom-0 z-50">
+      <div className="mx-auto mb-4 max-w-5xl rounded-2xl border border-neutral-800 bg-neutral-900/95 p-4 shadow-xl backdrop-blur">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="text-sm text-neutral-200">
+            Usamos <strong>cookies essenciais</strong> e, com seu consentimento,
+            <strong> analíticos</strong> e <strong>marketing</strong>. Você pode saber mais em nossa{' '}
+            <a href="/cookies" className="underline">Política de Cookies</a>,{' '}
+            <a href="/privacy" className="underline">Privacidade</a> e{' '}
+            <a href="/terms" className="underline">Termos</a>.
           </div>
 
-          {/* Ações rápidas */}
-          {!managing && (
-            <div className="flex flex-col gap-3 sm:w-64">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <div className="flex items-center gap-4 rounded-xl bg-neutral-800/60 px-3 py-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={analytics}
+                  onChange={(e) => setAnalytics(e.target.checked)}
+                />
+                Analíticos
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={marketing}
+                  onChange={(e) => setMarketing(e.target.checked)}
+                />
+                Marketing
+              </label>
+            </div>
+
+            <div className="flex gap-2">
               <button
-                onClick={acceptAll}
-                className="inline-flex h-10 items-center justify-center rounded-lg bg-emerald-600 px-4 text-sm font-medium text-white transition hover:bg-emerald-500"
+                onClick={() => {
+                  writeConsent({ essential: true, analytics: false, marketing: false });
+                  setOpen(false);
+                }}
+                className="rounded-xl border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-800"
+              >
+                Rejeitar
+              </button>
+
+              <button
+                onClick={() => {
+                  writeConsent({ essential: true, analytics, marketing });
+                  setOpen(false);
+                }}
+                className="rounded-xl bg-neutral-700 px-3 py-2 text-sm text-white hover:bg-neutral-600"
+              >
+                Salvar preferências
+              </button>
+
+              <button
+                onClick={() => {
+                  writeConsent({ essential: true, analytics: true, marketing: true });
+                  setOpen(false);
+                }}
+                className="rounded-xl bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500"
               >
                 Aceitar tudo
               </button>
-              <button
-                onClick={onlyEssential}
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 px-4 text-sm font-medium text-zinc-100 transition hover:bg-zinc-800"
-              >
-                Apenas essenciais
-              </button>
-              <button
-                onClick={() => setManaging(true)}
-                className="inline-flex h-10 items-center justify-center rounded-lg bg-zinc-800/70 px-4 text-sm font-medium text-zinc-100 transition hover:bg-zinc-800"
-              >
-                Gerenciar cookies
-              </button>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
