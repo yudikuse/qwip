@@ -1,66 +1,71 @@
 "use client";
 
 import Link from "next/link";
-import { cn } from "@/lib/utils"; // se não tiver, troque por (a || b). Veja nota abaixo.
-import { Sparkles, Eye } from "lucide-react";
 import React from "react";
+import { cn } from "@/lib/utils";
 
-type Variant = "primary" | "outline";
+type Variant = "solid" | "outline" | "ghost";
+type Size = "lg" | "md" | "sm";
 
-type Props = {
-  href: string;
-  children?: React.ReactNode;
-  icon?: "sparkles" | "eye";
+type QButtonProps = {
+  href?: string;
+  onClick?: () => void;
+  type?: "button" | "submit" | "reset";
   variant?: Variant;
+  size?: Size;
+  icon?: React.ReactNode;
   className?: string;
-  title?: string;
+  children: React.ReactNode;
 };
 
-const icons = {
-  sparkles: Sparkles,
-  eye: Eye,
+const base =
+  "inline-flex items-center justify-center gap-2 rounded-2xl font-medium transition-shadow " +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 " +
+  "disabled:opacity-50 disabled:cursor-not-allowed";
+
+const sizes: Record<Size, string> = {
+  lg: "h-12 px-5 text-base",
+  md: "h-10 px-4 text-sm",
+  sm: "h-9 px-3 text-sm",
+};
+
+const variants: Record<Variant, string> = {
+  solid:
+    "bg-emerald-500 text-black shadow-[0_8px_18px_rgba(16,185,129,.35)] hover:bg-emerald-400",
+  outline:
+    "border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10",
+  ghost: "text-emerald-300 hover:bg-emerald-500/10",
 };
 
 export default function QButton({
   href,
-  children,
-  icon = "sparkles",
-  variant = "primary",
+  onClick,
+  type = "button",
+  variant = "solid",
+  size = "lg",
+  icon,
   className,
-  title,
-}: Props) {
-  const Icon = icons[icon];
+  children,
+}: QButtonProps) {
+  const cls = cn(base, sizes[size], variants[variant], className);
+  const content = (
+    <>
+      {icon ? <span className="shrink-0">{icon}</span> : null}
+      <span>{children}</span>
+    </>
+  );
 
-  const base =
-    "group inline-flex items-center gap-2 rounded-xl px-5 py-3 text-[15px] font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70";
-
-  const primary =
-    "bg-emerald-500 text-black shadow-[0_6px_24px_rgba(16,185,129,.25)] hover:bg-emerald-400 active:translate-y-[1px]";
-
-  const outline =
-    "bg-white/5 text-white border border-emerald-400/35 hover:border-emerald-400/70 hover:bg-white/8 backdrop-blur-[2px] active:translate-y-[1px]";
+  if (href) {
+    return (
+      <Link href={href} className={cls}>
+        {content}
+      </Link>
+    );
+  }
 
   return (
-    <Link
-      href={href}
-      aria-label={typeof children === "string" ? children : title}
-      title={title}
-      className={cn(base, variant === "primary" ? primary : outline, className)}
-    >
-      <Icon
-        className={cn(
-          "h-[18px] w-[18px] transition-transform",
-          variant === "primary" ? "text-black" : "text-emerald-300"
-        )}
-      />
-      <span>{children}</span>
-      {/* leve brilho ao passar o mouse */}
-      <span className="pointer-events-none absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity ring-1 ring-emerald-400/20" />
-    </Link>
+    <button type={type} onClick={onClick} className={cls}>
+      {content}
+    </button>
   );
 }
-
-/**
- * NOTA caso não tenha a função `cn`:
- *   substitua `cn(a,b,c)` por `[a,b,c].filter(Boolean).join(" ")`
- */
