@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 
 export default function NotFound() {
@@ -7,6 +9,7 @@ export default function NotFound() {
       <p className="mb-8 text-neutral-400">
         O link pode estar incorreto ou o conteúdo não existe mais.
       </p>
+
       <div className="flex items-center justify-center gap-3">
         <Link
           href="/"
@@ -14,6 +17,7 @@ export default function NotFound() {
         >
           Ir para a Home
         </Link>
+
         <a
           href="mailto:suporte@qwip.pro"
           className="rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-500"
