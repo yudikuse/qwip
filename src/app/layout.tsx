@@ -21,6 +21,31 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         ].join(" ")}
       >
         {children}
+
+      // src/app/layout.tsx
+import "./globals.css";
+import type { Metadata } from "next";
+// ... seus imports atuais
+import CookieBanner from "@/components/CookieBanner";
+
+export const metadata: Metadata = {
+  title: "Qwip — Verificação",
+  description: "Envio e verificação de código via WhatsApp/SMS.",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="pt-BR">
+      <body className="bg-[#0b0f12] text-zinc-100">
+        {children}
+        {/* Banner de Cookies */}
+        <CookieBanner />
+      </body>
+    </html>
+  );
+}
+
+      
       </body>
     </html>
   );
