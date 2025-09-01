@@ -1,11 +1,12 @@
+  // src/app/anuncio/novo/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
+import NextDynamic from "next/dynamic"; // 👈 renomeado para evitar conflito com `export const dynamic`
 
 // 1) Carrega o mapa SOMENTE no cliente (evita "window is not defined")
-const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
+const GeoMap = NextDynamic(() => import("@/components/GeoMap"), { ssr: false });
 
 // 2) Evita o Next tentar pré-renderizar esta página
 export const dynamic = "force-dynamic";
@@ -83,7 +84,9 @@ export default function NovoAnuncioPage() {
             className="rounded-2xl border border-white/10 bg-card p-5"
             onSubmit={(e) => {
               e.preventDefault();
-              alert("Validação OK. (Próximo passo: salvar anúncio e ir para link de compartilhamento)");
+              alert(
+                "Validação OK. (Próximo passo: salvar anúncio e ir para link de compartilhamento)"
+              );
             }}
           >
             <div>
