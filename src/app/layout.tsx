@@ -1,33 +1,45 @@
 // src/app/layout.tsx
-import "./globals.css";
 import type { Metadata } from "next";
-import { GeistSans } from "geist/font/sans";
-import ClientRoot from "@/components/ClientRoot";
+import "./globals.css";
+import { Inter } from "next/font/google";
+import CookieBanner from "../components/CookieBanner"; // import RELATIVO (evita problema de path alias)
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Qwip — Venda HOJE",
   description:
-    "Crie seu anúncio em 60s, compartilhe o link e receba respostas no WhatsApp. Simples, rápido e sem intermediação.",
+    "Crie anúncios que expiram sozinhos, compartilhe o link direto pro WhatsApp e venda mais rápido.",
   metadataBase: new URL("https://qwip.pro"),
-  icons: [{ rel: "icon", url: "/favicon.ico" }],
+  openGraph: {
+    title: "Qwip — Venda HOJE",
+    description:
+      "Crie anúncios que expiram sozinhos, compartilhe o link direto pro WhatsApp e venda mais rápido.",
+    url: "https://qwip.pro",
+    siteName: "Qwip",
+    type: "website"
+  },
+  icons: { icon: "/favicon.ico" }
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" className="dark">
       <body
         className={[
-          GeistSans.variable,
-          "bg-[#0b0e11] text-zinc-100 antialiased min-h-screen",
+          inter.variable,
+          "font-sans",
+          "bg-background text-foreground",
+          "antialiased"
         ].join(" ")}
       >
         {children}
-        {/* Tudo client-only fica aqui */}
-        <ClientRoot />
+        {/* Client component, sem dynamic({ ssr:false }) */}
+        <CookieBanner />
       </body>
     </html>
   );
