@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import CookieBanner from '@/components/CookieBanner';
+import ConsentScripts from '@/components/ConsentScripts';
 
 export const metadata: Metadata = {
   title: 'Qwip — Venda HOJE',
@@ -12,13 +13,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR" className="dark">
       <body className="bg-neutral-950 text-neutral-100 antialiased">
+        {/* Scripts que respeitam consentimento */}
+        <ConsentScripts />
+
         {/* Banner de cookies */}
         <CookieBanner />
 
-        {/* Conteúdo */}
+        {/* Conteúdo principal */}
         {children}
 
-        {/* Rodapé enxuto com links legais */}
+        {/* Rodapé com links e “Gerenciar cookies” */}
         <footer className="mt-20 border-t border-neutral-800">
           <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-8 text-sm text-neutral-400 md:flex-row">
             <span>© {new Date().getFullYear()} Qwip</span>
@@ -26,6 +30,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/terms" className="hover:text-neutral-200">Termos</a>
               <a href="/privacy" className="hover:text-neutral-200">Privacidade</a>
               <a href="/cookies" className="hover:text-neutral-200">Cookies</a>
+              <button
+                type="button"
+                onClick={() => (window as any).qwipOpenCookieBanner?.()}
+                className="rounded-lg border border-neutral-700 px-3 py-1.5 hover:bg-neutral-800"
+              >
+                Gerenciar cookies
+              </button>
             </nav>
           </div>
         </footer>
