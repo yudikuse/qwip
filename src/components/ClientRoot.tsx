@@ -4,6 +4,6 @@
 import CookieBanner from "@/components/CookieBanner";
 
 export default function ClientRoot() {
-  // Tudo que é client-only entra aqui
+  // Renderize aqui qualquer coisa que precise rodar no cliente
   return <CookieBanner />;
 }
