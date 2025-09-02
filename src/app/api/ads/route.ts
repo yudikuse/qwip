@@ -24,9 +24,9 @@ export async function POST(req: Request) {
       radiusKm?: number | null;
     } = body ?? {};
 
-    if (!description || !priceCents || priceCents <= 0) {
+    if (!description || typeof priceCents !== "number" || priceCents <= 0) {
       return NextResponse.json(
-        { ok: false, error: "Descrição e preço são obrigatórios." },
+        { ok: false, error: "Descrição e preço válidos são obrigatórios." },
         { status: 400 }
       );
     }
@@ -34,18 +34,23 @@ export async function POST(req: Request) {
     // expira em 24h
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+    // ⚠️ Seu schema atual exige city/uf/lat/lng como obrigatórios.
+    // Usamos fallbacks para compilar e gravar sem erro.
+    // Depois faremos a migração para torná-los opcionais.
+    const data = {
+      description: String(description),
+      priceCents,
+      city: (city ?? "Atual") as string,
+      uf: (uf ?? "") as string,
+      lat: typeof lat === "number" ? lat : 0,
+      lng: typeof lng === "number" ? lng : 0,
+      radiusKm: typeof radiusKm === "number" ? radiusKm : 5,
+      expiresAt,
+      isActive: true,
+    };
+
     const ad = await prisma.ad.create({
-      data: {
-        description,
-        priceCents,
-        city: city ?? null,
-        uf: uf ?? null,
-        lat: lat ?? null,
-        lng: lng ?? null,
-        radiusKm: radiusKm ?? 5,
-        expiresAt,
-        isActive: true,
-      },
+      data,
       select: { id: true },
     });
 
