@@ -1,28 +1,25 @@
 // prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL") // já configurado na Vercel
+  url      = env("DATABASE_URL")
 }
 
-/**
- * Vendedor: dono dos anúncios (identificado pelo WhatsApp)
- */
+// Vendedor: dono dos anúncios (identificado pelo WhatsApp)
 model Seller {
-  id                  String   @id @default(uuid())
-  phoneE164           String   @unique                 // ex: +5511999998888
-  whatsappVerifiedAt  DateTime?                        // quando validou o OTP
-  createdAt           DateTime @default(now())
+  id                 String   @id @default(uuid())
+  phoneE164          String   @unique     // ex: +5511999998888
+  whatsappVerifiedAt DateTime?
+  createdAt          DateTime @default(now())
 
-  ads                 Ad[]
+  ads                Ad[]
 }
 
-/**
- * Anúncio básico para o MVP atual
- */
+// Anúncio básico do MVP
 model Ad {
   id          String   @id @default(uuid())
   sellerId    String
@@ -30,11 +27,11 @@ model Ad {
 
   title       String
   description String
-  priceCents  Int                                      // armazenamos em centavos
-  imageUrl    String?                                  // (upload vem depois)
+  priceCents  Int                 // armazenado em centavos
+  imageUrl    String?
 
   city        String
-  uf          String                                   // SP, RJ, GO...
+  uf          String              // SP, RJ, GO...
   centerLat   Float
   centerLng   Float
   radiusKm    Int
@@ -47,13 +44,11 @@ model Ad {
   @@index([status, expiresAt])
 }
 
-/**
- * Sessão de OTP (validaremos depois – step 3)
- */
+// Sessão de OTP
 model OtpSession {
   id        String   @id @default(uuid())
-  phoneE164 String   // alvo do OTP
-  code      String   // (no futuro, podemos hashear)
+  phoneE164 String
+  code      String
   createdAt DateTime @default(now())
   expiresAt DateTime
   consumed  Boolean  @default(false)
