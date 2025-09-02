@@ -2,7 +2,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Inter } from "next/font/google";
-import CookieBanner from "../components/CookieBanner"; // import RELATIVO (evita problema de path alias)
+import CookieBanner from "@/components/CookieBanner";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -21,45 +21,17 @@ export const metadata: Metadata = {
       "Crie anúncios que expiram sozinhos, compartilhe o link direto pro WhatsApp e venda mais rápido.",
     url: "https://qwip.pro",
     siteName: "Qwip",
-    type: "website"
+    type: "website",
   },
-  icons: { icon: "/favicon.ico" }
+  icons: { icon: "/favicon.ico" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className="dark">
-      <body
-        import type { Metadata } from "next";
-import "./globals.css";
-import CookieBanner from "@/components/CookieBanner"; // << importar
-
-export const metadata: Metadata = {
-  title: "Qwip — Venda HOJE",
-  description: "Anúncios rápidos, link direto pro WhatsApp.",
-};
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="pt-BR" suppressHydrationWarning>
-      <body className="bg-background text-foreground">
-        <CookieBanner /> {/* << aparece em todas as páginas, por cima do mapa */}
-        {children}
-      </body>
-    </html>
-  );
-}
-
-        className={[
-          inter.variable,
-          "font-sans",
-          "bg-background text-foreground",
-          "antialiased"
-        ].join(" ")}
-      >
-        {children}
-        {/* Client component, sem dynamic({ ssr:false }) */}
+    <html lang="pt-BR" suppressHydrationWarning className="dark">
+      <body className={`${inter.variable} font-sans bg-background text-foreground antialiased`}>
         <CookieBanner />
+        {children}
       </body>
     </html>
   );
