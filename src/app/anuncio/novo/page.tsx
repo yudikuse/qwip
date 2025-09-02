@@ -1,229 +1,433 @@
-// src/app/anuncio/novo/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import NextDynamic from "next/dynamic"; // renomeado para não colidir com `export const dynamic`
+import dynamic from "next/dynamic";
 
-// 1) Carrega o mapa SOMENTE no cliente (evita "window is not defined")
-const GeoMap = NextDynamic(() => import("@/components/GeoMap"), { ssr: false });
-
-// 2) Evita o Next tentar pré-renderizar esta página
+// ⛔️ impede prerender (evita "window is not defined" em ambientes server)
 export const dynamic = "force-dynamic";
 
+// Leaflet só no cliente
+const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
+
 type LatLng = { lat: number; lng: number };
-type Limits = { minRadius: number; maxRadius: number };
-const LIMITS: Limits = { minRadius: 1, maxRadius: 20 };
 
-const onlyDigits = (s: string) => (s || "").replace(/\D+/g, "");
+const LIMITS = {
+  minRadius: 1,   // km
+  maxRadius: 50,  // km (ajuste depois por plano)
+};
 
-export default function NovoAnuncioPage() {
-  const [foto, setFoto] = useState<File | null>(null);
-  const [preco, setPreco] = useState<string>("");
-  const [descricao, setDescricao] = useState<string>("");
+// Contagem regressiva (ms -> {h,m})
+function getCountdown(targetMs: number) {
+  const diff = Math.max(0, targetMs - Date.now());
+  const h = Math.floor(diff / (1000 * 60 * 60));
+  const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  return { h, m };
+}
 
+function formatPriceBRL(v: string | number) {
+  const n = typeof v === "number" ? v : parseFloat(String(v).replace(",", "."));
+  if (isNaN(n)) return "R$ 0,00";
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+export default function NovaPaginaAnuncio() {
+  // ---------- form state ----------
+  const [file, setFile] = useState<File | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+
+  const [price, setPrice] = useState<string>("20");
+  const [desc, setDesc] = useState<string>("");
+
+  // localização
   const [coords, setCoords] = useState<LatLng | null>(null);
-  const [permDenied, setPermDenied] = useState(false);
-  const [cep, setCep] = useState("");
+  const [cep, setCep] = useState<string>(""); // solicitado apenas se negar location
+  const [city, setCity] = useState<string>("");
 
   const [radius, setRadius] = useState<number>(5);
 
-  // Geolocalização: se negar, obriga CEP
+  // preview / tabs
+  const [tab, setTab] = useState<"anuncio" | "whats">("anuncio");
+
+  // expiração (FREE = 24h)
+  const expiresAt = useMemo(() => Date.now() + 24 * 60 * 60 * 1000, []);
+  const [left, setLeft] = useState(() => getCountdown(expiresAt));
+
+  // -------- efeitos --------
+  // foto preview
   useEffect(() => {
-    if (!("geolocation" in navigator)) {
-      setPermDenied(true);
+    if (!file) {
+      setImageUrl(null);
       return;
     }
+    const url = URL.createObjectURL(file);
+    setImageUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  // timer
+  useEffect(() => {
+    const t = setInterval(() => setLeft(getCountdown(expiresAt)), 30_000);
+    return () => clearInterval(t);
+  }, [expiresAt]);
+
+  // tenta pegar geolocalização
+  useEffect(() => {
+    if (!("geolocation" in navigator)) return;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setPermDenied(false);
+        setCoords({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        });
       },
       () => {
-        setPermDenied(true);
+        // usuário negou -> exige CEP
+        setCoords(null);
       },
-      { enableHighAccuracy: false, timeout: 8000 }
+      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 10_000 }
     );
   }, []);
 
-  // Clampa o raio 1x ao montar
+  // reverse geocoding (coords -> cidade) ou cep -> cidade
   useEffect(() => {
-    setRadius((r) => Math.min(LIMITS.maxRadius, Math.max(LIMITS.minRadius, r)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let controller = new AbortController();
 
-  const cepDigits = useMemo(() => onlyDigits(cep), [cep]);
-  const hasPreco = useMemo(() => onlyDigits(preco).length > 0, [preco]);
+    async function fetchCityByCoords(c: LatLng) {
+      try {
+        const q = new URLSearchParams({
+          lat: String(c.lat),
+          lon: String(c.lng),
+          format: "jsonv2",
+          addressdetails: "1",
+        });
+        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?${q}`, {
+          signal: controller.signal,
+          headers: { "Accept-Language": "pt-BR" },
+        });
+        const j = (await r.json()) as any;
+        const cityName =
+          j?.address?.city ||
+          j?.address?.town ||
+          j?.address?.village ||
+          j?.address?.municipality ||
+          "";
+        setCity(cityName);
+      } catch {}
+    }
 
-  const formValid =
-    Boolean(foto) &&
-    descricao.trim().length >= 3 &&
-    hasPreco &&
-    (coords !== null || (!!cepDigits && cepDigits.length === 8));
+    async function fetchCityByCep(c: string) {
+      // ViaCEP – simples e sem key
+      const clean = c.replace(/\D/g, "");
+      if (clean.length !== 8) return;
+      try {
+        const r = await fetch(`https://viacep.com.br/ws/${clean}/json/`, {
+          signal: controller.signal,
+        });
+        const j = (await r.json()) as any;
+        if (j?.localidade) setCity(j.localidade);
+      } catch {}
+    }
 
+    if (coords) fetchCityByCoords(coords);
+    else if (cep.replace(/\D/g, "").length === 8) fetchCityByCep(cep);
+
+    return () => controller.abort();
+  }, [coords, cep]);
+
+  // validação rápida
+  const isValid =
+    !!file && !!desc.trim() && !!price && (coords !== null || cep.replace(/\D/g, "").length === 8);
+
+  // --------- render ----------
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <div className="container mx-auto max-w-5xl px-6 py-10">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Criar anúncio</h1>
-          <Link
-            href="/"
-            className="rounded-md border border-white/10 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/5"
-          >
-            Voltar
-          </Link>
-        </div>
+    <div className="container mx-auto max-w-6xl px-5 py-10">
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Criar anúncio</h1>
+        <Link
+          href="/"
+          className="rounded-md border border-white/10 px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/5"
+        >
+          Voltar
+        </Link>
+      </div>
 
-        <p className="mt-1 text-sm text-zinc-400">
-          Preencha os campos. A localização usará sua posição atual ou um CEP.
-        </p>
+      <p className="mb-6 text-zinc-400">
+        Preencha os campos. A localização usará sua posição atual ou um CEP.
+      </p>
 
-        <div className="mt-8 grid gap-6 md:grid-cols-2">
-          {/* FORM */}
-          <form
-            className="rounded-2xl border border-white/10 bg-card p-5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              alert(
-                "Validação OK. (Próximo passo: salvar anúncio e ir para link de compartilhamento)"
-              );
-            }}
-          >
-            <div>
-              <label className="block text-sm font-medium text-zinc-200">
-                Foto do produto <span className="text-rose-400">*</span>
-              </label>
+      <div className="grid gap-6 lg:grid-cols-[520px_1fr]">
+        {/* -------- FORM -------- */}
+        <div className="rounded-2xl border border-white/10 bg-card p-5">
+          {/* FOTO */}
+          <label className="block text-sm font-medium">Foto do produto *</label>
+          <div className="mt-2 flex items-center gap-3">
+            <label className="inline-flex cursor-pointer items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500">
               <input
                 type="file"
                 accept="image/*"
-                onChange={(e) => setFoto(e.target.files?.[0] ?? null)}
-                className="mt-2 block w-full rounded-md border border-white/10 bg-transparent p-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-emerald-500 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-[#0F1115] hover:file:bg-emerald-400"
-                required
+                className="hidden"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />
-            </div>
+              Escolher ficheiro
+            </label>
+            <span className="truncate text-sm text-zinc-400">
+              {file ? file.name : "Nenhum ficheiro selecionado"}
+            </span>
+          </div>
 
-            <div className="mt-4">
-              <label className="block text-sm font-medium text-zinc-200">
-                Preço <span className="text-rose-400">*</span>
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="Ex.: 18,50"
-                value={preco}
-                onChange={(e) => setPreco(e.target.value)}
-                className="mt-2 w-full rounded-md border border-white/10 bg-transparent p-2 text-sm outline-none focus:border-emerald-500/50"
-                required
-              />
-            </div>
-
-            <div className="mt-4">
-              <label className="block text-sm font-medium text-zinc-200">
-                Descrição <span className="text-rose-400">*</span>
-              </label>
-              <textarea
-                rows={4}
-                placeholder="Descreva seu produto/serviço…"
-                value={descricao}
-                onChange={(e) => setDescricao(e.target.value)}
-                className="mt-2 w-full rounded-md border border-white/10 bg-transparent p-2 text-sm outline-none focus:border-emerald-500/50"
-                required
-              />
-            </div>
-
-            {/* ALCANCE */}
-            <div className="mt-6">
-              <h3 className="text-sm font-semibold">Área de alcance</h3>
-              <p className="mt-1 text-xs text-zinc-400">
-                Se não permitir localização, informe um CEP.
-              </p>
-
-              {permDenied && (
-                <div className="mt-3">
-                  <label className="block text-sm font-medium text-zinc-200">
-                    CEP (obrigatório se localização negada)
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={9}
-                    placeholder="00000-000"
-                    value={cep}
-                    onChange={(e) => setCep(e.target.value)}
-                    className="mt-2 w-full rounded-md border border-white/10 bg-transparent p-2 text-sm outline-none focus:border-emerald-500/50"
-                  />
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Digite 8 dígitos (com ou sem traço).
-                  </p>
-                </div>
-              )}
-
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-zinc-200">
-                  Raio (km): <span className="text-emerald-400">{radius} km</span>
-                </label>
-                <input
-                  type="range"
-                  min={LIMITS.minRadius}
-                  max={LIMITS.maxRadius}
-                  value={radius}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setRadius(Math.min(LIMITS.maxRadius, Math.max(LIMITS.minRadius, v)));
-                  }}
-                  className="mt-2 w-full"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={!formValid}
-              className="mt-6 w-full rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-[#0F1115] disabled:cursor-not-allowed disabled:opacity-60 hover:bg-emerald-400"
-            >
-              Publicar anúncio
-            </button>
-          </form>
-
-          {/* MAPA + PRÉVIA */}
-          <div className="space-y-4">
-            {/* GeoMap só é carregado no cliente por causa do dynamic + ssr:false */}
-            <GeoMap
-              center={coords ?? null}
-              cep={coords ? undefined : cepDigits}
-              radiusKm={radius}
-              className="h-72 rounded-2xl overflow-hidden border border-white/10"
+          {/* PREÇO */}
+          <div className="mt-5">
+            <label className="block text-sm font-medium">Preço *</label>
+            <input
+              inputMode="decimal"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="Ex: 99,90"
+              className="mt-2 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none ring-emerald-500 focus:ring-2"
             />
+          </div>
 
-            <div className="rounded-2xl border border-white/10 bg-card p-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-zinc-400">Pré-visualização</div>
-                <span className="rounded-md bg-amber-400 px-2 py-0.5 text-[11px] font-semibold text-black">
-                  Expira em 24h
-                </span>
-              </div>
+          {/* DESCRIÇÃO */}
+          <div className="mt-5">
+            <label className="block text-sm font-medium">Descrição *</label>
+            <textarea
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              placeholder="Descreva seu produto/serviço..."
+              rows={5}
+              className="mt-2 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none ring-emerald-500 focus:ring-2"
+            />
+          </div>
 
-              <div className="mt-3 rounded-lg border border-white/10 p-3">
-                <div className="text-sm font-semibold text-zinc-100">
-                  {descricao ? descricao.slice(0, 60) : "Seu título/descrição aparecerá aqui"}
-                </div>
-                <div className="mt-1 text-xs text-zinc-400">
-                  {hasPreco ? `Preço: R$ ${preco}` : "Preço não informado"}
-                </div>
-                <div className="mt-2 flex gap-2">
-                  <button className="rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-[#0F1115]">
-                    WhatsApp
-                  </button>
-                  <button className="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200">
-                    Compartilhar
-                  </button>
-                </div>
-              </div>
+          {/* ÁREA / CEP */}
+          <div className="mt-6">
+            <label className="block text-sm font-medium">Área de alcance</label>
+            <p className="mt-1 text-xs text-zinc-500">
+              Se não permitir localização, informe um CEP (obrigatório).
+            </p>
 
-              {/* depois conectamos a prévia do link real do WhatsApp com o número verificado */}
+            {!coords && (
+              <input
+                value={cep}
+                onChange={(e) => setCep(e.target.value)}
+                maxLength={9}
+                placeholder="CEP (obrigatório se não compartilhar localização)"
+                className="mt-2 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none ring-emerald-500 focus:ring-2"
+              />
+            )}
+
+            <div className="mt-4 text-sm">
+              <span className="mr-2 text-zinc-400">Raio (km):</span>
+              <span className="font-semibold text-emerald-400">{radius} km</span>
+            </div>
+            <input
+              type="range"
+              min={LIMITS.minRadius}
+              max={LIMITS.maxRadius}
+              value={radius}
+              onChange={(e) => setRadius(Number(e.target.value))}
+              className="mt-2 w-full"
+            />
+          </div>
+
+          {/* MAPA REAL – abaixo do formulário */}
+          <div className="mt-6">
+            <div className="text-sm font-medium">Mapa</div>
+            <div className="mt-2 overflow-hidden rounded-lg border border-white/10">
+              <GeoMap
+                center={coords ?? null}
+                cep={coords ? undefined : cep.replace(/\D/g, "")}
+                radiusKm={radius}
+              />
             </div>
           </div>
+
+          {/* AÇÕES */}
+          <button
+            disabled={!isValid}
+            className="mt-6 w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Publicar anúncio
+          </button>
+        </div>
+
+        {/* -------- PREVIEWS -------- */}
+        <div className="space-y-4">
+          {/* abas simples */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setTab("anuncio")}
+              className={`rounded-md px-3 py-1.5 text-sm ${
+                tab === "anuncio" ? "bg-white/10" : "hover:bg-white/5"
+              }`}
+            >
+              Vitrine / Card
+            </button>
+            <button
+              onClick={() => setTab("whats")}
+              className={`rounded-md px-3 py-1.5 text-sm ${
+                tab === "whats" ? "bg-white/10" : "hover:bg-white/5"
+              }`}
+            >
+              WhatsApp
+            </button>
+          </div>
+
+          {tab === "anuncio" ? (
+            <PhoneFrame>
+              <AdCardMock
+                imageUrl={imageUrl}
+                price={price}
+                desc={desc}
+                city={city}
+                left={left}
+              />
+            </PhoneFrame>
+          ) : (
+            <PhoneFrame>
+              <WhatsPreview
+                imageUrl={imageUrl}
+                price={price}
+                desc={desc}
+                left={left}
+              />
+            </PhoneFrame>
+          )}
         </div>
       </div>
-    </main>
+    </div>
+  );
+}
+
+/* -------------------- componentes locais (sem imports extras) -------------------- */
+
+function PhoneFrame({ children }: { children: React.ReactNode }) {
+  // moldura de celular simples
+  return (
+    <div className="mx-auto w-[360px] rounded-[2.5rem] border border-white/10 bg-[#0B0E12] p-4 shadow-2xl">
+      <div className="mx-auto h-4 w-24 rounded-full bg-black/40" />
+      <div className="mt-3 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ExpireBadge({ left }: { left: { h: number; m: number } }) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-md bg-amber-400 px-2 py-0.5 text-[11px] font-semibold text-zinc-900">
+      Expira em {left.h}h {left.m}m
+    </div>
+  );
+}
+
+function AdCardMock({
+  imageUrl,
+  price,
+  desc,
+  city,
+  left,
+}: {
+  imageUrl: string | null;
+  price: string;
+  desc: string;
+  city: string;
+  left: { h: number; m: number };
+}) {
+  return (
+    <div className="bg-white">
+      {/* imagem */}
+      <div className="relative h-40 w-full bg-zinc-200">
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : null}
+        <div className="absolute left-2 top-2">
+          <ExpireBadge left={left} />
+        </div>
+        <div className="absolute right-2 top-2 rounded-full bg-zinc-900/80 px-2 py-0.5 text-[11px] font-semibold text-white">
+          Qwip
+        </div>
+      </div>
+
+      {/* corpo */}
+      <div className="p-3">
+        <div className="text-[15px] font-semibold text-zinc-900">
+          {desc ? desc.split("\n")[0].slice(0, 42) : "Seu título/descrição aparecerá aqui"}
+        </div>
+        <div className="mt-1 text-[13px] leading-snug text-zinc-600">
+          {desc ? desc.slice(0, 140) : "Preço e detalhes aparecerão aqui."}
+        </div>
+
+        <div className="mt-3 flex items-center justify-between">
+          <div className="text-xl font-extrabold text-emerald-600">{formatPriceBRL(price)}</div>
+          <div className="flex items-center gap-1 text-[12px] text-zinc-500">
+            {/* ícone pino minimalista */}
+            <span>📍</span>
+            <span>{city || "Cidade"}</span>
+          </div>
+        </div>
+
+        <button className="mt-3 w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">
+          Tenho interesse — WhatsApp
+        </button>
+
+        <button className="mt-2 w-full cursor-not-allowed rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-400">
+          Compartilhar
+        </button>
+
+        <div className="mt-3 border-t pt-2 text-center text-[12px] text-zinc-500">
+          100% direto no WhatsApp — sem taxas sobre a venda
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WhatsPreview({
+  imageUrl,
+  price,
+  desc,
+  left,
+}: {
+  imageUrl: string | null;
+  price: string;
+  desc: string;
+  left: { h: number; m: number };
+}) {
+  const title = desc ? desc.split("\n")[0].slice(0, 40) : "Título do anúncio";
+  return (
+    <div className="h-[640px] w-full bg-[url('/images/wa-bg.png')] bg-cover p-3">
+      {/* balão do vendedor com link */}
+      <div className="max-w-[88%] rounded-2xl rounded-tr-sm bg-emerald-600 px-3 py-2 text-[13px] text-white shadow">
+        Tenho interesse: {title} — https://qwip.app/abc123
+      </div>
+
+      {/* card preview do link (similar ao Whats) */}
+      <div className="mt-2 w-[92%] overflow-hidden rounded-lg bg-white shadow">
+        {/* topo com “expira” */}
+        <div className="relative h-28 w-full bg-zinc-200">
+          {imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+          ) : null}
+          <div className="absolute left-2 top-2">
+            <ExpireBadge left={left} />
+          </div>
+        </div>
+        <div className="p-2">
+          <div className="text-[12px] font-semibold text-emerald-700">QWIP.APP</div>
+          <div className="text-[14px] font-semibold text-zinc-900">{title}</div>
+          <div className="text-[13px] text-zinc-600">
+            {desc ? desc.slice(0, 90) : "Descrição do anúncio…"}
+          </div>
+          <div className="mt-1 text-[14px] font-extrabold text-emerald-700">
+            {formatPriceBRL(price)}
+          </div>
+          <div className="mt-1 text-[11px] text-zinc-500">Disponível por tempo limitado</div>
+        </div>
+      </div>
+    </div>
   );
 }
