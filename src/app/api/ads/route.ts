@@ -11,7 +11,7 @@ type Body = {
   lat?: number | null;
   lng?: number | null;
   radiusKm?: number | null;
-  sellerId?: number | null; // virá do fluxo de OTP/SMS
+  sellerId?: number | null; // ligaremos ao fluxo de SMS/OTP depois
 };
 
 export async function POST(req: Request) {
@@ -30,19 +30,13 @@ export async function POST(req: Request) {
       sellerId,
     } = body ?? {};
 
-    // Validações mínimas (mantemos o build estável)
+    // Validações mínimas
     if (!description || typeof description !== "string" || !description.trim()) {
-      return NextResponse.json(
-        { ok: false, error: "Descrição é obrigatória." },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Descrição é obrigatória." }, { status: 400 });
     }
 
     if (typeof priceCents !== "number" || !Number.isFinite(priceCents) || priceCents <= 0) {
-      return NextResponse.json(
-        { ok: false, error: "Preço inválido." },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Preço inválido." }, { status: 400 });
     }
 
     if (typeof lat !== "number" || typeof lng !== "number") {
@@ -53,9 +47,9 @@ export async function POST(req: Request) {
     }
 
     if (typeof sellerId !== "number") {
-      // Por enquanto exigimos sellerId. Vamos plugar SMS/OTP depois (próximos passos).
+      // Exigimos sellerId por enquanto (o fluxo de SMS vem em seguida)
       return NextResponse.json(
-        { ok: false, error: "sellerId obrigatório (aguardando fluxo de verificação por SMS)." },
+        { ok: false, error: "sellerId obrigatório (aguardando verificação por SMS)." },
         { status: 400 }
       );
     }
@@ -72,8 +66,7 @@ export async function POST(req: Request) {
     // expira em 24h
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    // O schema exige centerLat/centerLng e relação com seller.
-    // Como o centro é a própria posição escolhida, usamos lat/lng também.
+    // Conforme o schema (title, centerLat, centerLng e relação com seller são obrigatórios)
     const data = {
       title: safeTitle,
       description: description.trim(),
@@ -100,9 +93,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, id: ad.id });
   } catch (err) {
     console.error("[POST /api/ads] error:", err);
-    return NextResponse.json(
-      { ok: false, error: "Erro interno ao criar anúncio." },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: "Erro interno ao criar anúncio." }, { status: 500 });
   }
 }
