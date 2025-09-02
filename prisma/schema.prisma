@@ -1,5 +1,4 @@
 // prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,56 +8,43 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Vendedor: dono dos anúncios (identificado pelo WhatsApp)
 model Seller {
-  id                 String   @id @default(uuid())
-  phoneE164          String   @unique     // ex: +5511999998888
-  whatsappVerifiedAt DateTime?
-  createdAt          DateTime @default(now())
-
-  ads                Ad[]
+  id         String   @id @default(cuid())
+  phoneE164  String   @unique
+  createdAt  DateTime @default(now())
+  ads        Ad[]
 }
 
-// Anúncio básico do MVP
 model Ad {
-  id          String   @id @default(uuid())
-  sellerId    String
-  seller      Seller   @relation(fields: [sellerId], references: [id])
-
-  title       String
+  id         String   @id @default(cuid())
+  title      String
   description String
-  priceCents  Int                 // armazenado em centavos
-  imageUrl    String?
 
-  city        String
-  uf          String              // SP, RJ, GO...
-  centerLat   Float
-  centerLng   Float
-  radiusKm    Int
+  // preço em centavos (ex.: 1999 = R$ 19,99)
+  priceCents Int
 
-  status      AdStatus @default(ACTIVE)
-  expiresAt   DateTime
-  createdAt   DateTime @default(now())
+  city       String?
+  uf         String?
+
+  // ponto escolhido pelo usuário
+  lat        Float
+  lng        Float
+
+  // redundante para filtros/índices futuros
+  centerLat  Float
+  centerLng  Float
+
+  radiusKm   Int
+
+  expiresAt  DateTime
+  isActive   Boolean  @default(true)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sellerId   String
+  seller     Seller   @relation(fields: [sellerId], references: [id])
 
   @@index([sellerId])
-  @@index([status, expiresAt])
-}
-
-// Sessão de OTP
-model OtpSession {
-  id        String   @id @default(uuid())
-  phoneE164 String
-  code      String
-  createdAt DateTime @default(now())
-  expiresAt DateTime
-  consumed  Boolean  @default(false)
-
-  @@index([phoneE164])
   @@index([expiresAt])
-}
-
-enum AdStatus {
-  ACTIVE
-  EXPIRED
-  DRAFT
 }
