@@ -30,6 +30,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR" className="dark">
       <body
+        import type { Metadata } from "next";
+import "./globals.css";
+import CookieBanner from "@/components/CookieBanner"; // << importar
+
+export const metadata: Metadata = {
+  title: "Qwip — Venda HOJE",
+  description: "Anúncios rápidos, link direto pro WhatsApp.",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="pt-BR" suppressHydrationWarning>
+      <body className="bg-background text-foreground">
+        <CookieBanner /> {/* << aparece em todas as páginas, por cima do mapa */}
+        {children}
+      </body>
+    </html>
+  );
+}
+
         className={[
           inter.variable,
           "font-sans",
