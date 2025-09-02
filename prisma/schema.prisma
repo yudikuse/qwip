@@ -5,7 +5,65 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL") // já está setado na Vercel
+  url      = env("DATABASE_URL") // já configurado na Vercel
 }
 
-// Nenhum model ainda – só para habilitar prisma generate sem erro.
+/**
+ * Vendedor: dono dos anúncios (identificado pelo WhatsApp)
+ */
+model Seller {
+  id                  String   @id @default(uuid())
+  phoneE164           String   @unique                 // ex: +5511999998888
+  whatsappVerifiedAt  DateTime?                        // quando validou o OTP
+  createdAt           DateTime @default(now())
+
+  ads                 Ad[]
+}
+
+/**
+ * Anúncio básico para o MVP atual
+ */
+model Ad {
+  id          String   @id @default(uuid())
+  sellerId    String
+  seller      Seller   @relation(fields: [sellerId], references: [id])
+
+  title       String
+  description String
+  priceCents  Int                                      // armazenamos em centavos
+  imageUrl    String?                                  // (upload vem depois)
+
+  city        String
+  uf          String                                   // SP, RJ, GO...
+  centerLat   Float
+  centerLng   Float
+  radiusKm    Int
+
+  status      AdStatus @default(ACTIVE)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([sellerId])
+  @@index([status, expiresAt])
+}
+
+/**
+ * Sessão de OTP (validaremos depois – step 3)
+ */
+model OtpSession {
+  id        String   @id @default(uuid())
+  phoneE164 String   // alvo do OTP
+  code      String   // (no futuro, podemos hashear)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  consumed  Boolean  @default(false)
+
+  @@index([phoneE164])
+  @@index([expiresAt])
+}
+
+enum AdStatus {
+  ACTIVE
+  EXPIRED
+  DRAFT
+}
