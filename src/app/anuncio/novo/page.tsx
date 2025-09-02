@@ -4,33 +4,49 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 
-// Definimos o tipo localmente para evitar import apenas de tipo.
+// Tipo local para coordenadas (evita import apenas de tipo)
 type LatLng = { lat: number; lng: number };
 
-// Carrega o mapa somente no client (evita "window is not defined")
+// Carrega o mapa somente no client
 const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
 
 const LIMITS = { minRadius: 1, maxRadius: 50 } as const;
 
 export default function NovaPaginaAnuncio() {
-  // form
+  // ---- Form fields ----
+  const [title, setTitle] = useState("");               // novo: título
   const [file, setFile] = useState<File | null>(null);
-  const [price, setPrice] = useState("");
+
+  // Preço: guardamos só dígitos (centavos) e formatamos como BRL
+  const [priceDigits, setPriceDigits] = useState("");   // ex.: "3790" = R$ 37,90
+  const priceNumber = useMemo(
+    () => (priceDigits ? Number(priceDigits) / 100 : 0),
+    [priceDigits]
+  );
+  const priceMasked = useMemo(() => {
+    if (!priceDigits) return "";
+    return (Number(priceDigits) / 100).toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    });
+  }, [priceDigits]);
+
   const [desc, setDesc] = useState("");
 
-  // localização
+  // ---- Localização ----
   const [coords, setCoords] = useState<LatLng | null>(null);
   const [cep, setCep] = useState("");
   const [geoDenied, setGeoDenied] = useState(false);
   const [city, setCity] = useState("Atual");
   const [radius, setRadius] = useState(5);
 
+  // Preview da imagem
   const previewUrl = useMemo(() => {
     if (!file) return "";
     return URL.createObjectURL(file);
   }, [file]);
 
-  // Pede geolocalização
+  // Pede geolocalização (botão)
   const askGeolocation = () => {
     if (!("geolocation" in navigator)) return;
     navigator.geolocation.getCurrentPosition(
@@ -43,7 +59,7 @@ export default function NovaPaginaAnuncio() {
     );
   };
 
-  // Reverse geocode -> nome da cidade
+  // Reverse geocode para nome da cidade
   useEffect(() => {
     let stop = false;
     (async () => {
@@ -71,7 +87,7 @@ export default function NovaPaginaAnuncio() {
     };
   }, [coords]);
 
-  // CEP -> múltiplos fallbacks
+  // CEP -> múltiplos fallbacks (BrasilAPI -> ViaCEP+Nominatim -> Nominatim postalcode)
   const locateByCEP = async () => {
     const digits = (cep || "").replace(/\D/g, "");
     if (digits.length !== 8) {
@@ -79,7 +95,6 @@ export default function NovaPaginaAnuncio() {
       return;
     }
 
-    // 1) BrasilAPI: pode trazer lat/lng direto
     try {
       const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${digits}`, {
         cache: "no-store",
@@ -95,11 +110,8 @@ export default function NovaPaginaAnuncio() {
           return;
         }
       }
-    } catch {
-      // continua para fallback
-    }
+    } catch {}
 
-    // 2) ViaCEP -> montar endereço -> Nominatim (por endereço)
     try {
       const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`, {
         cache: "no-store",
@@ -110,7 +122,6 @@ export default function NovaPaginaAnuncio() {
           const cidade: string | undefined = d.localidade;
           const uf: string | undefined = d.uf;
           const pedacoRua: string = d.logradouro || d.bairro || "";
-
           const query = [pedacoRua, cidade && uf ? `${cidade} - ${uf}` : ""]
             .filter(Boolean)
             .join(", ");
@@ -137,11 +148,8 @@ export default function NovaPaginaAnuncio() {
           }
         }
       }
-    } catch {
-      // continua para fallback
-    }
+    } catch {}
 
-    // 3) Nominatim por postalcode (fallback final)
     try {
       const n2 = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&country=BR&postalcode=${encodeURIComponent(
@@ -168,14 +176,20 @@ export default function NovaPaginaAnuncio() {
           }
         }
       }
-    } catch {
-      // erro final
-    }
+    } catch {}
 
     alert("CEP não encontrado. Tente outro CEP ou use 'Usar minha localização'.");
   };
 
-  const canPublish = file && price.trim() && desc.trim();
+  // Regras para habilitar publicação
+  const canPublish =
+    !!file && title.trim().length > 0 && desc.trim().length > 0 && priceNumber > 0;
+
+  // Handler da máscara de preço (BRL)
+  const onPriceInput = (v: string) => {
+    const digitsOnly = v.replace(/\D/g, ""); // mantém só números
+    setPriceDigits(digitsOnly);
+  };
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -193,6 +207,24 @@ export default function NovaPaginaAnuncio() {
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           {/* FORM */}
           <div className="rounded-2xl border border-white/10 bg-card p-5">
+            {/* Título */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium">
+                Título do anúncio <span className="text-emerald-400">*</span>
+              </label>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Ex.: Manicure e Pedicure"
+                maxLength={80}
+                className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
+              />
+              <div className="mt-1 text-xs text-zinc-500">
+                {title.length}/80 caracteres
+              </div>
+            </div>
+
+            {/* Foto */}
             <label className="block text-sm font-medium">
               Foto do produto <span className="text-emerald-400">*</span>
             </label>
@@ -206,18 +238,21 @@ export default function NovaPaginaAnuncio() {
             </div>
 
             <div className="mt-5 grid gap-4">
+              {/* Preço (BRL) */}
               <div>
                 <label className="block text-sm font-medium">
                   Preço <span className="text-emerald-400">*</span>
                 </label>
                 <input
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="Ex.: 99,90"
+                  value={priceMasked}
+                  onChange={(e) => onPriceInput(e.target.value)}
+                  placeholder="R$ 99,90"
+                  inputMode="numeric"
                   className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
                 />
               </div>
 
+              {/* Descrição */}
               <div>
                 <label className="block text-sm font-medium">
                   Descrição <span className="text-emerald-400">*</span>
@@ -227,10 +262,15 @@ export default function NovaPaginaAnuncio() {
                   onChange={(e) => setDesc(e.target.value)}
                   placeholder="Descreva seu produto/serviço..."
                   rows={5}
+                  maxLength={500}
                   className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
                 />
+                <div className="mt-1 text-xs text-zinc-500">
+                  {desc.length}/500 caracteres
+                </div>
               </div>
 
+              {/* Raio */}
               <div>
                 <div className="mb-1 flex items-center justify-between">
                   <label className="block text-sm font-medium">
@@ -248,6 +288,7 @@ export default function NovaPaginaAnuncio() {
                 />
               </div>
 
+              {/* Localização / CEP */}
               <div className="rounded-lg border border-white/10 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
@@ -296,36 +337,53 @@ export default function NovaPaginaAnuncio() {
 
           {/* PREVIEW */}
           <div className="rounded-2xl border border-white/10 bg-card p-5">
+            <div className="mb-2 text-sm font-medium text-zinc-300">
+              Preview do Anúncio
+            </div>
+
             <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-amber-400/10 px-2 py-0.5 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
               Expira em 24h
             </div>
 
+            {/* Card */}
             <div className="overflow-hidden rounded-xl border border-white/10 bg-[#0B0E12]">
-              <div className="h-56 w-full bg-zinc-900">
+              {/* Foto ocupa todo o quadro (cover) */}
+              <div className="w-full" style={{ aspectRatio: "16 / 9" }}>
                 {previewUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={previewUrl}
                     alt="preview"
-                    className="h-56 w-full object-cover"
+                    className="h-full w-full object-cover"
                   />
                 ) : (
-                  <div className="flex h-56 items-center justify-center text-xs text-zinc-500">
+                  <div className="flex h-full w-full items-center justify-center text-xs text-zinc-500 bg-zinc-900">
                     (Sua foto aparecerá aqui)
                   </div>
                 )}
               </div>
 
               <div className="p-4">
-                <div className="text-sm font-semibold">
-                  {desc ? desc.slice(0, 64) : "Seu título/descrição aparecerá aqui"}
+                {/* Título destacado */}
+                <div className="text-base font-semibold text-white">
+                  {title || "Seu título aparecerá aqui"}
                 </div>
-                <div className="mt-1 text-xs text-zinc-400">
-                  Preço: {price ? `R$ ${price}` : "—"}
-                </div>
-                <div className="mt-1 text-xs text-zinc-400">Cidade: {city}</div>
 
-                <div className="mt-3 grid grid-cols-2 gap-3">
+                {/* Preço em destaque secundário */}
+                <div className="mt-1 text-lg font-bold text-emerald-400">
+                  {priceDigits ? priceMasked : "R$ —"}
+                </div>
+
+                {/* Descrição resumida */}
+                <div className="mt-1 text-sm text-zinc-300">
+                  {desc ? desc.slice(0, 140) : "Sua descrição aparecerá aqui..."}
+                </div>
+
+                {/* Cidade */}
+                <div className="mt-2 text-xs text-zinc-400">📍 {city}</div>
+
+                {/* Ações */}
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <button className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400">
                     WhatsApp
                   </button>
@@ -361,5 +419,3 @@ export default function NovaPaginaAnuncio() {
     </main>
   );
 }
-
-// (sem outros exports)
