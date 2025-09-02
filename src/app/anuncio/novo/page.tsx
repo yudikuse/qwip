@@ -14,31 +14,80 @@ const LIMITS = { minRadius: 1, maxRadius: 50 } as const;
 
 // Mapa “estado → UF” caso o Nominatim não entregue ISO
 const STATE_TO_UF: Record<string, string> = {
-  "Acre": "AC", "Alagoas": "AL", "Amapá": "AP", "Amazonas": "AM",
-  "Bahia": "BA", "Ceará": "CE", "Distrito Federal": "DF", "Espírito Santo": "ES",
-  "Goiás": "GO", "Maranhão": "MA", "Mato Grosso": "MT", "Mato Grosso do Sul": "MS",
-  "Minas Gerais": "MG", "Pará": "PA", "Paraíba": "PB", "Paraná": "PR",
-  "Pernambuco": "PE", "Piauí": "PI", "Rio de Janeiro": "RJ", "Rio Grande do Norte": "RN",
-  "Rio Grande do Sul": "RS", "Rondônia": "RO", "Roraima": "RR", "Santa Catarina": "SC",
-  "São Paulo": "SP", "Sergipe": "SE", "Tocantins": "TO",
+  Acre: "AC",
+  Alagoas: "AL",
+  Amapá: "AP",
+  Amazonas: "AM",
+  Bahia: "BA",
+  Ceará: "CE",
+  "Distrito Federal": "DF",
+  "Espírito Santo": "ES",
+  Goiás: "GO",
+  Maranhão: "MA",
+  "Mato Grosso": "MT",
+  "Mato Grosso do Sul": "MS",
+  "Minas Gerais": "MG",
+  Pará: "PA",
+  Paraíba: "PB",
+  Paraná: "PR",
+  Pernambuco: "PE",
+  Piauí: "PI",
+  "Rio de Janeiro": "RJ",
+  "Rio Grande do Norte": "RN",
+  "Rio Grande do Sul": "RS",
+  Rondônia: "RO",
+  Roraima: "RR",
+  "Santa Catarina": "SC",
+  "São Paulo": "SP",
+  Sergipe: "SE",
+  Tocantins: "TO",
+};
+
+// Helpers de preço
+const formatBRL = (v: number | null) =>
+  typeof v === "number"
+    ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v)
+    : "—";
+
+const parseToNumber = (raw: string): number | null => {
+  const clean = raw.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  const n = Number(clean);
+  return Number.isFinite(n) ? n : null;
 };
 
 export default function NovaPaginaAnuncio() {
   // form
   const [file, setFile] = useState<File | null>(null);
-  const [price, setPrice] = useState("");
+  const [title, setTitle] = useState("");
+  const [priceRaw, setPriceRaw] = useState(""); // mantemos o texto do input
+  const priceNumber = useMemo(() => parseToNumber(priceRaw), [priceRaw]);
   const [desc, setDesc] = useState("");
 
   // localização
   const [coords, setCoords] = useState<LatLng | null>(null);
   const [cep, setCep] = useState("");
-  const [geoDenied, setGeoDenied] = useState(false);
+  const [geoDenied, setGeoDenied] = useState(false); // fallback
   const [triedGeo, setTriedGeo] = useState(false);
+  const [perm, setPerm] = useState<"granted" | "denied" | "prompt" | "unknown">("unknown");
   const [city, setCity] = useState("Atual");
   const [uf, setUF] = useState<string>("");
   const [radius, setRadius] = useState(5);
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
+
+  // Permissions API para controlar quando mostrar o CEP
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && "permissions" in navigator) {
+      // @ts-ignore PermissionName não tipado em alguns TS
+      navigator.permissions
+        .query({ name: "geolocation" as PermissionName })
+        .then((status: any) => {
+          setPerm(status.state); // 'granted' | 'denied' | 'prompt'
+          status.onchange = () => setPerm(status.state);
+        })
+        .catch(() => setPerm("unknown"));
+    }
+  }, []);
 
   // Pede geolocalização explicitamente
   const askGeolocation = () => {
@@ -52,11 +101,16 @@ export default function NovaPaginaAnuncio() {
       (err) => {
         // 1 = PERMISSION_DENIED, 2 = POSITION_UNAVAILABLE, 3 = TIMEOUT
         if (err?.code === 1) setGeoDenied(true);
-        // Para indisponível/timeout, mostramos CEP porque triedGeo === true
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
+
+  // Regra única para exibir CEP (com Permissions API + fallback)
+  const showCEP =
+    perm === "unknown"
+      ? geoDenied || (triedGeo && !coords)
+      : perm === "denied" || (perm !== "granted" && triedGeo && !coords);
 
   // Reverse geocode → cidade + UF
   useEffect(() => {
@@ -202,11 +256,10 @@ export default function NovaPaginaAnuncio() {
       }
     } catch {}
 
-    alert("CEP não encontrado. Tente outro CEP ou use “Usar minha localização”.");
+    alert('CEP não encontrado. Tente outro CEP ou use "Usar minha localização".');
   };
 
-  const canPublish = Boolean(file && price.trim() && desc.trim());
-  const showCEP = geoDenied || (triedGeo && !coords);
+  const canPublish = Boolean(file && title.trim() && priceNumber !== null && desc.trim());
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -239,14 +292,30 @@ export default function NovaPaginaAnuncio() {
             <div className="mt-5 grid gap-4">
               <div>
                 <label className="block text-sm font-medium">
-                  Preço <span className="text-emerald-400">*</span>
+                  Título do anúncio <span className="text-emerald-400">*</span>
                 </label>
                 <input
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="Ex.: 99,90"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Ex.: Vestido midi floral"
                   className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium">
+                  Preço (R$) <span className="text-emerald-400">*</span>
+                </label>
+                <input
+                  value={priceRaw}
+                  onChange={(e) => setPriceRaw(e.target.value)}
+                  placeholder="Ex.: 129,90"
+                  inputMode="decimal"
+                  className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
+                />
+                <div className="mt-1 text-[11px] text-zinc-500">
+                  Formato aceito: 1.234,56 (vírgula nos centavos).
+                </div>
               </div>
 
               <div>
@@ -331,6 +400,7 @@ export default function NovaPaginaAnuncio() {
             </div>
 
             <div className="overflow-hidden rounded-xl border border-white/10 bg-[#0B0E12]">
+              {/* Foto ocupa o quadro inteiro (object-cover) */}
               <div className="h-56 w-full bg-zinc-900">
                 {previewUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -343,14 +413,23 @@ export default function NovaPaginaAnuncio() {
               </div>
 
               <div className="p-4">
-                <div className="text-sm font-semibold">
-                  {desc ? desc.slice(0, 64) : "Seu título/descrição aparecerá aqui"}
+                {/* Título maior que a descrição */}
+                <div className="text-base font-semibold leading-tight">
+                  {title || "Título do anúncio"}
                 </div>
-                <div className="mt-1 text-xs text-zinc-400">
-                  Preço: {price ? `R$ ${price}` : "—"}
+
+                {/* Preço em destaque */}
+                <div className="mt-2 text-lg font-bold text-emerald-400">
+                  {formatBRL(priceNumber)}
                 </div>
-                <div className="mt-1 text-xs text-zinc-400">
-                  Cidade: {city}
+
+                {/* Descrição enxuta só para preview */}
+                <div className="mt-1 text-xs text-zinc-400 line-clamp-3">
+                  {desc || "Sua descrição aparecerá aqui..."}
+                </div>
+
+                <div className="mt-2 text-xs text-zinc-400">
+                  {city}
                   {uf ? `, ${uf}` : ""}
                 </div>
 
@@ -375,7 +454,9 @@ export default function NovaPaginaAnuncio() {
               Raio atual: <span className="font-medium text-zinc-200">{radius} km</span>
             </div>
           </div>
-          <GeoMap center={coords} radiusKm={radius} onLocationChange={setCoords} height={320} />
+          <div className="relative z-0">
+            <GeoMap center={coords} radiusKm={radius} onLocationChange={setCoords} height={320} />
+          </div>
           <p className="mt-2 text-xs text-zinc-500">
             Se a localização não aparecer, clique em “Usar minha localização”. Caso negue, informe
             seu CEP.
