@@ -2,23 +2,6 @@
 
 import { useEffect, useState } from 'react';
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import dynamic from "next/dynamic";
-
-/* ⬇️ ADICIONE ESTE BLOCO LOGO AQUI */
-useEffect(() => {
-  try {
-    const has = document.cookie.split("; ").some(c => c.startsWith("qwip_phone_e164="));
-    if (!has) {
-      const current = window.location.pathname + window.location.search;
-      window.location.replace(`/verificar?redirect=${encodeURIComponent(current)}`);
-    }
-  } catch {}
-}, []);
-/* ⬆️ FIM DO BLOCO */
-
-
 type Phase = 'start' | 'code' | 'success';
 
 export default function VerificarWhatsappPage() {
@@ -40,10 +23,8 @@ export default function VerificarWhatsappPage() {
     } catch {}
   }, []);
 
-  // mantém o formato E.164 que sua API espera tratar (+55...)
   function normE164(raw: string) {
-    const trimmed = raw.replace(/[\s-]/g, '');
-    return trimmed;
+    return raw.replace(/[\s-]/g, '');
   }
 
   async function onStart(e: React.FormEvent) {
@@ -59,7 +40,7 @@ export default function VerificarWhatsappPage() {
 
     setLoading(true);
     try {
-      // AQUI O AJUSTE: a rota /api/otp/start espera { phone }
+      // a rota /api/otp/start espera { phone }
       const res = await fetch('/api/otp/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -216,7 +197,7 @@ export default function VerificarWhatsappPage() {
             </p>
 
             <a
-              href={redirectTo} // volta para a rota protegida solicitada
+              href={redirectTo}
               className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-md bg-[var(--primary)] font-medium text-[var(--primary-foreground)] transition hover:opacity-90"
             >
               Continuar
