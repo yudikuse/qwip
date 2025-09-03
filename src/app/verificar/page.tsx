@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type Phase = 'start' | 'code' | 'success';
 
@@ -11,8 +11,20 @@ export default function VerificarWhatsappPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // rota de retorno (default volta pra criação de anúncio)
+  const [redirectTo, setRedirectTo] = useState<string>('/anuncio/novo');
+
+  // lê ?redirect=/alguma-rota
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const r = sp.get('redirect');
+      if (r) setRedirectTo(r);
+    } catch {}
+  }, []);
+
+  // mantém o formato E.164 que sua API espera tratar (+55...)
   function normE164(raw: string) {
-    // remove espaços e hifens comuns; mantém + e dígitos
     const trimmed = raw.replace(/[\s-]/g, '');
     return trimmed;
   }
@@ -30,10 +42,11 @@ export default function VerificarWhatsappPage() {
 
     setLoading(true);
     try {
+      // AQUI O AJUSTE: a rota /api/otp/start espera { phone }
       const res = await fetch('/api/otp/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to }),
+        body: JSON.stringify({ phone: to }),
       });
 
       const data = await res.json();
@@ -62,6 +75,7 @@ export default function VerificarWhatsappPage() {
 
     setLoading(true);
     try {
+      // /api/otp/check agora seta o cookie ao aprovar
       const res = await fetch('/api/otp/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -71,7 +85,6 @@ export default function VerificarWhatsappPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Código inválido');
 
-      // Sucesso: aqui você poderia salvar um token/cookie.
       setPhase('success');
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Erro desconhecido';
@@ -80,6 +93,18 @@ export default function VerificarWhatsappPage() {
       setLoading(false);
     }
   }
+
+  // opcional: auto-redirect após sucesso (mantendo o botão na UI)
+  useEffect(() => {
+    if (phase === 'success') {
+      const t = setTimeout(() => {
+        try {
+          window.location.href = redirectTo;
+        } catch {}
+      }, 700);
+      return () => clearTimeout(t);
+    }
+  }, [phase, redirectTo]);
 
   return (
     <main className="min-h-[calc(100dvh-80px)] w-full bg-background text-foreground">
@@ -174,10 +199,10 @@ export default function VerificarWhatsappPage() {
             </p>
 
             <a
-              href="/dashboard" // ajuste depois para o destino correto do seu fluxo
+              href={redirectTo} // volta para a rota protegida solicitada
               className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-md bg-[var(--primary)] font-medium text-[var(--primary-foreground)] transition hover:opacity-90"
             >
-              Ir para o Dashboard
+              Continuar
             </a>
           </div>
         )}
