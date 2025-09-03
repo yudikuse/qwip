@@ -23,5 +23,6 @@ export function middleware(req: NextRequest) {
 
 // ajuste aqui os caminhos que precisam de OTP
 export const config = {
-  matcher: ["/anuncio/novo"],
+  matcher: ["/anuncio/novo", "/anuncio/novo/:path*"],
 };
+
