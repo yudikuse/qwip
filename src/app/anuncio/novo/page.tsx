@@ -14,80 +14,62 @@ const LIMITS = { minRadius: 1, maxRadius: 50 } as const;
 
 // Mapa “estado → UF” caso o Nominatim não entregue ISO
 const STATE_TO_UF: Record<string, string> = {
-  Acre: "AC",
-  Alagoas: "AL",
-  Amapá: "AP",
-  Amazonas: "AM",
-  Bahia: "BA",
-  Ceará: "CE",
-  "Distrito Federal": "DF",
-  "Espírito Santo": "ES",
-  Goiás: "GO",
-  Maranhão: "MA",
-  "Mato Grosso": "MT",
-  "Mato Grosso do Sul": "MS",
-  "Minas Gerais": "MG",
-  Pará: "PA",
-  Paraíba: "PB",
-  Paraná: "PR",
-  Pernambuco: "PE",
-  Piauí: "PI",
-  "Rio de Janeiro": "RJ",
-  "Rio Grande do Norte": "RN",
-  "Rio Grande do Sul": "RS",
-  Rondônia: "RO",
-  Roraima: "RR",
-  "Santa Catarina": "SC",
-  "São Paulo": "SP",
-  Sergipe: "SE",
-  Tocantins: "TO",
-};
-
-// Helpers de preço
-const formatBRL = (v: number | null) =>
-  typeof v === "number"
-    ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v)
-    : "—";
-
-const parseToNumber = (raw: string): number | null => {
-  const clean = raw.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
-  const n = Number(clean);
-  return Number.isFinite(n) ? n : null;
+  "Acre": "AC", "Alagoas": "AL", "Amapá": "AP", "Amazonas": "AM",
+  "Bahia": "BA", "Ceará": "CE", "Distrito Federal": "DF", "Espírito Santo": "ES",
+  "Goiás": "GO", "Maranhão": "MA", "Mato Grosso": "MT", "Mato Grosso do Sul": "MS",
+  "Minas Gerais": "MG", "Pará": "PA", "Paraíba": "PB", "Paraná": "PR",
+  "Pernambuco": "PE", "Piauí": "PI", "Rio de Janeiro": "RJ", "Rio Grande do Norte": "RN",
+  "Rio Grande do Sul": "RS", "Rondônia": "RO", "Roraima": "RR", "Santa Catarina": "SC",
+  "São Paulo": "SP", "Sergipe": "SE", "Tocantins": "TO",
 };
 
 export default function NovaPaginaAnuncio() {
   // form
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
-  const [priceRaw, setPriceRaw] = useState(""); // mantemos o texto do input
-  const priceNumber = useMemo(() => parseToNumber(priceRaw), [priceRaw]);
+  const [price, setPrice] = useState(""); // texto; convertemos para centavos ao enviar
   const [desc, setDesc] = useState("");
+  const [sellerPhone, setSellerPhone] = useState(""); // WhatsApp do vendedor (E.164 na hora do submit)
 
   // localização
   const [coords, setCoords] = useState<LatLng | null>(null);
   const [cep, setCep] = useState("");
-  const [geoDenied, setGeoDenied] = useState(false); // fallback
+  const [geoDenied, setGeoDenied] = useState(false);
   const [triedGeo, setTriedGeo] = useState(false);
-  const [perm, setPerm] = useState<"granted" | "denied" | "prompt" | "unknown">("unknown");
   const [city, setCity] = useState("Atual");
   const [uf, setUF] = useState<string>("");
   const [radius, setRadius] = useState(5);
 
+  const [submitting, setSubmitting] = useState(false);
+
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
 
-  // Permissions API para controlar quando mostrar o CEP
-  useEffect(() => {
-    if (typeof navigator !== "undefined" && "permissions" in navigator) {
-      // @ts-ignore PermissionName não tipado em alguns TS
-      navigator.permissions
-        .query({ name: "geolocation" as PermissionName })
-        .then((status: any) => {
-          setPerm(status.state); // 'granted' | 'denied' | 'prompt'
-          status.onchange = () => setPerm(status.state);
-        })
-        .catch(() => setPerm("unknown"));
-    }
-  }, []);
+  // Helpers ---------------------------------------------------------
+  const formatBRL = (value: string) => {
+    const normalized = value.replace(/[^\d,.-]/g, "").replace(",", ".");
+    const num = Number(normalized);
+    if (!Number.isFinite(num)) return "—";
+    return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  };
+
+  const toCents = (value: string) => {
+    const normalized = value.replace(/[^\d,.-]/g, "").replace(",", ".");
+    const num = Number(normalized);
+    if (!Number.isFinite(num)) return null;
+    return Math.round(num * 100);
+  };
+
+  // tenta montar E.164 (+55...) com heurística simples
+  const toE164 = (raw: string) => {
+    const digits = raw.replace(/\D/g, "");
+    if (!digits) return "";
+    // Brasil comum: 11 dígitos (DDI não incluído)
+    if (digits.length === 11) return `+55${digits}`;
+    if (digits.startsWith("55") && (digits.length === 13)) return `+${digits}`;
+    if (raw.trim().startsWith("+")) return raw.trim(); // já parece E.164
+    // fallback: coloca + ao início
+    return `+${digits}`;
+  };
 
   // Pede geolocalização explicitamente
   const askGeolocation = () => {
@@ -99,18 +81,11 @@ export default function NovaPaginaAnuncio() {
         setGeoDenied(false);
       },
       (err) => {
-        // 1 = PERMISSION_DENIED, 2 = POSITION_UNAVAILABLE, 3 = TIMEOUT
-        if (err?.code === 1) setGeoDenied(true);
+        if (err?.code === 1) setGeoDenied(true); // PERMISSION_DENIED
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
-
-  // Regra única para exibir CEP (com Permissions API + fallback)
-  const showCEP =
-    perm === "unknown"
-      ? geoDenied || (triedGeo && !coords)
-      : perm === "denied" || (perm !== "granted" && triedGeo && !coords);
 
   // Reverse geocode → cidade + UF
   useEffect(() => {
@@ -236,9 +211,7 @@ export default function NovaPaginaAnuncio() {
           const lng = parseFloat(arr[0].lon);
           if (Number.isFinite(lat) && Number.isFinite(lng)) {
             setCoords({ lat, lng });
-            // tenta inferir cidade/UF do display_name
             const display = String(arr[0].display_name || "");
-            // normalmente "... , Cidade, Estado, Brasil"
             const parts = display.split(",").map((s) => s.trim());
             let cidadeGuess = "Atual";
             let ufGuess = "";
@@ -256,10 +229,66 @@ export default function NovaPaginaAnuncio() {
       }
     } catch {}
 
-    alert('CEP não encontrado. Tente outro CEP ou use "Usar minha localização".');
+    alert("CEP não encontrado. Tente outro CEP ou use “Usar minha localização”.");
   };
 
-  const canPublish = Boolean(file && title.trim() && priceNumber !== null && desc.trim());
+  // SUBMIT ----------------------------------------------------------
+  const canPublish =
+    Boolean(file && price.trim() && desc.trim()) &&
+    Boolean(coords) &&
+    Boolean(sellerPhone.trim());
+
+  const onSubmit = async () => {
+    if (!coords) {
+      alert("Defina sua localização (botão 'Usar minha localização' ou CEP).");
+      return;
+    }
+    const cents = toCents(price);
+    if (cents === null || cents <= 0) {
+      alert("Preço inválido.");
+      return;
+    }
+
+    const phoneE164 = toE164(sellerPhone);
+    if (!phoneE164.startsWith("+") || phoneE164.replace(/\D/g, "").length < 10) {
+      alert("Telefone/WhatsApp inválido. Ex.: +5511999999999 ou 11999999999");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/ads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sellerPhoneE164: phoneE164,
+          title: title || desc.slice(0, 60),
+          description: desc,
+          priceCents: cents,
+          city,
+          uf,
+          lat: coords.lat,
+          lng: coords.lng,
+          radiusKm: radius,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "Falha ao criar anúncio");
+      }
+
+      alert(`Anúncio criado! ID: ${data.id}`);
+      // TODO: direcionar para /anuncio/{id} ou mostrar link de compartilhamento
+    } catch (e: any) {
+      console.error(e);
+      alert(e?.message || "Erro inesperado ao publicar.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const showCEP = geoDenied || (triedGeo && !coords);
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -292,29 +321,38 @@ export default function NovaPaginaAnuncio() {
             <div className="mt-5 grid gap-4">
               <div>
                 <label className="block text-sm font-medium">
-                  Título do anúncio <span className="text-emerald-400">*</span>
+                  Título <span className="text-emerald-400">*</span>
                 </label>
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Ex.: Vestido midi floral"
+                  placeholder="Ex.: Manicure e Pedicure"
                   className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium">
-                  Preço (R$) <span className="text-emerald-400">*</span>
-                </label>
-                <input
-                  value={priceRaw}
-                  onChange={(e) => setPriceRaw(e.target.value)}
-                  placeholder="Ex.: 129,90"
-                  inputMode="decimal"
-                  className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
-                />
-                <div className="mt-1 text-[11px] text-zinc-500">
-                  Formato aceito: 1.234,56 (vírgula nos centavos).
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium">
+                    Preço <span className="text-emerald-400">*</span>
+                  </label>
+                  <input
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    placeholder="Ex.: 99,90"
+                    className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">
+                    WhatsApp do vendedor <span className="text-emerald-400">*</span>
+                  </label>
+                  <input
+                    value={sellerPhone}
+                    onChange={(e) => setSellerPhone(e.target.value)}
+                    placeholder="+55 11 99999-9999"
+                    className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
+                  />
                 </div>
               </div>
 
@@ -384,10 +422,11 @@ export default function NovaPaginaAnuncio() {
               </div>
 
               <button
-                disabled={!canPublish}
+                onClick={onSubmit}
+                disabled={!canPublish || submitting}
                 className="mt-2 w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Publicar anúncio
+                {submitting ? "Publicando..." : "Publicar anúncio"}
               </button>
             </div>
           </div>
@@ -400,7 +439,6 @@ export default function NovaPaginaAnuncio() {
             </div>
 
             <div className="overflow-hidden rounded-xl border border-white/10 bg-[#0B0E12]">
-              {/* Foto ocupa o quadro inteiro (object-cover) */}
               <div className="h-56 w-full bg-zinc-900">
                 {previewUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -413,22 +451,13 @@ export default function NovaPaginaAnuncio() {
               </div>
 
               <div className="p-4">
-                {/* Título maior que a descrição */}
-                <div className="text-base font-semibold leading-tight">
-                  {title || "Título do anúncio"}
+                <div className="text-base font-semibold">
+                  {title || "Seu título aparecerá aqui"}
                 </div>
-
-                {/* Preço em destaque */}
-                <div className="mt-2 text-lg font-bold text-emerald-400">
-                  {formatBRL(priceNumber)}
+                <div className="mt-1 text-xs text-zinc-400">
+                  {price ? formatBRL(price) : "Preço —"}
                 </div>
-
-                {/* Descrição enxuta só para preview */}
-                <div className="mt-1 text-xs text-zinc-400 line-clamp-3">
-                  {desc || "Sua descrição aparecerá aqui..."}
-                </div>
-
-                <div className="mt-2 text-xs text-zinc-400">
+                <div className="mt-1 text-xs text-zinc-400">
                   {city}
                   {uf ? `, ${uf}` : ""}
                 </div>
@@ -454,9 +483,7 @@ export default function NovaPaginaAnuncio() {
               Raio atual: <span className="font-medium text-zinc-200">{radius} km</span>
             </div>
           </div>
-          <div className="relative z-0">
-            <GeoMap center={coords} radiusKm={radius} onLocationChange={setCoords} height={320} />
-          </div>
+          <GeoMap center={coords} radiusKm={radius} onLocationChange={setCoords} height={320} />
           <p className="mt-2 text-xs text-zinc-500">
             Se a localização não aparecer, clique em “Usar minha localização”. Caso negue, informe
             seu CEP.
