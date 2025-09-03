@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { createAdSecure } from "@/lib/ads-client"; // <<< ADICIONADO
 
 type LatLng = { lat: number; lng: number };
 const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
@@ -306,17 +307,27 @@ export default function NovaPaginaAnuncio() {
         centerLng: coords?.lng ?? null,
         radiusKm: radius,
       };
-      const r = await fetch("/api/ads", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await r.json();
-      if (!r.ok) {
+
+      // <<< ALTERADO: usa createAdSecure para pegar nonce e postar com header X-QWIP-NONCE >>>
+      const { ok, status, data } = await createAdSecure(body);
+
+      if (!ok) {
+        if (status === 401) {
+          alert(data?.error || "Sessão expirada. Faça a verificação por SMS novamente.");
+          const current = window.location.pathname + window.location.search;
+          window.location.replace(`/verificar?redirect=${encodeURIComponent(current)}`);
+          return;
+        }
+        if (status === 429) {
+          const wait = data?.retryAfterSec ?? 60;
+          alert(`Muitas tentativas. Tente novamente em ~${wait}s.`);
+          return;
+        }
         alert(data?.error || "Falha ao criar anúncio.");
         return;
       }
-      alert(`Anúncio criado! ID: ${data.id}`);
+
+      alert(data?.id ? `Anúncio criado! ID: ${data.id}` : "Anúncio criado!");
     } catch {
       alert("Erro inesperado ao criar anúncio.");
     }
