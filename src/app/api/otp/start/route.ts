@@ -1,68 +1,57 @@
-import { NextResponse } from 'next/server';
-import twilio, { Twilio } from 'twilio';
+// src/app/api/otp/start/route.ts
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { toE164BR } from "@/lib/phone";
+import { sendOtpSms } from "@/lib/twilio";
+import crypto from "crypto";
 
-function getTwilioFromEnv(): { client: Twilio; serviceSid: string } {
-  const {
-    TWILIO_ACCOUNT_SID,
-    TWILIO_AUTH_TOKEN,
-    TWILIO_VERIFY_SID,
-  } = process.env as Record<string, string | undefined>;
+const TTL_MINUTES = 10;
 
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_VERIFY_SID) {
-    throw new Error(
-      'Missing Twilio env vars (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SID).'
-    );
-  }
-
-  return {
-    client: twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN),
-    serviceSid: TWILIO_VERIFY_SID,
-  };
+function hashCode(code: string) {
+  return crypto.createHash("sha256").update(code).digest("hex");
 }
 
-type StartBody = { to: string };
-
-function isE164(phone: string): boolean {
-  // E.164 simples: começa com + e 8–15 dígitos
-  return /^\+\d{8,15}$/.test(phone);
+function generateCode(): string {
+  // 6 dígitos, sem 000000
+  let n = Math.floor(100000 + Math.random() * 900000);
+  return String(n);
 }
 
 export async function POST(req: Request) {
   try {
-    const raw: unknown = await req.json();
-    if (typeof raw !== 'object' || raw === null) {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    const { phone } = (await req.json()) as { phone?: string };
+    const e164 = phone ? toE164BR(phone) : null;
+    if (!e164) {
+      return NextResponse.json({ ok: false, error: "Telefone inválido." }, { status: 400 });
     }
 
-    const maybe = raw as Partial<StartBody>;
-    const to = typeof maybe.to === 'string' ? maybe.to.trim() : '';
+    // Apaga sessões antigas desse número (mantém simples e sem unique)
+    await prisma.otpSession.deleteMany({ where: { phoneE164: e164 } });
 
-    if (!to) {
-      return NextResponse.json({ error: '`to` is required' }, { status: 400 });
-    }
-    if (!isE164(to)) {
-      return NextResponse.json(
-        { error: 'Phone must be in E.164 format, e.g. +5511999998888' },
-        { status: 400 }
-      );
-    }
+    const code = generateCode();
+    const codeHash = hashCode(code);
+    const expiresAt = new Date(Date.now() + TTL_MINUTES * 60 * 1000);
 
-    const { client, serviceSid } = getTwilioFromEnv();
+    await prisma.otpSession.create({
+      data: {
+        phoneE164: e164,
+        codeHash,
+        expiresAt,
+        attempts: 0,
+        verified: false,
+      },
+    });
 
-    // Força canal WhatsApp (não SMS)
-    const verification = await client.verify.v2
-      .services(serviceSid)
-      .verifications.create({ to, channel: 'whatsapp' });
+    // Envia SMS
+    await sendOtpSms(e164, code);
 
     return NextResponse.json({
-      status: verification.status, // pending quando enviado
-      to: verification.to,
-      channel: verification.channel,
-      sid: verification.sid,
+      ok: true,
+      phoneE164: e164,
+      ttlSeconds: TTL_MINUTES * 60,
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 400 });
+  } catch (err: any) {
+    console.error("[otp/start]", err);
+    return NextResponse.json({ ok: false, error: "Falha ao iniciar OTP." }, { status: 500 });
   }
 }
-
