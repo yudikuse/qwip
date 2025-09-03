@@ -165,4 +165,118 @@ export default function VerificarSmsPage() {
             />
 
             {/* bloco de segurança */}
-            <div className="mt-3
+            <div className="mt-3 rounded-md border border-white/10 bg-black/20 p-3 text-xs text-neutral-300">
+              <ul className="list-disc space-y-1 pl-5">
+                <li>Seu número é usado apenas para verificação.</li>
+                <li>Não compartilhamos seus dados com terceiros.</li>
+                <li>O código tem validade curta — não compartilhe.</li>
+              </ul>
+            </div>
+
+            {/* termos e consentimento */}
+            <div className="mt-4 flex items-start gap-3">
+              <input
+                id="consent"
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                className="mt-1 h-4 w-4 accent-emerald-500"
+              />
+              <label htmlFor="consent" className="text-sm text-neutral-300">
+                Li e concordo com os{' '}
+                <a href="/terms" className="text-emerald-400 underline hover:opacity-90" target="_blank" rel="noopener noreferrer">
+                  Termos de Uso
+                </a>{' '}
+                e com a{' '}
+                <a href="/privacy" className="text-emerald-400 underline hover:opacity-90" target="_blank" rel="noopener noreferrer">
+                  Política de Privacidade
+                </a>
+                .
+              </label>
+            </div>
+
+            {err && <p className="mt-3 text-sm text-red-400">{err}</p>}
+
+            <button
+              type="submit"
+              disabled={loading || !phoneOk || !consent}
+              className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-md bg-emerald-500 font-medium text-[#0F1115] transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? 'Enviando…' : 'Enviar código por SMS'}
+            </button>
+
+            <p className="mt-3 text-xs text-neutral-400">
+              Você receberá um <b>SMS</b> com um código de <b>6 dígitos</b>.
+            </p>
+          </form>
+        )}
+
+        {phase === 'code' && (
+          <form
+            onSubmit={onCheck}
+            className="rounded-lg border border-white/10 bg-[#0f131a] p-6 shadow-sm"
+          >
+            <div className="mb-4">
+              <p className="text-sm text-neutral-300">
+                Enviamos um SMS para{' '}
+                <span className="font-medium text-white">{phoneMasked || 'seu número'}</span>.
+              </p>
+              <p className="mt-1 text-xs text-neutral-400">Não compartilhe este código com ninguém.</p>
+            </div>
+
+            <label htmlFor="code" className="block text-sm font-medium text-neutral-200">
+              Código (6 dígitos)
+            </label>
+            <input
+              id="code"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              className="mt-2 w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-white outline-none placeholder:text-zinc-500 tracking-widest focus:ring-2 focus:ring-emerald-500/60"
+              placeholder="••••••"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              disabled={loading}
+            />
+
+            {err && <p className="mt-3 text-sm text-red-400">{err}</p>}
+
+            <button
+              type="submit"
+              disabled={loading || code.replace(/\D/g, '').length !== 6}
+              className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-md bg-emerald-500 font-medium text-[#0F1115] transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? 'Validando…' : 'Validar código'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPhase('start')}
+              disabled={loading}
+              className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-md border border-white/10 bg-transparent text-sm text-white transition hover:bg-white/5 disabled:opacity-50"
+            >
+              Reenviar para outro número
+            </button>
+          </form>
+        )}
+
+        {phase === 'success' && (
+          <div className="rounded-lg border border-white/10 bg-[#0f131a] p-6 text-center shadow-sm">
+            <h2 className="text-xl font-semibold text-white">Número verificado! ✅</h2>
+            <p className="mt-2 text-sm text-neutral-400">
+              Agora você pode continuar para criar seu anúncio.
+            </p>
+
+            <a
+              href={redirectTo}
+              className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-md bg-emerald-500 font-medium text-[#0F1115] transition hover:bg-emerald-400"
+            >
+              Continuar
+            </a>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
