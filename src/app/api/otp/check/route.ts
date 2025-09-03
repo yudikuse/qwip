@@ -1,52 +1,54 @@
-import { NextResponse } from 'next/server';
-import twilio, { Twilio } from 'twilio';
+import { NextResponse } from "next/server";
+import { toE164BR } from "@/lib/phone";
+import { checkOtpViaVerify } from "@/lib/twilio";
 
-function getTwilioFromEnv(): { client: Twilio; serviceSid: string } {
-  const {
-    TWILIO_ACCOUNT_SID,
-    TWILIO_AUTH_TOKEN,
-    TWILIO_VERIFY_SID,
-  } = process.env as Record<string, string | undefined>;
-
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_VERIFY_SID) {
-    throw new Error(
-      'Missing Twilio env vars (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SID).'
-    );
-  }
-
-  return {
-    client: twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN),
-    serviceSid: TWILIO_VERIFY_SID,
-  };
-}
-
-type CheckBody = { to: string; code: string };
-
+/**
+ * Espera { to: string, code: string }
+ * - to: telefone em qualquer formato BR; normalizamos para E.164
+ * - code: código recebido por SMS
+ *
+ * Respostas:
+ * 200 { status: "approved", valid: true, phoneE164: "+55..." }  -> seta cookie
+ * 200 { status: "...",       valid: false }                      -> código incorreto/expirado
+ * 400 { error: "..." }                                          -> dados inválidos/erro
+ */
 export async function POST(req: Request) {
   try {
-    const raw: unknown = await req.json();
-    if (typeof raw !== 'object' || raw === null) {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    const body = await req.json().catch(() => ({}));
+    const rawTo = (body?.to ?? body?.phone ?? "") as string;
+    const code = (body?.code ?? "") as string;
+
+    const e164 = toE164BR(rawTo || "");
+    if (!e164 || !code) {
+      return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
     }
 
-    const maybe = raw as Partial<CheckBody>;
-    const to = typeof maybe.to === 'string' ? maybe.to : '';
-    const code = typeof maybe.code === 'string' ? maybe.code : '';
+    const result = await checkOtpViaVerify(e164, code);
+    const approved = result?.status === "approved";
 
-    if (!to || !code) {
-      return NextResponse.json({ error: '`to` and `code` are required' }, { status: 400 });
+    if (!approved) {
+      // mantém contrato atual: status + valid=false
+      return NextResponse.json(
+        { status: result?.status ?? "unverified", valid: false },
+        { status: 200 }
+      );
     }
 
-    const { client, serviceSid } = getTwilioFromEnv();
+    // Código aprovado -> seta cookie igual à /api/otp/verify
+    const res = NextResponse.json({
+      status: result.status,
+      valid: true,
+      phoneE164: e164,
+    });
 
-    const result = await client.verify.v2
-      .services(serviceSid)
-      .verificationChecks.create({ to, code });
+    res.headers.set(
+      "Set-Cookie",
+      `qwip_phone_e164=${encodeURIComponent(e164)}; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`
+    );
 
-    return NextResponse.json({ status: result.status, valid: result.valid });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 400 });
+    return res;
+  } catch (err) {
+    console.error("[otp/check]", err);
+    return NextResponse.json({ error: "Falha ao verificar código." }, { status: 400 });
   }
 }
-
