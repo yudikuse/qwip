@@ -43,62 +43,22 @@ const STATE_TO_UF: Record<string, string> = {
   Tocantins: "TO",
 };
 
-// --------- helpers (somente client) ----------
+// 🔧 Versão simples (sem regex) para ler cookies em TSX
 function getCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
-  const m = document.cookie.match(
-    new RegExp("(?:^|; )" + name.replace(/([.$?*|{}()[\\]\\/+^])/g, "\\$1") + "=([^;]*)")
-  );
-  return m ? decodeURIComponent(m[1]) : null;
+  const parts = document.cookie.split("; ").map((p) => p.trim());
+  const hit = parts.find((p) => p.startsWith(name + "="));
+  if (!hit) return null;
+  const idx = hit.indexOf("=");
+  return idx >= 0 ? decodeURIComponent(hit.slice(idx + 1)) : null;
 }
-
-function formatBRPhoneFromE164(e164?: string): string {
-  if (!e164) return "";
-  if (!e164.startsWith("+55")) return e164; // Mantém números internacionais
-
-  const only = e164.replace(/\D/g, "");
-  const without55 = only.startsWith("55") ? only.slice(2) : only;
-
-  if (without55.length === 11) {
-    const ddd = without55.slice(0, 2);
-    const n1 = without55.slice(2, 3); // 9
-    const n2 = without55.slice(3, 7);
-    const n3 = without55.slice(7);
-    return `(${ddd}) ${n1} ${n2}-${n3}`;
-  }
-  if (without55.length === 10) {
-    const ddd = without55.slice(0, 2);
-    const n1 = without55.slice(2, 6);
-    const n2 = without55.slice(6);
-    return `(${ddd}) ${n1}-${n2}`;
-  }
-  return e164;
-}
-
-const currencyFmt = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-  minimumFractionDigits: 2,
-});
-
-// Converte string com dígitos em centavos -> "1234" => "R$ 12,34"
-function formatCentsToBRL(cents: number): string {
-  return currencyFmt.format(cents / 100);
-}
-// ---------------------------------------------
 
 export default function NovaPaginaAnuncio() {
   // form
   const [file, setFile] = useState<File | null>(null);
-
-  // preço com máscara: guardamos centavos e a string formatada que aparece no input
-  const [priceCents, setPriceCents] = useState<number | null>(null);
-  const [priceText, setPriceText] = useState<string>("");
-
+  const [title, setTitle] = useState(""); // título do anúncio
+  const [price, setPrice] = useState("");
   const [desc, setDesc] = useState("");
-
-  // whatsapp verificado (somente leitura)
-  const [phoneE164, setPhoneE164] = useState<string>("");
 
   // localização
   const [coords, setCoords] = useState<LatLng | null>(null);
@@ -110,48 +70,6 @@ export default function NovaPaginaAnuncio() {
   const [radius, setRadius] = useState(5);
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
-  const phoneDisplay = useMemo(() => formatBRPhoneFromE164(phoneE164), [phoneE164]);
-
-  // Carrega o número confirmado (cookie -> localStorage)
-  useEffect(() => {
-    try {
-      const fromCookie = getCookie("qwip_phone_e164");
-      if (fromCookie) {
-        setPhoneE164(fromCookie);
-        return;
-      }
-      if (typeof window !== "undefined") {
-        const fromLS = window.localStorage.getItem("qwip_phone_e164");
-        if (fromLS) setPhoneE164(fromLS);
-      }
-    } catch {
-      // ignora
-    }
-  }, []);
-
-  // Handler da máscara de preço
-  const onPriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Mantemos apenas dígitos do input
-    const onlyDigits = e.target.value.replace(/\D/g, "");
-    if (!onlyDigits) {
-      setPriceCents(null);
-      setPriceText("");
-      return;
-    }
-
-    // Interpreta tudo como centavos
-    const cents = parseInt(onlyDigits, 10);
-    if (Number.isNaN(cents)) {
-      setPriceCents(null);
-      setPriceText("");
-      return;
-    }
-
-    // Limite de segurança (ex.: até 9.999.999,99)
-    const safe = Math.min(cents, 999999999);
-    setPriceCents(safe);
-    setPriceText(formatCentsToBRL(safe)); // exibe já formatado "R$ 1.234,56"
-  };
 
   // Pede geolocalização explicitamente
   const askGeolocation = () => {
@@ -163,7 +81,9 @@ export default function NovaPaginaAnuncio() {
         setGeoDenied(false);
       },
       (err) => {
-        if (err?.code === 1) setGeoDenied(true); // PERMISSION_DENIED
+        // 1 = PERMISSION_DENIED, 2 = POSITION_UNAVAILABLE, 3 = TIMEOUT
+        if (err?.code === 1) setGeoDenied(true);
+        // Para indisponível/timeout, mostramos CEP porque triedGeo === true
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
@@ -178,18 +98,19 @@ export default function NovaPaginaAnuncio() {
       try {
         const res = await fetch(
           `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${coords.lat}&lon=${coords.lng}`,
-        { headers: { Accept: "application/json" }, cache: "no-store" }
+          { headers: { Accept: "application/json" }, cache: "no-store" }
         );
         const data = await res.json();
         if (stop) return;
 
         const nomeCidade =
-          data?.address?.city ||
-          data?.address?.town ||
-          data?.address?.village ||
-          data?.address?.suburb ||
-          "Atual";
+            data?.address?.city ||
+            data?.address?.town ||
+            data?.address?.village ||
+            data?.address?.suburb ||
+            "Atual";
 
+        // UF pode vir no ISO3166-2-lvlX (“BR-SP”)
         const iso: string | undefined =
           data?.address?.["ISO3166-2-lvl4"] ||
           data?.address?.["ISO3166-2-lvl3"] ||
@@ -294,6 +215,7 @@ export default function NovaPaginaAnuncio() {
             setCoords({ lat, lng });
             // tenta inferir cidade/UF do display_name
             const display = String(arr[0].display_name || "");
+            // normalmente "... , Cidade, Estado, Brasil"
             const parts = display.split(",").map((s) => s.trim());
             let cidadeGuess = "Atual";
             let ufGuess = "";
@@ -314,8 +236,11 @@ export default function NovaPaginaAnuncio() {
     alert('CEP não encontrado. Tente outro CEP ou use "Usar minha localização".');
   };
 
-  const canPublish = Boolean(file && priceCents !== null && priceCents > 0 && desc.trim());
+  const canPublish = Boolean(file && (title.trim() || desc.trim()) && price.trim());
   const showCEP = geoDenied || (triedGeo && !coords);
+
+  // (Opcional) exemplo de uso do cookie se você quiser condicionar algo:
+  const consent = getCookie("qwip-consent"); // "accepted" | "rejected" | null
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -346,37 +271,34 @@ export default function NovaPaginaAnuncio() {
             </div>
 
             <div className="mt-5 grid gap-4">
-              {/* WhatsApp confirmado (somente leitura) */}
+              {/* Título */}
               <div>
-                <label className="block text-sm font-medium">WhatsApp (confirmado)</label>
+                <label className="block text-sm font-medium">
+                  Título <span className="text-emerald-400">*</span>
+                </label>
                 <input
-                  value={phoneDisplay || ""}
-                  readOnly
-                  placeholder="Confirme seu número na etapa de login"
-                  className="mt-1 w-full cursor-not-allowed rounded-md border border-white/10 bg-zinc-900/40 px-3 py-2 text-sm text-zinc-400 outline-none placeholder:text-zinc-500"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Ex.: Bicicleta aro 29 semi-nova"
+                  className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
                 />
-                <p className="mt-1 text-xs text-zinc-500">
-                  Este número vem do SMS verificado (Twilio) e não é editável aqui.
-                </p>
               </div>
 
-              {/* Preço com máscara BRL */}
+              {/* Preço */}
               <div>
                 <label className="block text-sm font-medium">
                   Preço <span className="text-emerald-400">*</span>
                 </label>
                 <input
-                  value={priceText}
-                  onChange={onPriceChange}
-                  inputMode="numeric"
-                  placeholder="R$ 0,00"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  placeholder="Ex.: 99,90"
+                  inputMode="decimal"
                   className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
                 />
-                <p className="mt-1 text-xs text-zinc-500">
-                  Digite apenas números. Ex.: 1599 ➜ R$ 15,99
-                </p>
               </div>
 
+              {/* Descrição */}
               <div>
                 <label className="block text-sm font-medium">
                   Descrição <span className="text-emerald-400">*</span>
@@ -390,6 +312,7 @@ export default function NovaPaginaAnuncio() {
                 />
               </div>
 
+              {/* Raio */}
               <div>
                 <div className="mb-1 flex items-center justify-between">
                   <label className="block text-sm font-medium">Área de alcance (km)</label>
@@ -405,6 +328,7 @@ export default function NovaPaginaAnuncio() {
                 />
               </div>
 
+              {/* Localização */}
               <div className="rounded-lg border border-white/10 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
@@ -471,18 +395,21 @@ export default function NovaPaginaAnuncio() {
               </div>
 
               <div className="p-4">
-                <div className="text-sm font-semibold">
-                  {desc ? desc.slice(0, 64) : "Seu título/descrição aparecerá aqui"}
+                {/* título maior que descrição */}
+                <div className="text-base font-bold">
+                  {title ? title.slice(0, 80) : "Título do anúncio"}
                 </div>
-                <div className="mt-1 text-xs text-zinc-400">
-                  Preço: {priceCents !== null ? formatCentsToBRL(priceCents) : "—"}
+
+                <div className="mt-1 text-sm text-zinc-300">
+                  {desc ? desc.slice(0, 120) : "Seu texto de descrição aparecerá aqui"}
+                </div>
+
+                <div className="mt-2 text-xs text-zinc-400">
+                  Preço: {price ? `R$ ${price}` : "—"}
                 </div>
                 <div className="mt-1 text-xs text-zinc-400">
                   Cidade: {city}
                   {uf ? `, ${uf}` : ""}
-                </div>
-                <div className="mt-1 text-xs text-zinc-400">
-                  Contato: {phoneDisplay || "—"}
                 </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-3">
