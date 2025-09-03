@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 
-// --- Tipos e helpers básicos -------------------------------------------------
 type LatLng = { lat: number; lng: number };
 const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
 
@@ -20,45 +19,41 @@ const STATE_TO_UF: Record<string, string> = {
   "São Paulo": "SP", Sergipe: "SE", Tocantins: "TO",
 };
 
-// Cookie simples
-function getCookie(name: string): string | null {
-  if (typeof document === "undefined") return null;
-  const pair = document.cookie.split("; ").find((p) => p.startsWith(name + "="));
-  return pair ? decodeURIComponent(pair.slice(name.length + 1)) : null;
-}
+// ---------- MÁSCARA DE PREÇO (reais por padrão; vírgula ativa centavos) ----------
+const MAX_INT_DIGITS = 12;
 
-// --- Máscara BRL sólida (controlamos dígitos) --------------------------------
-const MAX_DIGITS = 12; // até 999.999.999,99
-
-function formatBRLMaskedFromDigits(digits: string): string {
-  const clean = digits.replace(/\D/g, "");
-  if (!clean) return "";
-  const padded = clean.padStart(3, "0");
-  const intPart = padded.slice(0, -2);
-  const cents = padded.slice(-2);
-  const intWithDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return `${intWithDots},${cents}`;
+function formatIntWithDots(intDigits: string) {
+  const clean = intDigits.replace(/\D/g, "") || "0";
+  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
-function centsFromDigits(digits: string): number {
-  const clean = digits.replace(/\D/g, "");
-  return clean ? parseInt(clean, 10) : 0;
+function clampDigits(s: string, max: number) {
+  return s.replace(/\D/g, "").slice(0, max);
 }
 
 export default function NovaPaginaAnuncio() {
-  // Form
+  // form
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
-  // guarda **apenas dígitos**; renderiza formatado
-  const [priceDigits, setPriceDigits] = useState("");
-  const priceMasked = useMemo(
-    () => formatBRLMaskedFromDigits(priceDigits),
-    [priceDigits]
-  );
-  const priceCents = useMemo(() => centsFromDigits(priceDigits), [priceDigits]);
-
   const [desc, setDesc] = useState("");
 
-  // Localização
+  // máscara
+  const [intDigits, setIntDigits] = useState<string>("");
+  const [centDigits, setCentDigits] = useState<string>("");
+  const [editingCents, setEditingCents] = useState<boolean>(false);
+
+  const priceMasked = useMemo(() => {
+    const intPart = formatIntWithDots(intDigits || "0");
+    const cents = (centDigits + "00").slice(0, 2);
+    return `${intPart},${cents}`;
+  }, [intDigits, centDigits]);
+
+  const priceCents = useMemo(() => {
+    const reais = parseInt(intDigits || "0", 10) || 0;
+    const cents = parseInt((centDigits + "00").slice(0, 2), 10) || 0;
+    return reais * 100 + cents;
+  }, [intDigits, centDigits]);
+
+  // localização
   const [coords, setCoords] = useState<LatLng | null>(null);
   const [cep, setCep] = useState("");
   const [geoDenied, setGeoDenied] = useState(false);
@@ -67,12 +62,9 @@ export default function NovaPaginaAnuncio() {
   const [uf, setUF] = useState<string>("");
   const [radius, setRadius] = useState(5);
 
-  const previewUrl = useMemo(
-    () => (file ? URL.createObjectURL(file) : ""),
-    [file]
-  );
+  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
 
-  // Geolocalização
+  // geolocalização
   const askGeolocation = () => {
     if (!("geolocation" in navigator)) return;
     setTriedGeo(true);
@@ -88,7 +80,7 @@ export default function NovaPaginaAnuncio() {
     );
   };
 
-  // Reverse geocode -> cidade + UF
+  // reverse geocode
   useEffect(() => {
     let stop = false;
     (async () => {
@@ -114,11 +106,9 @@ export default function NovaPaginaAnuncio() {
           data?.address?.["ISO3166-2-lvl2"];
 
         let ufGuess = "";
-        if (typeof iso === "string" && iso.startsWith("BR-")) {
-          ufGuess = iso.slice(3);
-        } else if (data?.address?.state && STATE_TO_UF[data.address.state]) {
+        if (typeof iso === "string" && iso.startsWith("BR-")) ufGuess = iso.slice(3);
+        else if (data?.address?.state && STATE_TO_UF[data.address.state])
           ufGuess = STATE_TO_UF[data.address.state];
-        }
 
         setCity(nomeCidade);
         setUF(ufGuess || "");
@@ -132,7 +122,7 @@ export default function NovaPaginaAnuncio() {
     };
   }, [coords]);
 
-  // CEP com fallbacks
+  // CEP -> coordenadas (igual ao que já estava)
   const locateByCEP = async () => {
     const digits = (cep || "").replace(/\D/g, "");
     if (digits.length !== 8) {
@@ -141,9 +131,7 @@ export default function NovaPaginaAnuncio() {
     }
 
     try {
-      const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${digits}`, {
-        cache: "no-store",
-      });
+      const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${digits}`, { cache: "no-store" });
       if (r.ok) {
         const d = await r.json();
         const lat = d?.location?.coordinates?.latitude;
@@ -159,9 +147,7 @@ export default function NovaPaginaAnuncio() {
     } catch {}
 
     try {
-      const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`, {
-        cache: "no-store",
-      });
+      const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`, { cache: "no-store" });
       if (r.ok) {
         const d = await r.json();
         if (!d.erro) {
@@ -171,6 +157,7 @@ export default function NovaPaginaAnuncio() {
           const query = [pedacoRua, cidade && ufLocal ? `${cidade} - ${ufLocal}` : ""]
             .filter(Boolean)
             .join(", ");
+
           if (query) {
             const q = encodeURIComponent(`${query}, Brasil`);
             const n = await fetch(
@@ -231,52 +218,66 @@ export default function NovaPaginaAnuncio() {
     alert("CEP não encontrado. Tente outro CEP ou use “Usar minha localização”.");
   };
 
-  // Mostrar campo CEP somente quando necessário
   const showCEP = geoDenied || (triedGeo && !coords);
 
-  // --- Handlers da máscara ---------------------------------------------------
+  // --------- handlers da máscara (mesmos de antes; só deixei o input editável) ---------
   function handlePriceKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     const k = e.key;
 
-    // Permite Tab para sair do campo
     if (k === "Tab") return;
 
-    // Backspace / Delete
+    if (k === "," || k === ".") {
+      if (!editingCents) setEditingCents(true);
+      e.preventDefault();
+      return;
+    }
+
     if (k === "Backspace") {
-      setPriceDigits((prev) => prev.slice(0, -1));
+      if (editingCents && centDigits.length > 0) {
+        setCentDigits((c) => c.slice(0, -1));
+        if (centDigits.length <= 1) setEditingCents(false);
+      } else {
+        setIntDigits((i) => i.slice(0, -1));
+      }
       e.preventDefault();
       return;
     }
+
     if (k === "Delete") {
-      setPriceDigits("");
+      setIntDigits("");
+      setCentDigits("");
+      setEditingCents(false);
       e.preventDefault();
       return;
     }
 
-    // Aceita apenas 0-9
     if (/^\d$/.test(k)) {
-      setPriceDigits((prev) => {
-        const joined = (prev + k).replace(/^0+/, ""); // remove zeros à esquerda
-        return joined.slice(0, MAX_DIGITS);
-      });
+      if (editingCents) {
+        if (centDigits.length < 2) setCentDigits((c) => (c + k).slice(0, 2));
+      } else {
+        setIntDigits((i) => clampDigits(i + k, MAX_INT_DIGITS));
+      }
       e.preventDefault();
       return;
     }
 
-    // Bloqueia setas e outros (evita caret no meio)
     e.preventDefault();
   }
 
   function handlePricePaste(e: React.ClipboardEvent<HTMLInputElement>) {
-    const text = e.clipboardData.getData("text");
-    const digits = text.replace(/\D/g, "");
-    if (digits) {
-      setPriceDigits(digits.replace(/^0+/, "").slice(0, MAX_DIGITS));
-    }
+    const raw = e.clipboardData.getData("text") || "";
+    const normalized = raw.replace(/\s+/g, "").replace(/\./g, "").replace(",", ".");
+    const parts = normalized.split(".");
+    const intPart = clampDigits(parts[0] || "0", MAX_INT_DIGITS);
+    const centsPart = clampDigits(parts[1] || "", 2);
+
+    setIntDigits(intPart.replace(/^0+(?=\d)/, ""));
+    setCentDigits(centsPart);
+    setEditingCents(centsPart.length > 0);
+
     e.preventDefault();
   }
 
-  // Publicar
   const canPublish = Boolean(file && title.trim() && priceCents > 0 && desc.trim());
 
   const publish = async () => {
@@ -359,7 +360,13 @@ export default function NovaPaginaAnuncio() {
                   value={priceMasked}
                   onKeyDown={handlePriceKeyDown}
                   onPaste={handlePricePaste}
-                  readOnly // impede o caret no meio; digitamos via handlers acima
+                  onFocus={(e) => {
+                    // coloca o cursor visível no fim do texto
+                    const len = e.currentTarget.value.length;
+                    requestAnimationFrame(() =>
+                      e.currentTarget.setSelectionRange(len, len)
+                    );
+                  }}
                   placeholder="Ex.: 99,90"
                   className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
                 />
@@ -380,9 +387,7 @@ export default function NovaPaginaAnuncio() {
 
               <div>
                 <div className="mb-1 flex items-center justify-between">
-                  <label className="block text-sm font-medium">
-                    Área de alcance (km)
-                  </label>
+                  <label className="block text-sm font-medium">Área de alcance (km)</label>
                   <span className="text-xs text-zinc-400">{radius} km</span>
                 </div>
                 <input
@@ -390,9 +395,7 @@ export default function NovaPaginaAnuncio() {
                   min={LIMITS.minRadius}
                   max={LIMITS.maxRadius}
                   value={radius}
-                  onChange={(e) =>
-                    setRadius(parseInt(e.target.value, 10) || LIMITS.minRadius)
-                  }
+                  onChange={(e) => setRadius(parseInt(e.target.value, 10) || LIMITS.minRadius)}
                   className="w-full"
                 />
               </div>
@@ -446,9 +449,7 @@ export default function NovaPaginaAnuncio() {
 
           {/* PREVIEW */}
           <div className="rounded-2xl border border-white/10 bg-card p-5">
-            <div className="mb-2 text-xs font-medium text-zinc-400">
-              Preview do Anúncio
-            </div>
+            <div className="mb-2 text-xs font-medium text-zinc-400">Preview do Anúncio</div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-amber-400/10 px-2 py-0.5 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
               Expira em 24h
             </div>
@@ -457,11 +458,7 @@ export default function NovaPaginaAnuncio() {
               <div className="h-56 w-full bg-zinc-900">
                 {previewUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={previewUrl}
-                    alt="preview"
-                    className="h-56 w-full object-cover"
-                  />
+                  <img src={previewUrl} alt="preview" className="h-56 w-full object-cover" />
                 ) : (
                   <div className="flex h-56 items-center justify-center text-xs text-zinc-500">
                     (Sua foto aparecerá aqui)
@@ -494,7 +491,7 @@ export default function NovaPaginaAnuncio() {
           </div>
         </div>
 
-        {/* MAPA ABAIXO */}
+        {/* MAPA */}
         <section className="mt-8 rounded-2xl border border-white/10 bg-card p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-semibold">Área no mapa</h2>
@@ -502,15 +499,9 @@ export default function NovaPaginaAnuncio() {
               Raio atual: <span className="font-medium text-zinc-200">{radius} km</span>
             </div>
           </div>
-          <GeoMap
-            center={coords}
-            radiusKm={radius}
-            onLocationChange={setCoords}
-            height={320}
-          />
+          <GeoMap center={coords} radiusKm={radius} onLocationChange={setCoords} height={320} />
           <p className="mt-2 text-xs text-zinc-500">
-            Se a localização não aparecer, clique em “Usar minha localização”.
-            Caso negue, informe seu CEP.
+            Se a localização não aparecer, clique em “Usar minha localização”. Caso negue, informe seu CEP.
           </p>
         </section>
       </div>
