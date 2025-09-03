@@ -17,6 +17,8 @@ export function middleware(req: NextRequest) {
   res.headers.set("X-Permitted-Cross-Domain-Policies", "none");
   res.headers.set("X-DNS-Prefetch-Control", "off");
   res.headers.set('X-QWIP-Security-MW', '1'); // marcador temporário
+  res.headers.set('X-QWIP-Security-MW', '1'); // farol temporário
+
 
 
   // ---------- Proteção de rotas protegidas (mantém seu fluxo atual) ----------
