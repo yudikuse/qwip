@@ -2,6 +2,23 @@
 
 import { useEffect, useState } from 'react';
 
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import dynamic from "next/dynamic";
+
+/* ⬇️ ADICIONE ESTE BLOCO LOGO AQUI */
+useEffect(() => {
+  try {
+    const has = document.cookie.split("; ").some(c => c.startsWith("qwip_phone_e164="));
+    if (!has) {
+      const current = window.location.pathname + window.location.search;
+      window.location.replace(`/verificar?redirect=${encodeURIComponent(current)}`);
+    }
+  } catch {}
+}, []);
+/* ⬆️ FIM DO BLOCO */
+
+
 type Phase = 'start' | 'code' | 'success';
 
 export default function VerificarWhatsappPage() {
