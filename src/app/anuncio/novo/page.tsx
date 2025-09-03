@@ -31,6 +31,18 @@ function clampDigits(s: string, max: number) {
 }
 
 export default function NovaPaginaAnuncio() {
+  /* ========= GUARD OTP (somente cliente) ========= */
+  useEffect(() => {
+    try {
+      const has = document.cookie.split("; ").some(c => c.startsWith("qwip_phone_e164="));
+      if (!has) {
+        const current = window.location.pathname + window.location.search;
+        window.location.replace(`/verificar?redirect=${encodeURIComponent(current)}`);
+      }
+    } catch {}
+  }, []);
+  /* =============================================== */
+
   // form
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
@@ -361,7 +373,6 @@ export default function NovaPaginaAnuncio() {
                   onKeyDown={handlePriceKeyDown}
                   onPaste={handlePricePaste}
                   onFocus={(e) => {
-                    // coloca o cursor visível no fim do texto
                     const len = e.currentTarget.value.length;
                     requestAnimationFrame(() =>
                       e.currentTarget.setSelectionRange(len, len)
@@ -418,7 +429,7 @@ export default function NovaPaginaAnuncio() {
                   </button>
                 </div>
 
-                {showCEP && (
+                {geoDenied || (triedGeo && !coords) ? (
                   <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
                     <input
                       value={cep}
@@ -434,12 +445,12 @@ export default function NovaPaginaAnuncio() {
                       Localizar por CEP
                     </button>
                   </div>
-                )}
+                ) : null}
               </div>
 
               <button
                 onClick={publish}
-                disabled={!canPublish}
+                disabled={!Boolean(file && title.trim() && priceCents > 0 && desc.trim())}
                 className="mt-2 w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Publicar anúncio
