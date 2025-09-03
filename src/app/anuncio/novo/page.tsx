@@ -11,50 +11,27 @@ const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
 const LIMITS = { minRadius: 1, maxRadius: 50 } as const;
 
 const STATE_TO_UF: Record<string, string> = {
-  Acre: "AC",
-  Alagoas: "AL",
-  Amapá: "AP",
-  Amazonas: "AM",
-  Bahia: "BA",
-  Ceará: "CE",
-  "Distrito Federal": "DF",
-  "Espírito Santo": "ES",
-  Goiás: "GO",
-  Maranhão: "MA",
-  "Mato Grosso": "MT",
-  "Mato Grosso do Sul": "MS",
-  "Minas Gerais": "MG",
-  Pará: "PA",
-  Paraíba: "PB",
-  Paraná: "PR",
-  Pernambuco: "PE",
-  Piauí: "PI",
-  "Rio de Janeiro": "RJ",
-  "Rio Grande do Norte": "RN",
-  "Rio Grande do Sul": "RS",
-  Rondônia: "RO",
-  Roraima: "RR",
-  "Santa Catarina": "SC",
-  "São Paulo": "SP",
-  Sergipe: "SE",
-  Tocantins: "TO",
+  Acre: "AC", Alagoas: "AL", Amapá: "AP", Amazonas: "AM",
+  Bahia: "BA", Ceará: "CE", "Distrito Federal": "DF", "Espírito Santo": "ES",
+  Goiás: "GO", Maranhão: "MA", "Mato Grosso": "MT", "Mato Grosso do Sul": "MS",
+  "Minas Gerais": "MG", Pará: "PA", Paraíba: "PB", Paraná: "PR",
+  Pernambuco: "PE", Piauí: "PI", "Rio de Janeiro": "RJ", "Rio Grande do Norte": "RN",
+  "Rio Grande do Sul": "RS", Rondônia: "RO", Roraima: "RR", "Santa Catarina": "SC",
+  "São Paulo": "SP", Sergipe: "SE", Tocantins: "TO",
 };
 
-// Cookie sem regex pesado
+// Cookie simples
 function getCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
-  const pair = document.cookie
-    .split("; ")
-    .find((p) => p.startsWith(name + "="));
-  if (!pair) return null;
-  return decodeURIComponent(pair.slice(name.length + 1));
+  const pair = document.cookie.split("; ").find((p) => p.startsWith(name + "="));
+  return pair ? decodeURIComponent(pair.slice(name.length + 1)) : null;
 }
 
-// --- Máscara de preço BRL ----------------------------------------------------
-// Entrada do usuário vira apenas dígitos (centavos), e formatamos em PT-BR.
-// "1" -> "0,01", "12" -> "0,12", "1234" -> "12,34"
-function formatBRLMaskedFromDigits(digitsOnly: string): string {
-  const clean = digitsOnly.replace(/\D/g, "");
+// --- Máscara BRL sólida (controlamos dígitos) --------------------------------
+const MAX_DIGITS = 12; // até 999.999.999,99
+
+function formatBRLMaskedFromDigits(digits: string): string {
+  const clean = digits.replace(/\D/g, "");
   if (!clean) return "";
   const padded = clean.padStart(3, "0");
   const intPart = padded.slice(0, -2);
@@ -62,8 +39,8 @@ function formatBRLMaskedFromDigits(digitsOnly: string): string {
   const intWithDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   return `${intWithDots},${cents}`;
 }
-function centsFromDigits(digitsOnly: string): number {
-  const clean = digitsOnly.replace(/\D/g, "");
+function centsFromDigits(digits: string): number {
+  const clean = digits.replace(/\D/g, "");
   return clean ? parseInt(clean, 10) : 0;
 }
 
@@ -71,8 +48,14 @@ export default function NovaPaginaAnuncio() {
   // Form
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
-  const [priceMasked, setPriceMasked] = useState(""); // ex.: "1.234,56"
-  const [priceCents, setPriceCents] = useState(0); // ex.: 123456
+  // guarda **apenas dígitos**; renderiza formatado
+  const [priceDigits, setPriceDigits] = useState("");
+  const priceMasked = useMemo(
+    () => formatBRLMaskedFromDigits(priceDigits),
+    [priceDigits]
+  );
+  const priceCents = useMemo(() => centsFromDigits(priceDigits), [priceDigits]);
+
   const [desc, setDesc] = useState("");
 
   // Localização
@@ -157,7 +140,6 @@ export default function NovaPaginaAnuncio() {
       return;
     }
 
-    // 1) BrasilAPI
     try {
       const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${digits}`, {
         cache: "no-store",
@@ -176,7 +158,6 @@ export default function NovaPaginaAnuncio() {
       }
     } catch {}
 
-    // 2) ViaCEP -> endereço -> Nominatim
     try {
       const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`, {
         cache: "no-store",
@@ -215,7 +196,6 @@ export default function NovaPaginaAnuncio() {
       }
     } catch {}
 
-    // 3) Nominatim por postalcode
     try {
       const n2 = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&country=BR&postalcode=${encodeURIComponent(
@@ -230,13 +210,11 @@ export default function NovaPaginaAnuncio() {
           const lng = parseFloat(arr[0].lon);
           if (Number.isFinite(lat) && Number.isFinite(lng)) {
             setCoords({ lat, lng });
-            // tenta inferir cidade/UF do display_name
             const display = String(arr[0].display_name || "");
             const parts = display.split(",").map((s) => s.trim());
             let cidadeGuess = "Atual";
             let ufGuess = "";
             if (parts.length >= 3) {
-              // Normalmente: "... , Cidade, Estado, Brasil"
               cidadeGuess = parts[parts.length - 3];
               const estadoNome = parts[parts.length - 2];
               ufGuess = STATE_TO_UF[estadoNome] || "";
@@ -256,15 +234,50 @@ export default function NovaPaginaAnuncio() {
   // Mostrar campo CEP somente quando necessário
   const showCEP = geoDenied || (triedGeo && !coords);
 
-  // Máscara de preço: atualiza string formatada e centavos
-  const onPriceChange = (val: string) => {
-    setPriceMasked(formatBRLMaskedFromDigits(val));
-    setPriceCents(centsFromDigits(val));
-  };
+  // --- Handlers da máscara ---------------------------------------------------
+  function handlePriceKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    const k = e.key;
 
-  // Publicar (mantém a mesma ideia existente)
-  const canPublish =
-    Boolean(file && title.trim() && priceCents > 0 && desc.trim());
+    // Permite Tab para sair do campo
+    if (k === "Tab") return;
+
+    // Backspace / Delete
+    if (k === "Backspace") {
+      setPriceDigits((prev) => prev.slice(0, -1));
+      e.preventDefault();
+      return;
+    }
+    if (k === "Delete") {
+      setPriceDigits("");
+      e.preventDefault();
+      return;
+    }
+
+    // Aceita apenas 0-9
+    if (/^\d$/.test(k)) {
+      setPriceDigits((prev) => {
+        const joined = (prev + k).replace(/^0+/, ""); // remove zeros à esquerda
+        return joined.slice(0, MAX_DIGITS);
+      });
+      e.preventDefault();
+      return;
+    }
+
+    // Bloqueia setas e outros (evita caret no meio)
+    e.preventDefault();
+  }
+
+  function handlePricePaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    const text = e.clipboardData.getData("text");
+    const digits = text.replace(/\D/g, "");
+    if (digits) {
+      setPriceDigits(digits.replace(/^0+/, "").slice(0, MAX_DIGITS));
+    }
+    e.preventDefault();
+  }
+
+  // Publicar
+  const canPublish = Boolean(file && title.trim() && priceCents > 0 && desc.trim());
 
   const publish = async () => {
     try {
@@ -280,13 +293,11 @@ export default function NovaPaginaAnuncio() {
         centerLng: coords?.lng ?? null,
         radiusKm: radius,
       };
-
       const r = await fetch("/api/ads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-
       const data = await r.json();
       if (!r.ok) {
         alert(data?.error || "Falha ao criar anúncio.");
@@ -346,7 +357,9 @@ export default function NovaPaginaAnuncio() {
                 <input
                   inputMode="numeric"
                   value={priceMasked}
-                  onChange={(e) => onPriceChange(e.target.value)}
+                  onKeyDown={handlePriceKeyDown}
+                  onPaste={handlePricePaste}
+                  readOnly // impede o caret no meio; digitamos via handlers acima
                   placeholder="Ex.: 99,90"
                   className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
                 />
@@ -486,8 +499,7 @@ export default function NovaPaginaAnuncio() {
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-semibold">Área no mapa</h2>
             <div className="text-xs text-zinc-400">
-              Raio atual:{" "}
-              <span className="font-medium text-zinc-200">{radius} km</span>
+              Raio atual: <span className="font-medium text-zinc-200">{radius} km</span>
             </div>
           </div>
           <GeoMap
