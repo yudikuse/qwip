@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 
+// --- Tipos e helpers básicos -------------------------------------------------
 type LatLng = { lat: number; lng: number };
 const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
 
@@ -39,41 +40,42 @@ const STATE_TO_UF: Record<string, string> = {
   Tocantins: "TO",
 };
 
-// ---- Cookies (sem regex) ----------------------------------------------------
+// Cookie sem regex pesado
 function getCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
-  const parts = document.cookie.split("; ").map((p) => p.trim());
-  const hit = parts.find((p) => p.startsWith(name + "="));
-  if (!hit) return null;
-  const idx = hit.indexOf("=");
-  return idx >= 0 ? decodeURIComponent(hit.slice(idx + 1)) : null;
+  const pair = document.cookie
+    .split("; ")
+    .find((p) => p.startsWith(name + "="));
+  if (!pair) return null;
+  return decodeURIComponent(pair.slice(name.length + 1));
 }
 
-// ---- Preço BRL (máscara) ----------------------------------------------------
+// --- Máscara de preço BRL ----------------------------------------------------
+// Entrada do usuário vira apenas dígitos (centavos), e formatamos em PT-BR.
+// "1" -> "0,01", "12" -> "0,12", "1234" -> "12,34"
 function formatBRLMaskedFromDigits(digitsOnly: string): string {
-  // Digitos representam centavos. "1" -> 0,01 | "12" -> 0,12 | "1234" -> 12,34
   const clean = digitsOnly.replace(/\D/g, "");
   if (!clean) return "";
-  const withCents = clean.padStart(3, "0"); // garante pelo menos 3 para não quebrar slice
-  const intStr = withCents.slice(0, -2); // parte inteira
-  const frac = withCents.slice(-2); // centavos
-  const intWithDots = intStr.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return `${intWithDots},${frac}`;
+  const padded = clean.padStart(3, "0");
+  const intPart = padded.slice(0, -2);
+  const cents = padded.slice(-2);
+  const intWithDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `${intWithDots},${cents}`;
 }
-function toCents(digitsOnly: string): number {
+function centsFromDigits(digitsOnly: string): number {
   const clean = digitsOnly.replace(/\D/g, "");
   return clean ? parseInt(clean, 10) : 0;
 }
 
 export default function NovaPaginaAnuncio() {
-  // form
+  // Form
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
-  const [priceMasked, setPriceMasked] = useState(""); // "1.234,56"
-  const [priceCents, setPriceCents] = useState(0); // 123456
+  const [priceMasked, setPriceMasked] = useState(""); // ex.: "1.234,56"
+  const [priceCents, setPriceCents] = useState(0); // ex.: 123456
   const [desc, setDesc] = useState("");
 
-  // localização
+  // Localização
   const [coords, setCoords] = useState<LatLng | null>(null);
   const [cep, setCep] = useState("");
   const [geoDenied, setGeoDenied] = useState(false);
@@ -82,9 +84,12 @@ export default function NovaPaginaAnuncio() {
   const [uf, setUF] = useState<string>("");
   const [radius, setRadius] = useState(5);
 
-  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
+  const previewUrl = useMemo(
+    () => (file ? URL.createObjectURL(file) : ""),
+    [file]
+  );
 
-  // geoloc
+  // Geolocalização
   const askGeolocation = () => {
     if (!("geolocation" in navigator)) return;
     setTriedGeo(true);
@@ -100,7 +105,7 @@ export default function NovaPaginaAnuncio() {
     );
   };
 
-  // reverse geocode
+  // Reverse geocode -> cidade + UF
   useEffect(() => {
     let stop = false;
     (async () => {
@@ -131,6 +136,7 @@ export default function NovaPaginaAnuncio() {
         } else if (data?.address?.state && STATE_TO_UF[data.address.state]) {
           ufGuess = STATE_TO_UF[data.address.state];
         }
+
         setCity(nomeCidade);
         setUF(ufGuess || "");
       } catch {
@@ -143,7 +149,7 @@ export default function NovaPaginaAnuncio() {
     };
   }, [coords]);
 
-  // CEP fallbacks
+  // CEP com fallbacks
   const locateByCEP = async () => {
     const digits = (cep || "").replace(/\D/g, "");
     if (digits.length !== 8) {
@@ -151,8 +157,11 @@ export default function NovaPaginaAnuncio() {
       return;
     }
 
+    // 1) BrasilAPI
     try {
-      const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${digits}`, { cache: "no-store" });
+      const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${digits}`, {
+        cache: "no-store",
+      });
       if (r.ok) {
         const d = await r.json();
         const lat = d?.location?.coordinates?.latitude;
@@ -167,8 +176,11 @@ export default function NovaPaginaAnuncio() {
       }
     } catch {}
 
+    // 2) ViaCEP -> endereço -> Nominatim
     try {
-      const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`, { cache: "no-store" });
+      const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`, {
+        cache: "no-store",
+      });
       if (r.ok) {
         const d = await r.json();
         if (!d.erro) {
@@ -203,6 +215,7 @@ export default function NovaPaginaAnuncio() {
       }
     } catch {}
 
+    // 3) Nominatim por postalcode
     try {
       const n2 = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&country=BR&postalcode=${encodeURIComponent(
@@ -217,5 +230,278 @@ export default function NovaPaginaAnuncio() {
           const lng = parseFloat(arr[0].lon);
           if (Number.isFinite(lat) && Number.isFinite(lng)) {
             setCoords({ lat, lng });
+            // tenta inferir cidade/UF do display_name
             const display = String(arr[0].display_name || "");
             const parts = display.split(",").map((s) => s.trim());
+            let cidadeGuess = "Atual";
+            let ufGuess = "";
+            if (parts.length >= 3) {
+              // Normalmente: "... , Cidade, Estado, Brasil"
+              cidadeGuess = parts[parts.length - 3];
+              const estadoNome = parts[parts.length - 2];
+              ufGuess = STATE_TO_UF[estadoNome] || "";
+            }
+            setCity(cidadeGuess);
+            setUF(ufGuess);
+            setGeoDenied(false);
+            return;
+          }
+        }
+      }
+    } catch {}
+
+    alert("CEP não encontrado. Tente outro CEP ou use “Usar minha localização”.");
+  };
+
+  // Mostrar campo CEP somente quando necessário
+  const showCEP = geoDenied || (triedGeo && !coords);
+
+  // Máscara de preço: atualiza string formatada e centavos
+  const onPriceChange = (val: string) => {
+    setPriceMasked(formatBRLMaskedFromDigits(val));
+    setPriceCents(centsFromDigits(val));
+  };
+
+  // Publicar (mantém a mesma ideia existente)
+  const canPublish =
+    Boolean(file && title.trim() && priceCents > 0 && desc.trim());
+
+  const publish = async () => {
+    try {
+      const body = {
+        title: title.trim(),
+        description: desc.trim(),
+        priceCents,
+        city,
+        uf,
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null,
+        centerLat: coords?.lat ?? null,
+        centerLng: coords?.lng ?? null,
+        radiusKm: radius,
+      };
+
+      const r = await fetch("/api/ads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await r.json();
+      if (!r.ok) {
+        alert(data?.error || "Falha ao criar anúncio.");
+        return;
+      }
+      alert(`Anúncio criado! ID: ${data.id}`);
+    } catch {
+      alert("Erro inesperado ao criar anúncio.");
+    }
+  };
+
+  return (
+    <main className="min-h-screen bg-background text-foreground">
+      <div className="container mx-auto max-w-6xl px-4 py-8">
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Criar anúncio</h1>
+          <Link
+            href="/"
+            className="rounded-lg border border-white/10 px-3 py-1.5 text-sm hover:bg-white/5"
+          >
+            Voltar
+          </Link>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+          {/* FORM */}
+          <div className="rounded-2xl border border-white/10 bg-card p-5">
+            <label className="block text-sm font-medium">
+              Foto do produto <span className="text-emerald-400">*</span>
+            </label>
+            <div className="mt-2">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                className="block w-full rounded-md border border-white/10 bg-transparent text-sm file:mr-4 file:rounded-md file:border-0 file:bg-emerald-600 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-[#0F1115] hover:file:bg-emerald-500"
+              />
+            </div>
+
+            <div className="mt-5 grid gap-4">
+              <div>
+                <label className="block text-sm font-medium">
+                  Título <span className="text-emerald-400">*</span>
+                </label>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Ex.: Bicicleta aro 29 semi-nova"
+                  className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium">
+                  Preço <span className="text-emerald-400">*</span>
+                </label>
+                <input
+                  inputMode="numeric"
+                  value={priceMasked}
+                  onChange={(e) => onPriceChange(e.target.value)}
+                  placeholder="Ex.: 99,90"
+                  className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium">
+                  Descrição <span className="text-emerald-400">*</span>
+                </label>
+                <textarea
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  placeholder="Descreva seu produto/serviço..."
+                  rows={5}
+                  className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
+                />
+              </div>
+
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="block text-sm font-medium">
+                    Área de alcance (km)
+                  </label>
+                  <span className="text-xs text-zinc-400">{radius} km</span>
+                </div>
+                <input
+                  type="range"
+                  min={LIMITS.minRadius}
+                  max={LIMITS.maxRadius}
+                  value={radius}
+                  onChange={(e) =>
+                    setRadius(parseInt(e.target.value, 10) || LIMITS.minRadius)
+                  }
+                  className="w-full"
+                />
+              </div>
+
+              <div className="rounded-lg border border-white/10 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-medium">Localização</div>
+                    <div className="text-xs text-zinc-400">
+                      Usaremos sua posição atual. Se negar, informe seu CEP.
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={askGeolocation}
+                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
+                  >
+                    Usar minha localização
+                  </button>
+                </div>
+
+                {showCEP && (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <input
+                      value={cep}
+                      onChange={(e) => setCep(e.target.value)}
+                      placeholder="Informe seu CEP (apenas números)"
+                      className="rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={locateByCEP}
+                      className="rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/5"
+                    >
+                      Localizar por CEP
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={publish}
+                disabled={!canPublish}
+                className="mt-2 w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Publicar anúncio
+              </button>
+            </div>
+          </div>
+
+          {/* PREVIEW */}
+          <div className="rounded-2xl border border-white/10 bg-card p-5">
+            <div className="mb-2 text-xs font-medium text-zinc-400">
+              Preview do Anúncio
+            </div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-amber-400/10 px-2 py-0.5 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
+              Expira em 24h
+            </div>
+
+            <div className="overflow-hidden rounded-xl border border-white/10 bg-[#0B0E12]">
+              <div className="h-56 w-full bg-zinc-900">
+                {previewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={previewUrl}
+                    alt="preview"
+                    className="h-56 w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-56 items-center justify-center text-xs text-zinc-500">
+                    (Sua foto aparecerá aqui)
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4">
+                <div className="text-sm font-semibold">
+                  {title || "Título do anúncio"}
+                </div>
+                <div className="mt-1 text-xs text-zinc-400">
+                  Preço: {priceMasked ? `R$ ${priceMasked}` : "—"}
+                </div>
+                <div className="mt-1 text-xs text-zinc-400">
+                  Cidade: {city}
+                  {uf ? `, ${uf}` : ""}
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <button className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400">
+                    WhatsApp
+                  </button>
+                  <button className="inline-flex items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5">
+                    Compartilhar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* MAPA ABAIXO */}
+        <section className="mt-8 rounded-2xl border border-white/10 bg-card p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Área no mapa</h2>
+            <div className="text-xs text-zinc-400">
+              Raio atual:{" "}
+              <span className="font-medium text-zinc-200">{radius} km</span>
+            </div>
+          </div>
+          <GeoMap
+            center={coords}
+            radiusKm={radius}
+            onLocationChange={setCoords}
+            height={320}
+          />
+          <p className="mt-2 text-xs text-zinc-500">
+            Se a localização não aparecer, clique em “Usar minha localização”.
+            Caso negue, informe seu CEP.
+          </p>
+        </section>
+      </div>
+    </main>
+  );
+}
