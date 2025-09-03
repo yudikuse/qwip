@@ -3,10 +3,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 type Body = {
-  // identificação do vendedor (por enquanto via telefone – SMS/OTP vem depois)
   sellerPhoneE164?: string | null;
 
-  // dados do anúncio
   title?: string | null;
   description?: string | null;
   priceCents?: number | null;
@@ -28,7 +26,7 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Body;
 
-    // -------- validações básicas --------
+    // -------- validações --------
     const sellerPhoneE164 = (body.sellerPhoneE164 ?? "").toString().trim();
     if (!sellerPhoneE164) {
       return NextResponse.json(
@@ -59,33 +57,26 @@ export async function POST(req: Request) {
       );
     }
 
-    const radiusKm = isFiniteNumber(body.radiusKm) && body.radiusKm! > 0 ? Math.round(body.radiusKm!) : 5;
+    const radiusKm =
+      isFiniteNumber(body.radiusKm) && body.radiusKm! > 0 ? Math.round(body.radiusKm!) : 5;
 
     const safeTitle =
       (body.title ?? description.slice(0, 60)).toString().trim() || "Sem título";
-    const safeCity = (body.city ?? "Atual").toString();
-    const safeUf = (body.uf ?? "").toString();
+    const safeCity = (body.city ?? "Atual").toString() || null;
+    const safeUf = (body.uf ?? "").toString() || null;
 
     // expira em 24h
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    // -------- garante o Seller por telefone (upsert) --------
-    const seller = await prisma.seller.upsert({
-      where: { phoneE164: sellerPhoneE164 },
-      create: { phoneE164: sellerPhoneE164 },
-      update: {},
-      select: { id: true },
-    });
-
-    // -------- cria o anúncio --------
+    // -------- cria o anúncio (conectando/criando Seller por phoneE164) --------
     const ad = await prisma.ad.create({
       data: {
         title: safeTitle,
         description,
         priceCents,
 
-        city: safeCity || null,
-        uf: safeUf || null,
+        city: safeCity,
+        uf: safeUf,
 
         lat,
         lng,
@@ -96,7 +87,12 @@ export async function POST(req: Request) {
         expiresAt,
         isActive: true,
 
-        seller: { connect: { id: seller.id } },
+        seller: {
+          connectOrCreate: {
+            where: { phoneE164: sellerPhoneE164 },
+            create: { phoneE164: sellerPhoneE164 },
+          },
+        },
       },
       select: { id: true },
     });
