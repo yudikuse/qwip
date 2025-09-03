@@ -39,37 +39,38 @@ const STATE_TO_UF: Record<string, string> = {
 
 const LIMITS = { minRadius: 1, maxRadius: 50 } as const;
 
-// Formata uma string de dígitos para máscara BRL (exibição no input)
+// Máscara BRL
 function formatBRLMaskFromDigits(digits: string): string {
   if (!digits) return "";
   const only = digits.replace(/\D/g, "");
-  const padded = only.padStart(3, "0"); // garante pelo menos "0,00"
+  const padded = only.padStart(3, "0");
   const cents = padded.slice(-2);
   const whole = padded.slice(0, -2);
   const wholeNumber = Number(whole);
   const wholeFormatted = wholeNumber.toLocaleString("pt-BR");
   return `${wholeFormatted},${cents}`;
 }
-
-// Retorna centavos a partir da máscara/entrada digitada
 function parseMaskToCents(masked: string): number {
-  const digits = masked.replace(/\D/g, ""); // só números
+  const digits = masked.replace(/\D/g, "");
   if (!digits) return 0;
-  return Number(digits); // já está em centavos (dois últimos dígitos)
+  return Number(digits); // centavos
 }
-
-// Para o preview
 function formatCentsToBRL(cents: number): string {
   const value = cents / 100;
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-// Normaliza telefone em E.164 básico (ex.: 55 + DDD + número)
-function normalizePhoneE164(raw: string): string {
-  const d = raw.replace(/\D/g, "");
-  if (!d) return "";
-  // se já começar com 55, mantém; senão tenta prefixar (pode ajustar depois)
-  return d.startsWith("55") ? `+${d}` : `+55${d}`;
+// Formata exibição do E.164
+function formatE164ForDisplay(e164: string): string {
+  // Ex.: +5511912345678 -> +55 (11) 91234-5678
+  const m = e164.match(/^\+?(\d{2})(\d{2})(\d+)?$/); // simples: +55 DDD resto
+  if (!m) return e164;
+  const cc = m[1]; // 55
+  const ddd = m[2]; // 11
+  const rest = e164.replace(/^\+?55\d{2}/, ""); // remove +55 + DDD
+  if (rest.length === 9) return `+${cc} (${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
+  if (rest.length === 8) return `+${cc} (${ddd}) ${rest.slice(0, 4)}-${rest.slice(4)}`;
+  return `+${cc} (${ddd}) ${rest}`;
 }
 
 // Leaflet só no client
@@ -80,14 +81,16 @@ export default function NovaPaginaAnuncio() {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
-  const [sellerPhone, setSellerPhone] = useState("");
 
-  // preço com máscara + centavos
-  const [priceMasked, setPriceMasked] = useState(""); // exibição "12.345,67"
+  // preço
+  const [priceMasked, setPriceMasked] = useState("");
   const priceCents = useMemo(() => parseMaskToCents(priceMasked), [priceMasked]);
 
+  // número verificado (somente leitura)
+  const [sellerPhoneE164, setSellerPhoneE164] = useState<string>("");
+
   // --- Localização / mapa ---
-  const [coords, setCoords] = useState<LatLng | null>(null); // marcador do mapa
+  const [coords, setCoords] = useState<LatLng | null>(null);
   const [cep, setCep] = useState("");
   const [geoDenied, setGeoDenied] = useState(false);
   const [triedGeo, setTriedGeo] = useState(false);
@@ -96,6 +99,14 @@ export default function NovaPaginaAnuncio() {
   const [radius, setRadius] = useState(5);
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
+
+  // Carrega o número verificado do localStorage (fluxo de OTP irá gravar "qwip:phoneE164")
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("qwip:phoneE164");
+      if (saved) setSellerPhoneE164(saved);
+    } catch {}
+  }, []);
 
   // --- Geolocalização ---
   const askGeolocation = () => {
@@ -107,7 +118,7 @@ export default function NovaPaginaAnuncio() {
         setGeoDenied(false);
       },
       (err) => {
-        if (err?.code === 1) setGeoDenied(true); // permisssão negada
+        if (err?.code === 1) setGeoDenied(true);
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
@@ -165,7 +176,6 @@ export default function NovaPaginaAnuncio() {
       return;
     }
 
-    // 1) BrasilAPI
     try {
       const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${digits}`, { cache: "no-store" });
       if (r.ok) {
@@ -182,7 +192,6 @@ export default function NovaPaginaAnuncio() {
       }
     } catch {}
 
-    // 2) ViaCEP → Nominatim
     try {
       const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`, { cache: "no-store" });
       if (r.ok) {
@@ -220,7 +229,6 @@ export default function NovaPaginaAnuncio() {
       }
     } catch {}
 
-    // 3) Nominatim por postalcode (fallback)
     try {
       const n2 = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&country=BR&postalcode=${encodeURIComponent(
@@ -258,17 +266,15 @@ export default function NovaPaginaAnuncio() {
 
   const showCEP = geoDenied || (triedGeo && !coords);
 
-  // --- Handlers específicos do preço (máscara) ---
+  // preço handler
   const onChangePrice = (value: string) => {
-    // sempre reconstroi a máscara a partir só de dígitos
     const digits = value.replace(/\D/g, "");
     setPriceMasked(formatBRLMaskFromDigits(digits));
   };
 
-  // --- Publicar (POST na API) ---
+  // Publicar
   const canPublish =
-    Boolean(title.trim() && desc.trim() && sellerPhone.trim() && priceCents > 0) &&
-    Boolean(coords);
+    Boolean(title.trim() && desc.trim() && priceCents > 0 && sellerPhoneE164) && Boolean(coords);
 
   const submitAd = async () => {
     if (!canPublish || !coords) return;
@@ -277,11 +283,10 @@ export default function NovaPaginaAnuncio() {
       const body = {
         title: title.trim(),
         description: desc.trim(),
-        sellerPhoneE164: normalizePhoneE164(sellerPhone),
+        sellerPhoneE164, // vem de localStorage (verificado)
         priceCents,
         city: city || "Atual",
         uf: uf || "",
-        // centro e marcador iguais (por enquanto)
         lat: coords.lat,
         lng: coords.lng,
         centerLat: coords.lat,
@@ -303,9 +308,7 @@ export default function NovaPaginaAnuncio() {
 
       const data = await res.json();
       alert(`Anúncio criado! ID: ${data?.id || "(sem id)"}`);
-      // opcionalmente, limpar campos
-      // setTitle(""); setDesc(""); setSellerPhone(""); setPriceMasked("");
-    } catch (e) {
+    } catch {
       alert("Erro ao publicar. Tente novamente.");
     }
   };
@@ -365,17 +368,22 @@ export default function NovaPaginaAnuncio() {
                   />
                 </div>
 
+                {/* WhatsApp verificado – SOMENTE LEITURA */}
                 <div>
                   <label className="block text-sm font-medium">
-                    WhatsApp do vendedor <span className="text-emerald-400">*</span>
+                    WhatsApp do vendedor (verificado)
                   </label>
-                  <input
-                    value={sellerPhone}
-                    onChange={(e) => setSellerPhone(e.target.value)}
-                    inputMode="tel"
-                    placeholder="DDD + número (só dígitos)"
-                    className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
-                  />
+                  <div className="mt-1 inline-flex min-h-[40px] w-full items-center rounded-md border border-white/10 bg-white/5 px-3 text-sm">
+                    {sellerPhoneE164 ? (
+                      <span className="font-medium">
+                        {formatE164ForDisplay(sellerPhoneE164)}
+                      </span>
+                    ) : (
+                      <span className="text-zinc-500">
+                        — número ainda não verificado (publique após verificar)
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
