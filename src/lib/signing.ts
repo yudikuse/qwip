@@ -1,57 +1,70 @@
 // src/lib/signing.ts
 import crypto from "crypto";
 
-const b64url = {
-  enc(buf: Buffer) {
-    return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-  },
-  dec(s: string) {
-    return Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
-  },
-};
-
-const SECRET = process.env.QWIP_SIGNING_SECRET || "";
+/**
+ * Use uma SECRET forte nas variáveis de ambiente:
+ *  - SIGNING_SECRET  (ou QWIP_SIGNING_SECRET)
+ */
+const SECRET =
+  process.env.SIGNING_SECRET ||
+  process.env.QWIP_SIGNING_SECRET ||
+  "CHANGE_ME_IN_PRODUCTION";
 
 export type NonceClaims = {
   sub: "ads";
-  phone: string;      // +5511999999999 (do cookie)
-  ip: string;         // IP do cliente
-  ua: string;         // User-Agent
-  path: string;       // rota alvo, ex: "/api/ads"
-  iat: number;        // issued at (segundos)
-  exp: number;        // expires at (segundos)
+  path: "/api/ads";
+  ip: string;
+  ua: string;
+  phone: string;
+  iat: number;
+  exp: number;
 };
 
-export function signClaims(claims: NonceClaims): string {
-  if (!SECRET) throw new Error("QWIP_SIGNING_SECRET ausente");
-  const header = b64url.enc(Buffer.from(JSON.stringify({ alg: "HS256", typ: "QWIP" })));
-  const payload = b64url.enc(Buffer.from(JSON.stringify(claims)));
-  const data = `${header}.${payload}`;
-  const sig = b64url.enc(crypto.createHmac("sha256", SECRET).update(data).digest());
-  return `${data}.${sig}`;
+function b64urlEncode(str: string) {
+  return Buffer.from(str).toString("base64url");
+}
+function b64urlDecode(b64: string) {
+  return Buffer.from(b64, "base64url").toString("utf8");
+}
+function hmac(payload: string) {
+  return crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
+}
+function timingSafeEq(a: string, b: string) {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
 }
 
+/** Assina um nonce com TTL (segundos). */
+export function signToken(
+  claims: Omit<NonceClaims, "iat" | "exp">,
+  ttlSec = 60
+): string {
+  const iat = Math.floor(Date.now() / 1000);
+  const exp = iat + ttlSec;
+  const full: NonceClaims = { ...claims, iat, exp };
+  const payload = b64urlEncode(JSON.stringify(full));
+  const sig = hmac(payload);
+  return `${payload}.${sig}`;
+}
+
+/** Verifica o nonce assinado. */
 export function verifyToken(token: string):
   | { ok: true; claims: NonceClaims }
-  | { ok: false; reason: "format" | "sig" | "expired" | "invalid" | "secret" } {
+  | { ok: false; reason: string } {
   try {
-    if (!SECRET) return { ok: false, reason: "secret" };
-    const [h, p, s] = token.split(".");
-    if (!h || !p || !s) return { ok: false, reason: "format" };
+    const [payload, sig] = token.split(".");
+    if (!payload || !sig) return { ok: false, reason: "format" };
+    const expected = hmac(payload);
+    if (!timingSafeEq(sig, expected)) return { ok: false, reason: "sig" };
 
-    const data = `${h}.${p}`;
-    const expected = b64url.enc(crypto.createHmac("sha256", SECRET).update(data).digest());
-    // timing-safe
-    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(s))) {
-      return { ok: false, reason: "sig" };
-    }
-
-    const claims = JSON.parse(b64url.dec(p).toString("utf8")) as NonceClaims;
+    const json = JSON.parse(b64urlDecode(payload)) as NonceClaims;
     const now = Math.floor(Date.now() / 1000);
-    if (claims.exp < now) return { ok: false, reason: "expired" };
+    if (json.exp < now) return { ok: false, reason: "expired" };
 
-    return { ok: true, claims };
+    return { ok: true, claims: json };
   } catch {
-    return { ok: false, reason: "invalid" };
+    return { ok: false, reason: "malformed" };
   }
 }
