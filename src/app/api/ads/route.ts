@@ -1,13 +1,11 @@
 // src/app/api/ads/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { verifyToken } from "@/lib/signing";
 import { moderateImageBase64 } from "@/lib/vision";
-import { verifyNonce } from "@/lib/nonce";
-import crypto from "crypto";
 
 /** ===== Config ===== */
 const EXPIRES_HOURS = 24;
-const NONCE_TTL_MS = 120_000; // 120s
 
 /** ===== Rate-limit (memória; troque por Redis/KV depois) ===== */
 const buckets = new Map<string, { c: number; reset: number }>();
@@ -28,9 +26,6 @@ function ipFrom(req: NextRequest) {
   const xfwd = req.headers.get("x-forwarded-for");
   return (xfwd?.split(",")[0] || "").trim() || "0.0.0.0";
 }
-function sha256Base64url(s: string) {
-  return crypto.createHash("sha256").update(s).digest("base64url");
-}
 
 /** ===== Handler ===== */
 export async function POST(req: NextRequest) {
@@ -50,53 +45,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Telefone não verificado." }, { status: 401 });
   }
 
-  // 3) nonce HMAC (gerado em /api/ads/nonce com src/lib/nonce.ts)
+  // 3) nonce/HMAC
   const nonce = req.headers.get("x-qwip-nonce") || "";
-  if (!nonce) {
-    return NextResponse.json({ ok: false, error: "Requisição sem nonce." }, { status: 400 });
-  }
-
-  const ver = verifyNonce(nonce);
-  if (!ver.ok) {
-    const reason = ver.reason === "secret" ? "server" : ver.reason;
-    return NextResponse.json({ ok: false, error: `Nonce inválido (${reason}).` }, { status: 401 });
-  }
-
-  // valida conteúdo do payload do nonce
   const ua = req.headers.get("user-agent") || "";
-  const now = Date.now();
-  const payload = ver.payload || {};
-  const phoneInNonce: string | undefined = payload.sub; // telefone
-  const ts: number | undefined = payload.ts;
-  const ipInNonce: string | undefined = payload.ip;
-  const uaHashInNonce: string | undefined = payload.ua;
+  if (!nonce) return NextResponse.json({ ok: false, error: "Requisição sem nonce." }, { status: 400 });
 
-  if (!phoneInNonce || phoneInNonce !== phoneCookie) {
-    return NextResponse.json({ ok: false, error: "Nonce não confere (telefone)." }, { status: 401 });
-  }
-  if (typeof ts !== "number" || now - ts > NONCE_TTL_MS) {
-    return NextResponse.json({ ok: false, error: "Nonce expirado." }, { status: 401 });
-  }
-  const uaHashNow = sha256Base64url(ua || "unknown");
-  if (uaHashInNonce && uaHashInNonce !== uaHashNow) {
-    return NextResponse.json({ ok: false, error: "Nonce não confere (UA)." }, { status: 401 });
-  }
-  // IP pode variar em provedores móveis/CDN; aqui só checamos se veio e diverge — opcional bloquear:
-  if (ipInNonce && ipInNonce !== ip) {
-    // Para MVP, apenas rejeitamos para endurecer:
-    return NextResponse.json({ ok: false, error: "Nonce não confere (IP)." }, { status: 401 });
-    // Alternativa mais branda: apenas logar e permitir.
+  const ver = await verifyToken(nonce); // <<< async agora
+  if (!ver.ok) return NextResponse.json({ ok: false, error: `Nonce inválido (${ver.reason}).` }, { status: 401 });
+  const c = ver.claims;
+  if (c.sub !== "ads" || c.path !== "/api/ads" || c.ip !== ip || c.ua !== ua || c.phone !== phoneCookie) {
+    return NextResponse.json({ ok: false, error: "Nonce não confere com a sessão." }, { status: 401 });
   }
 
-  // 4) payload do anúncio
+  // 4) payload
   let json: any = {};
-  try {
-    json = await req.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: "JSON inválido." }, { status: 400 });
-  }
-
+  try { json = await req.json(); } catch {}
   const imageBase64 = String(json?.imageBase64 || "");
+
   const title = String(json?.title ?? "").trim();
   const description = String(json?.description ?? "").trim();
   const priceCents = Number(json?.priceCents ?? 0) || 0;
@@ -130,7 +95,6 @@ export async function POST(req: NextRequest) {
     }
   } catch (e) {
     console.error("[vision]", e);
-    // política: falhar fechado no MVP
     return NextResponse.json({ ok: false, error: "Falha ao verificar a imagem. Tente outra." }, { status: 400 });
   }
 
@@ -150,7 +114,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 7) cria o anúncio
-  const expiresAt = new Date(Date.now() + EXPIRES_HOURS * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   try {
     const ad = await prisma.ad.create({
       data: {
