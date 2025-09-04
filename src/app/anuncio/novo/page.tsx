@@ -1,3 +1,4 @@
+// src/app/anuncio/novo/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -11,16 +12,36 @@ const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
 const LIMITS = { minRadius: 1, maxRadius: 50 } as const;
 
 const STATE_TO_UF: Record<string, string> = {
-  Acre: "AC", Alagoas: "AL", Amapá: "AP", Amazonas: "AM",
-  Bahia: "BA", Ceará: "CE", "Distrito Federal": "DF", "Espírito Santo": "ES",
-  Goiás: "GO", Maranhão: "MA", "Mato Grosso": "MT", "Mato Grosso do Sul": "MS",
-  "Minas Gerais": "MG", Pará: "PA", Paraíba: "PB", Paraná: "PR",
-  Pernambuco: "PE", Piauí: "PI", "Rio de Janeiro": "RJ", "Rio Grande do Norte": "RN",
-  "Rio Grande do Sul": "RS", Rondônia: "RO", Roraima: "RR", "Santa Catarina": "SC",
-  "São Paulo": "SP", Sergipe: "SE", Tocantins: "TO",
+  Acre: "AC",
+  Alagoas: "AL",
+  Amapá: "AP",
+  Amazonas: "AM",
+  Bahia: "BA",
+  Ceará: "CE",
+  "Distrito Federal": "DF",
+  "Espírito Santo": "ES",
+  Goiás: "GO",
+  Maranhão: "MA",
+  "Mato Grosso": "MT",
+  "Mato Grosso do Sul": "MS",
+  "Minas Gerais": "MG",
+  Pará: "PA",
+  Paraíba: "PB",
+  Paraná: "PR",
+  Pernambuco: "PE",
+  Piauí: "PI",
+  "Rio de Janeiro": "RJ",
+  "Rio Grande do Norte": "RN",
+  "Rio Grande do Sul": "RS",
+  Rondônia: "RO",
+  Roraima: "RR",
+  "Santa Catarina": "SC",
+  "São Paulo": "SP",
+  Sergipe: "SE",
+  Tocantins: "TO",
 };
 
-// ---------- MÁSCARA DE PREÇO (reais por padrão; vírgula ativa centavos) ----------
+// ======== Máscara de preço (R$) =========
 const MAX_INT_DIGITS = 12;
 
 function formatIntWithDots(intDigits: string) {
@@ -31,7 +52,7 @@ function clampDigits(s: string, max: number) {
   return s.replace(/\D/g, "").slice(0, max);
 }
 
-// Converte File → base64 (apenas conteúdo, sem cabeçalho data:)
+// Converte File → base64 (apenas o payload, sem "data:image/...;base64,")
 const toB64 = (f: File) =>
   new Promise<string>((resolve, reject) => {
     const r = new FileReader();
@@ -41,24 +62,23 @@ const toB64 = (f: File) =>
   });
 
 export default function NovaPaginaAnuncio() {
-  /* ========= GUARD OTP (somente cliente) ========= */
+  // Guard: exige cookie de verificação
   useEffect(() => {
     try {
-      const has = document.cookie.split("; ").some(c => c.startsWith("qwip_phone_e164="));
+      const has = document.cookie.split("; ").some((c) => c.startsWith("qwip_phone_e164="));
       if (!has) {
         const current = window.location.pathname + window.location.search;
         window.location.replace(`/verificar?redirect=${encodeURIComponent(current)}`);
       }
     } catch {}
   }, []);
-  /* =============================================== */
 
-  // form
+  // Form
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
 
-  // máscara
+  // Máscara
   const [intDigits, setIntDigits] = useState<string>("");
   const [centDigits, setCentDigits] = useState<string>("");
   const [editingCents, setEditingCents] = useState<boolean>(false);
@@ -75,7 +95,7 @@ export default function NovaPaginaAnuncio() {
     return reais * 100 + cents;
   }, [intDigits, centDigits]);
 
-  // localização
+  // Localização
   const [coords, setCoords] = useState<LatLng | null>(null);
   const [cep, setCep] = useState("");
   const [geoDenied, setGeoDenied] = useState(false);
@@ -86,7 +106,7 @@ export default function NovaPaginaAnuncio() {
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
 
-  // geolocalização
+  // Pegar geolocalização
   const askGeolocation = () => {
     if (!("geolocation" in navigator)) return;
     setTriedGeo(true);
@@ -102,7 +122,7 @@ export default function NovaPaginaAnuncio() {
     );
   };
 
-  // reverse geocode
+  // Reverse geocode
   useEffect(() => {
     let stop = false;
     (async () => {
@@ -144,7 +164,7 @@ export default function NovaPaginaAnuncio() {
     };
   }, [coords]);
 
-  // CEP -> coordenadas
+  // CEP → coordenadas
   const locateByCEP = async () => {
     const digits = (cep || "").replace(/\D/g, "");
     if (digits.length !== 8) {
@@ -242,7 +262,7 @@ export default function NovaPaginaAnuncio() {
 
   const showCEP = geoDenied || (triedGeo && !coords);
 
-  // --------- handlers da máscara ---------
+  // Handlers da máscara
   function handlePriceKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     const k = e.key;
 
@@ -302,6 +322,7 @@ export default function NovaPaginaAnuncio() {
 
   const canPublish = Boolean(file && title.trim() && priceCents > 0 && desc.trim());
 
+  // Publicar
   const publish = async () => {
     try {
       if (!file) {
@@ -330,10 +351,9 @@ export default function NovaPaginaAnuncio() {
         centerLat: coords?.lat ?? null,
         centerLng: coords?.lng ?? null,
         radiusKm: radius,
-        imageBase64, // <<<<<< ESSENCIAL PARA O BACKEND
+        imageBase64,
       };
 
-      // envia com proteção (nonce + cookie)
       const { ok, status, data } = await createAdSecure(body);
 
       if (!ok) {
@@ -411,9 +431,7 @@ export default function NovaPaginaAnuncio() {
                   onPaste={handlePricePaste}
                   onFocus={(e) => {
                     const len = e.currentTarget.value.length;
-                    requestAnimationFrame(() =>
-                      e.currentTarget.setSelectionRange(len, len)
-                    );
+                    requestAnimationFrame(() => e.currentTarget.setSelectionRange(len, len));
                   }}
                   placeholder="Ex.: 99,90"
                   className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
@@ -443,7 +461,9 @@ export default function NovaPaginaAnuncio() {
                   min={LIMITS.minRadius}
                   max={LIMITS.maxRadius}
                   value={radius}
-                  onChange={(e) => setRadius(parseInt(e.target.value, 10) || LIMITS.minRadius)}
+                  onChange={(e) =>
+                    setRadius(parseInt(e.target.value, 10) || LIMITS.minRadius)
+                  }
                   className="w-full"
                 />
               </div>
@@ -515,9 +535,7 @@ export default function NovaPaginaAnuncio() {
               </div>
 
               <div className="p-4">
-                <div className="text-sm font-semibold">
-                  {title || "Título do anúncio"}
-                </div>
+                <div className="text-sm font-semibold">{title || "Título do anúncio"}</div>
                 <div className="mt-1 text-xs text-zinc-400">
                   Preço: {priceMasked ? `R$ ${priceMasked}` : "—"}
                 </div>
@@ -549,7 +567,8 @@ export default function NovaPaginaAnuncio() {
           </div>
           <GeoMap center={coords} radiusKm={radius} onLocationChange={setCoords} height={320} />
           <p className="mt-2 text-xs text-zinc-500">
-            Se a localização não aparecer, clique em “Usar minha localização”. Caso negue, informe seu CEP.
+            Se a localização não aparecer, clique em “Usar minha localização”. Caso negue, informe
+            seu CEP.
           </p>
         </section>
       </div>
