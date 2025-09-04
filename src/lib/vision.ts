@@ -1,226 +1,157 @@
 // src/lib/vision.ts
-// Moderador de imagem com fail-safe.
-// - Aceita base64 com ou sem cabeçalho data URI
-// - Limite de 5MB (igual ao front)
-// - Provider selecionável por env: SAFE_VISION_PROVIDER = "google" | "openai"
-// - STRICT: se algo falhar e SAFE_VISION_STRICT === "true", bloqueia; senão libera
-// - Loga o motivo do bloqueio no servidor para facilitar ajuste de cortes.
+// Moderador de imagem com Google Cloud Vision (REST), "fail-safe":
+// - Só bloqueia quando o Vision indicar forte probabilidade.
+// - Se a API falhar/faltar chave, NÃO bloqueia (a menos que STRICT esteja ligado).
+// - Opção de "whitelist" para fotos de comida, para evitar falso-positivo de "racy" em panetone etc.
 
-export type ModResult = { blocked: boolean; reason?: string };
+export type ModResult = {
+  blocked: boolean;
+  reason?: string;          // resumo curto (ex.: "adult>=LIKELY" | "racy>=VERY_LIKELY" | "api_error" | "invalid_b64")
+  details?: unknown;        // objeto bruto (opcional; útil em logs quando DEBUG)
+};
 
-const BYTES_MAX = 5 * 1024 * 1024;
-const STRICT = process.env.SAFE_VISION_STRICT === "true";
-const PROVIDER = (process.env.SAFE_VISION_PROVIDER || "google").toLowerCase();
+const BYTES_MAX = 5 * 1024 * 1024; // 5MB — consistente com o front
 
-// ---- OPENAI (opcional) ----
-const OPENAI_KEY = process.env.OPENAI_API_KEY || "";
+const STRICT = process.env.SAFE_VISION_STRICT === "true";            // se true, falha da API => bloqueia
+const DEBUG  = process.env.SAFE_VISION_DEBUG  === "true";            // se true, inclui details em logs e pode ser exposto pelo route.ts
+const WHITELIST_FOOD = process.env.SAFE_VISION_WHITELIST_FOOD === "true"; // libera "racy" se for comida
 
-// ---- GOOGLE SA (service account via JWT) ----
-const GCP_CLIENT_EMAIL = process.env.GCP_CLIENT_EMAIL || "";
-const GCP_PRIVATE_KEY_RAW = process.env.GCP_PRIVATE_KEY || "";
-// corrige quebra de linha de env
-const GCP_PRIVATE_KEY = GCP_PRIVATE_KEY_RAW.replace(/\\n/g, "\n");
+// Limiares (padrões conservadores: bloqueia ADULT/VIOLENCE >= LIKELY; RACY >= VERY_LIKELY)
+const ADULT_MIN      = Number(process.env.SAFE_VISION_ADULT_MIN      ?? 4); // 4=LIKELY, 5=VERY_LIKELY
+const VIOLENCE_MIN   = Number(process.env.SAFE_VISION_VIOLENCE_MIN   ?? 4);
+const RACY_MIN       = Number(process.env.SAFE_VISION_RACY_MIN       ?? 5); // RACY mais estrito (muito comum falso-positivo leve)
 
+const GCV_KEY = process.env.GOOGLE_VISION_API_KEY || process.env.GOOGLE_API_KEY || "";
+
+/** Converte base64 (aceita "data:image/...;base64,xxx" ou payload puro) para payload puro */
+function toPureBase64(b64: string) {
+  const parts = String(b64 || "").split(",");
+  return parts.length > 1 ? parts.slice(1).join(",") : String(b64 || "");
+}
+
+/** Estima bytes do base64 (sem considerar padding) */
 function approxBytesFromB64(b64: string) {
   const len = b64.replace(/=+$/, "").length;
   return Math.floor((len * 3) / 4);
 }
 
-function cleanBase64(input: string) {
-  const parts = String(input).split(",");
-  return parts.length > 1 ? parts.slice(1).join(",") : input;
-}
-
-/* =========================================================
- * GOOGLE VISION
- * =======================================================*/
-function rank(l: string | undefined) {
-  switch (l) {
-    case "VERY_LIKELY": return 5;
-    case "LIKELY": return 4;
-    case "POSSIBLE": return 3;
-    case "UNLIKELY": return 2;
+/** Mapeia os enums do Vision para score 0..5 */
+function likelihoodToScore(x: string | undefined) {
+  switch ((x || "").toUpperCase()) {
+    case "UNKNOWN": return 0;
     case "VERY_UNLIKELY": return 1;
-    default: return 0; // UNKNOWN
+    case "UNLIKELY": return 2;
+    case "POSSIBLE": return 3;
+    case "LIKELY": return 4;
+    case "VERY_LIKELY": return 5;
+    default: return 0;
   }
 }
 
-/**
- * Cortes suavizados para reduzir falso-positivo:
- * bloqueia apenas quando VERY_LIKELY (5) em qualquer eixo.
- * Se quiser endurecer algum eixo, mude o corte para 4.
- */
-function decideBlockGoogle(safe: {
-  adult?: string; racy?: string; violence?: string; medical?: string; spoof?: string;
-}) {
-  const CUT_ADULT = 5;
-  const CUT_RACY = 5;
-  const CUT_VIOLENCE = 5;
-  const CUT_MEDICAL = 5;
-  const CUT_SPOOF = 5;
+/** Detecta se os labels indicam "comida" com confiança razoável */
+function looksLikeFood(labels: Array<{ description?: string; score?: number }> | undefined) {
+  if (!labels?.length) return false;
+  const FOOD_KEYWORDS = [
+    "Food", "Cuisine", "Baked goods", "Bread", "Dessert", "Pastry",
+    "Cake", "Panettone", "Candy", "Chocolate", "Snack", "Meal",
+    "Fruit", "Vegetable"
+  ].map((s) => s.toLowerCase());
 
-  const reasons: string[] = [];
-  const tests: Array<[string, number, number]> = [
-    ["adult", rank(safe.adult), CUT_ADULT],
-    ["racy", rank(safe.racy), CUT_RACY],
-    ["violence", rank(safe.violence), CUT_VIOLENCE],
-    ["medical", rank(safe.medical), CUT_MEDICAL],
-    ["spoof", rank(safe.spoof), CUT_SPOOF],
-  ];
-  for (const [k, score, cut] of tests) {
-    if (score >= cut) reasons.push(`${k}=${score}`);
-  }
-  return { blocked: reasons.length > 0, reasons };
-}
-
-async function getGoogleAccessToken(): Promise<string> {
-  // importa crypto apenas em runtime node (evita problemas de edge)
-  const { createSign } = await import("node:crypto");
-
-  if (!GCP_CLIENT_EMAIL || !GCP_PRIVATE_KEY) {
-    throw new Error("missing_gcp_credentials");
-  }
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: "RS256", typ: "JWT" };
-  const claim = {
-    iss: GCP_CLIENT_EMAIL,
-    sub: GCP_CLIENT_EMAIL,
-    aud: "https://oauth2.googleapis.com/token",
-    scope: "https://www.googleapis.com/auth/cloud-platform",
-    iat: now,
-    exp: now + 3600,
-  };
-
-  const b64url = (obj: any) =>
-    Buffer.from(JSON.stringify(obj))
-      .toString("base64")
-      .replace(/=/g, "")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_");
-
-  const unsigned = `${b64url(header)}.${b64url(claim)}`;
-  const sign = createSign("RSA-SHA256");
-  sign.update(unsigned);
-  sign.end();
-  const sig = sign
-    .sign(GCP_PRIVATE_KEY)
-    .toString("base64")
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-
-  const assertion = `${unsigned}.${sig}`;
-
-  const r = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion,
-    }),
+  return labels.some((l) => {
+    const d = (l.description || "").toLowerCase();
+    const ok = FOOD_KEYWORDS.some((k) => d.includes(k));
+    return ok && (l.score ?? 0) >= 0.70;
   });
-
-  if (!r.ok) {
-    throw new Error(`gcp_token_${r.status}`);
-  }
-  const j = await r.json();
-  return j.access_token as string;
 }
 
-async function moderateWithGoogleVision(b64payload: string): Promise<ModResult> {
-  const token = await getGoogleAccessToken();
-
-  const r = await fetch("https://vision.googleapis.com/v1/images:annotate", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      requests: [
-        {
-          image: { content: b64payload },
-          features: [{ type: "SAFE_SEARCH_DETECTION" }],
-        },
-      ],
-    }),
-  });
-
-  if (!r.ok) {
-    if (STRICT) return { blocked: true, reason: `vision_${r.status}` };
-    return { blocked: false };
-  }
-
-  const j = await r.json();
-  const safe = j?.responses?.[0]?.safeSearchAnnotation ?? {};
-  const decision = decideBlockGoogle(safe);
-
-  if (decision.blocked) {
-    console.warn("[vision:block]", safe, decision.reasons);
-    return { blocked: true, reason: decision.reasons.join(",") || "flagged" };
-  }
-
-  console.info("[vision:allow]", safe);
-  return { blocked: false };
-}
-
-/* =========================================================
- * OPENAI (alternativo; usado se SAFE_VISION_PROVIDER=openai)
- * =======================================================*/
-async function moderateWithOpenAI(b64payload: string): Promise<ModResult> {
-  if (!OPENAI_KEY) {
-    return STRICT ? { blocked: true, reason: "no_api_key" } : { blocked: false };
-  }
-
-  const r = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "omni-moderation-latest",
-      input: [
-        {
-          role: "user",
-          content: [{ type: "input_image", image_data: b64payload }],
-        },
-      ],
-    }),
-  });
-
-  if (!r.ok) {
-    if (STRICT) return { blocked: true, reason: `provider_${r.status}` };
-    return { blocked: false };
-  }
-  const j = await r.json();
-  const flagged =
-    j?.output?.[0]?.content?.[0]?.moderation?.flagged === true ||
-    j?.results?.[0]?.flagged === true ||
-    j?.flagged === true;
-
-  return { blocked: !!flagged, reason: flagged ? "flagged" : undefined };
-}
-
-/* =========================================================
- * API ÚNICA
- * =======================================================*/
 export async function moderateImageBase64(b64: string): Promise<ModResult> {
   try {
-    if (!b64 || typeof b64 !== "string") return { blocked: true, reason: "empty" };
-
-    const payload = cleanBase64(b64);
-    const bytes = approxBytesFromB64(payload);
-    if (bytes === 0) return { blocked: true, reason: "invalid_b64" };
-    if (bytes > BYTES_MAX) return { blocked: true, reason: "too_big" };
-
-    if (PROVIDER === "openai") {
-      return await moderateWithOpenAI(payload);
+    if (!b64 || typeof b64 !== "string") {
+      return { blocked: true, reason: "empty" };
     }
-    // default = google
-    return await moderateWithGoogleVision(payload);
+
+    const payload = toPureBase64(b64);
+    const size = approxBytesFromB64(payload);
+    if (size === 0) return { blocked: true, reason: "invalid_b64" };
+    if (size > BYTES_MAX) return { blocked: true, reason: "too_big" };
+
+    // Sem chave → não bloqueia (a menos que STRICT)
+    if (!GCV_KEY) {
+      if (DEBUG) console.warn("[vision] no GOOGLE_VISION_API_KEY set");
+      return STRICT ? { blocked: true, reason: "no_api_key" } : { blocked: false };
+    }
+
+    // Chamada ao Vision: SafeSearch + Labels
+    const resp = await fetch(
+      `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(GCV_KEY)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // content deve ser base64 puro (sem header data:)
+        body: JSON.stringify({
+          requests: [
+            {
+              image: { content: payload },
+              features: [
+                { type: "SAFE_SEARCH_DETECTION" },
+                { type: "LABEL_DETECTION", maxResults: 10 },
+              ],
+            },
+          ],
+        }),
+      }
+    );
+
+    if (!resp.ok) {
+      if (DEBUG) console.error("[vision] provider_non_ok", resp.status, await safeText(resp));
+      return STRICT ? { blocked: true, reason: `provider_${resp.status}` } : { blocked: false };
+    }
+
+    const json = await resp.json();
+
+    const annotation = json?.responses?.[0] || {};
+    const safe = annotation.safeSearchAnnotation || {};
+    const labels = annotation.labelAnnotations || [];
+
+    const adult = likelihoodToScore(safe.adult);
+    const racy = likelihoodToScore(safe.racy);
+    const violence = likelihoodToScore(safe.violence);
+    const medical = likelihoodToScore(safe.medical);   // geralmente não usamos pra bloquear
+    const spoof = likelihoodToScore(safe.spoof);       // idem
+
+    // Regras de bloqueio
+    let blocked = false;
+    let reason: string | undefined;
+
+    if (adult >= ADULT_MIN) { blocked = true; reason = `adult>=${scoreName(adult)}`; }
+    if (!blocked && violence >= VIOLENCE_MIN) { blocked = true; reason = `violence>=${scoreName(violence)}`; }
+    if (!blocked && racy >= RACY_MIN) { blocked = true; reason = `racy>=${scoreName(racy)}`; }
+
+    // Whitelist para comida: se só caiu por "racy" e é comida, libera.
+    if (blocked && reason?.startsWith("racy>=") && WHITELIST_FOOD && looksLikeFood(labels)) {
+      blocked = false;
+      reason = undefined;
+    }
+
+    if (DEBUG) {
+      console.log("[vision:decision]", {
+        safe: { adult, racy, violence, medical, spoof },
+        labels: labels?.slice(0, 5)?.map((l: any) => ({ d: l.description, s: l.score })),
+        blocked, reason,
+      });
+    }
+
+    return { blocked, reason, details: DEBUG ? { safe, labels } : undefined };
   } catch (e) {
     console.error("[vision] moderation error", e);
-    return STRICT ? { blocked: true, reason: "error" } : { blocked: false };
+    return STRICT ? { blocked: true, reason: "api_error" } : { blocked: false };
   }
+}
+
+/** Utilitário para loggar resposta de erro sem quebrar streaming */
+async function safeText(r: Response) {
+  try { return await r.text(); } catch { return "<no-body>"; }
+}
+function scoreName(n: number) {
+  return ["UNKNOWN","VERY_UNLIKELY","UNLIKELY","POSSIBLE","LIKELY","VERY_LIKELY"][Math.max(0, Math.min(5, n))];
 }
