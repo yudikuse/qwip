@@ -52,16 +52,18 @@ function b64ToBytes(b64: string): Uint8Array {
   return bytes;
 }
 
-// Converte Uint8Array em ArrayBuffer “exato” (respeitando offset/length)
+// Converte Uint8Array em ArrayBuffer puro (cópia) para evitar SharedArrayBuffer
 function u8ToArrayBuffer(u8: Uint8Array): ArrayBuffer {
-  return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+  const ab = new ArrayBuffer(u8.byteLength);
+  new Uint8Array(ab).set(u8);
+  return ab;
 }
 
 // ---- HMAC-SHA256 (WebCrypto) ----
 async function hmacSha256(keyRaw: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey(
     "raw",
-    u8ToArrayBuffer(keyRaw), // <- evita erro de tipagem
+    u8ToArrayBuffer(keyRaw),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
