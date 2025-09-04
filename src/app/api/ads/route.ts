@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { verifySessionValue } from "@/lib/session";
 import { verifyToken } from "@/lib/signing";
 import { moderateImageBase64 } from "@/lib/vision";
 
@@ -43,18 +44,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2) sessão (cookie)
-  const phoneCookie = req.cookies.get("qwip_phone_e164")?.value || "";
-  if (!phoneCookie) {
-    return NextResponse.json({ ok: false, error: "Telefone não verificado." }, { status: 401 });
+  // 2) sessão (cookie assinado)
+  const rawSession = req.cookies.get("qwip_session")?.value || "";
+  const session = await verifySessionValue(rawSession);
+  if (!session.ok) {
+    return NextResponse.json({ ok: false, error: "Sessão inválida/expirada." }, { status: 401 });
   }
+  const phoneCookie = session.claims.phone;
 
-  // 3) nonce/HMAC
+  // 3) nonce/HMAC (proteção adicional por requisição)
   const nonce = req.headers.get("x-qwip-nonce") || "";
   const ua = req.headers.get("user-agent") || "";
-  if (!nonce) return NextResponse.json({ ok: false, error: "Requisição sem nonce." }, { status: 400 });
+  if (!nonce) {
+    return NextResponse.json({ ok: false, error: "Requisição sem nonce." }, { status: 400 });
+  }
 
-  // verifyToken é assíncrono
   const ver = await verifyToken(nonce);
   if (!ver.ok) {
     return NextResponse.json({ ok: false, error: `Nonce inválido (${ver.reason}).` }, { status: 401 });
@@ -77,50 +81,50 @@ export async function POST(req: NextRequest) {
   const title = String(json?.title ?? "").trim();
   const description = String(json?.description ?? "").trim();
   const priceCents = Number(json?.priceCents ?? 0) || 0;
-  const city = json?.city ? String(json.city).trim() : null;
-  const uf = json?.uf ? String(json.uf).trim().toUpperCase() : null;
 
-  const lat = Number(json?.lat);
-  const lng = Number(json?.lng);
-  const centerLat = Number(json?.centerLat);
-  const centerLng = Number(json?.centerLng);
-  const radiusKm = Number.isFinite(Number(json?.radiusKm)) ? parseInt(String(json.radiusKm), 10) : NaN;
+  const city = String(json?.city ?? "").trim();
+  const uf = String(json?.uf ?? "").trim().toUpperCase();
+  const lat = Number(json?.lat ?? 0) || 0;
+  const lng = Number(json?.lng ?? 0) || 0;
+  const centerLat = Number(json?.centerLat ?? 0) || 0;
+  const centerLng = Number(json?.centerLng ?? 0) || 0;
+  const radiusKm = Number(json?.radiusKm ?? 0) || 0;
 
-  if (!title || priceCents <= 0) {
-    return NextResponse.json({ ok: false, error: "Título e preço são obrigatórios." }, { status: 400 });
+  // 5) validações simples
+  if (!title || title.length < 3 || title.length > 120) {
+    return NextResponse.json({ ok: false, error: "Título inválido." }, { status: 400 });
   }
-  if (![lat, lng, centerLat, centerLng].every((v) => Number.isFinite(v))) {
-    return NextResponse.json({ ok: false, error: "Coordenadas geográficas inválidas." }, { status: 400 });
+  if (description.length > 1000) {
+    return NextResponse.json({ ok: false, error: "Descrição muito longa." }, { status: 400 });
   }
-  if (!Number.isFinite(radiusKm) || radiusKm < 1 || radiusKm > 50) {
-    return NextResponse.json({ ok: false, error: "Raio inválido (1–50km)." }, { status: 400 });
+  if (!Number.isFinite(priceCents) || priceCents < 0 || priceCents > 99_999_99) {
+    return NextResponse.json({ ok: false, error: "Preço inválido." }, { status: 400 });
   }
-  if (!imageBase64) {
-    return NextResponse.json({ ok: false, error: "Imagem obrigatória." }, { status: 400 });
+  if (!city || uf.length !== 2) {
+    return NextResponse.json({ ok: false, error: "Localidade inválida." }, { status: 400 });
+  }
+  if (![lat, lng, centerLat, centerLng, radiusKm].every(Number.isFinite)) {
+    return NextResponse.json({ ok: false, error: "Coordenadas inválidas." }, { status: 400 });
   }
 
-  // 5) moderação da imagem (Vision)
-  try {
-    const mod = await moderateImageBase64(imageBase64);
-    if (mod.blocked) {
-      return NextResponse.json(
-        { ok: false, error: "Imagem reprovada pela moderação automática." },
-        { status: 400 }
-      );
+  // 6) moderação da imagem (quando enviada)
+  if (imageBase64) {
+    try {
+      const safe = await moderateImageBase64(imageBase64);
+      if (!safe && STRICT) {
+        return NextResponse.json({ ok: false, error: "Imagem reprovada pela moderação." }, { status: 400 });
+      }
+      // se não for estrito, apenas logamos e seguimos
+      if (!safe) console.warn("[ads/moderation] imagem sinalizada, seguindo por não estrito");
+    } catch (err) {
+      console.error("[ads/moderation]", err);
+      if (STRICT) {
+        return NextResponse.json({ ok: false, error: "Falha na moderação da imagem." }, { status: 400 });
+      }
     }
-  } catch (e) {
-    console.error("[vision]", e);
-    if (STRICT) {
-      // modo estrito: falha na moderação bloqueia
-      return NextResponse.json(
-        { ok: false, error: "Falha ao verificar a imagem. Tente outra." },
-        { status: 400 }
-      );
-    }
-    // modo fail-open: segue criação do anúncio
   }
 
-  // 6) upsert do seller por phoneE164
+  // 7) garantir seller (vincula ao telefone da sessão)
   let sellerId: string;
   try {
     const seller = await prisma.seller.upsert({
@@ -135,7 +139,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Falha ao registrar vendedor." }, { status: 500 });
   }
 
-  // 7) cria o anúncio
+  // 8) cria o anúncio
   const expiresAt = new Date(Date.now() + EXPIRES_HOURS * 60 * 60 * 1000);
   try {
     const ad = await prisma.ad.create({
