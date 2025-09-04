@@ -1,114 +1,162 @@
 // src/lib/signing.ts
+// Assinatura e verificação de tokens (HS256, base64url sem padding) robustas a Safari/headers.
+// Forçaremos uso em rotas Node (nonce/ads), mas este módulo também funciona em Edge.
 
-const SECRET =
-  process.env.SIGNING_SECRET ||
-  process.env.QWIP_SIGNING_SECRET ||
-  "CHANGE_ME_IN_PRODUCTION";
-
-export type NonceClaims = {
+// ---- Tipos ----
+export type Claims = {
   sub: "ads";
   path: "/api/ads";
+  phone: string;
   ip: string;
   ua: string;
-  phone: string;
-  iat: number;
-  exp: number;
+  iat: number; // epoch segundos
+  exp: number; // epoch segundos
 };
 
-// ---------- helpers base64url cross-runtime ----------
-function b64urlEncodeString(str: string): string {
-  if (typeof btoa === "function") {
-    // Edge / Browser
-    const bytes = new TextEncoder().encode(str);
-    let bin = "";
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    const b64 = btoa(bin);
-    return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-  } else {
-    // Node
-    // @ts-ignore - Buffer existe no Node runtime
-    const b64 = Buffer.from(str, "utf8").toString("base64");
-    return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-  }
+type VerifyOk = { ok: true; claims: Claims };
+type VerifyErr = { ok: false; reason: string };
+export type VerifyResult = VerifyOk | VerifyErr;
+
+// ---- Segredo ----
+const SECRET =
+  process.env.SIGNING_SECRET ||
+  // NÃO deixe isso em produção; é só fallback local.
+  "dev-secret-change-me";
+
+// ---- Utils base64/base64url ----
+function toUint8(arr: ArrayBuffer | Uint8Array): Uint8Array {
+  return arr instanceof Uint8Array ? arr : new Uint8Array(arr);
 }
 
-function b64urlDecodeToString(b64url: string): string {
-  const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64url.length + 3) % 4);
-  if (typeof atob === "function") {
-    // Edge / Browser
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return new TextDecoder().decode(bytes);
-  } else {
-    // Node
-    // @ts-ignore
-    return Buffer.from(b64, "base64").toString("utf8");
-  }
+function base64ToBase64Url(b64: string): string {
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function toHex(buffer: ArrayBuffer): string {
-  const a = new Uint8Array(buffer);
-  let out = "";
-  for (const v of a) out += v.toString(16).padStart(2, "0");
+function base64UrlToBase64(b64u: string): string {
+  const s = b64u.replace(/-/g, "+").replace(/_/g, "/");
+  // adiciona padding se faltar
+  const pad = s.length % 4;
+  return pad ? s + "=".repeat(4 - pad) : s;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  // Node tem Buffer:
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64");
+  }
+  // Fallback (runtime web): btoa com string binária
+  let bin = "";
+  bytes.forEach((b) => (bin += String.fromCharCode(b)));
+  // eslint-disable-next-line no-undef
+  return btoa(bin);
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  if (typeof Buffer !== "undefined") {
+    return new Uint8Array(Buffer.from(b64, "base64"));
+  }
+  // eslint-disable-next-line no-undef
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
 
-// comparação “tempo-constante” para strings
-function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let res = 0;
-  for (let i = 0; i < a.length; i++) {
-    res |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return res === 0;
+function utf8Encode(s: string): Uint8Array {
+  if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(s);
+  // Node antigo: Buffer
+  // @ts-ignore
+  return Uint8Array.from(Buffer.from(s, "utf-8"));
 }
 
-// HMAC-SHA256 → hex (Edge/Browser via crypto.subtle; Node 18+ também tem)
-async function hmacSha256Hex(payload: string, secret: string): Promise<string> {
-  if (globalThis.crypto?.subtle) {
-    const enc = new TextEncoder();
-    const key = await globalThis.crypto.subtle.importKey(
+function utf8Decode(bytes: Uint8Array): string {
+  if (typeof TextDecoder !== "undefined") return new TextDecoder().decode(bytes);
+  // @ts-ignore
+  return Buffer.from(bytes).toString("utf-8");
+}
+
+function safeJsonParse<T>(s: string): T | null {
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    return null;
+  }
+}
+
+// ---- HMAC-SHA256 ----
+async function hmacSha256(keyBytes: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
+  // Node: usar crypto nativo
+  try {
+    // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+    const nodeCrypto: typeof import("crypto") = await import("crypto");
+    const h = nodeCrypto.createHmac("sha256", Buffer.from(keyBytes));
+    h.update(Buffer.from(data));
+    return new Uint8Array(h.digest());
+  } catch {
+    // Edge/WebCrypto (não deve rodar aqui, mas fica como fallback)
+    const cryptoAny = (globalThis as any).crypto;
+    if (!cryptoAny?.subtle) throw new Error("No crypto.subtle available");
+    const key = await cryptoAny.subtle.importKey(
       "raw",
-      enc.encode(secret),
+      keyBytes,
       { name: "HMAC", hash: "SHA-256" },
       false,
-      ["sign"]
+      ["sign", "verify"]
     );
-    const sig = await globalThis.crypto.subtle.sign("HMAC", key, enc.encode(payload));
-    return toHex(sig);
+    const sig = await cryptoAny.subtle.sign("HMAC", key, data);
+    return toUint8(sig);
   }
-  throw new Error("crypto.subtle not available");
 }
 
-// ---------- API pública ----------
-export async function signToken(
-  claims: Omit<NonceClaims, "iat" | "exp">,
-  ttlSec = 60
-): Promise<string> {
-  const iat = Math.floor(Date.now() / 1000);
-  const exp = iat + ttlSec;
-  const full: NonceClaims = { ...claims, iat, exp };
-  const payload = b64urlEncodeString(JSON.stringify(full));
-  const sig = await hmacSha256Hex(payload, SECRET);
-  return `${payload}.${sig}`;
+// ---- Compare constante ----
+function timingSafeEq(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let v = 0;
+  for (let i = 0; i < a.length; i++) v |= a[i] ^ b[i];
+  return v === 0;
 }
 
-export async function verifyToken(
-  token: string
-): Promise<{ ok: true; claims: NonceClaims } | { ok: false; reason: string }> {
-  try {
-    const [payload, sig] = token.split(".");
-    if (!payload || !sig) return { ok: false, reason: "format" };
-    const expected = await hmacSha256Hex(payload, SECRET);
-    if (!safeEqual(sig, expected)) return { ok: false, reason: "sig" };
+// ---- API pública ----
+export async function signToken(claims: Claims): Promise<string> {
+  const header = { alg: "HS256", typ: "JWT" };
+  const headB64u = base64ToBase64Url(bytesToBase64(utf8Encode(JSON.stringify(header))));
+  const bodyB64u = base64ToBase64Url(bytesToBase64(utf8Encode(JSON.stringify(claims))));
+  const toSign = `${headB64u}.${bodyB64u}`;
 
-    const claims = JSON.parse(b64urlDecodeToString(payload)) as NonceClaims;
-    const now = Math.floor(Date.now() / 1000);
-    if (claims.exp < now) return { ok: false, reason: "expired" };
+  const sig = await hmacSha256(utf8Encode(SECRET), utf8Encode(toSign));
+  const sigB64u = base64ToBase64Url(bytesToBase64(sig));
 
-    return { ok: true, claims };
-  } catch {
-    return { ok: false, reason: "malformed" };
-  }
+  return `${toSign}.${sigB64u}`;
+}
+
+export async function verifyToken(token: string): Promise<VerifyResult> {
+  if (typeof token !== "string") return { ok: false, reason: "type" };
+  const parts = token.split(".");
+  if (parts.length !== 3) return { ok: false, reason: "format" };
+
+  const [h, p, s] = parts;
+
+  // Decode header/payload com padding tolerante
+  const hJson = utf8Decode(base64ToBytes(base64UrlToBase64(h)));
+  const pJson = utf8Decode(base64ToBytes(base64UrlToBase64(p)));
+  const header = safeJsonParse<{ alg: string; typ: string }>(hJson);
+  const claims = safeJsonParse<Claims>(pJson);
+
+  if (!header || header.alg !== "HS256" || header.typ !== "JWT")
+    return { ok: false, reason: "header" };
+  if (!claims) return { ok: false, reason: "payload" };
+
+  // exp/iat
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(claims.exp) || !Number.isFinite(claims.iat))
+    return { ok: false, reason: "times" };
+  if (claims.exp <= now) return { ok: false, reason: "expired" };
+
+  // Reassina e compara
+  const toSign = `${h}.${p}`;
+  const expected = await hmacSha256(utf8Encode(SECRET), utf8Encode(toSign));
+  const got = base64ToBytes(base64UrlToBase64(s));
+  if (!timingSafeEq(expected, got)) return { ok: false, reason: "signature" };
+
+  return { ok: true, claims };
 }
