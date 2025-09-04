@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 // Rotas que exigem login por SMS
 const PROTECTED = ["/anuncio/novo"];
 
-// Helpers de base64/url (sem depender de libs no Edge)
+// Helpers de base64/url (Edge-safe, sem libs)
 function b64uToB64(b64u: string): string {
   const s = b64u.replace(/-/g, "+").replace(/_/g, "/");
   const pad = s.length % 4;
@@ -21,6 +21,12 @@ function b64ToU8(b64: string): Uint8Array {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
+}
+// Converte Uint8Array em ArrayBuffer "puro" (cópia) para evitar SharedArrayBuffer
+function u8ToArrayBuffer(u8: Uint8Array): ArrayBuffer {
+  const ab = new ArrayBuffer(u8.byteLength);
+  new Uint8Array(ab).set(u8);
+  return ab;
 }
 function u8eq(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
@@ -52,8 +58,14 @@ async function verifySessionCookie(raw: string | undefined | null): Promise<bool
   // valida HMAC
   const toSign = `${v}.${p}`;
   const secret = process.env.SIGNING_SECRET || process.env.QWIP_SIGNING_SECRET || "dev-secret-change-me";
-  const key = await crypto.subtle.importKey("raw", strToU8(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = await crypto.subtle.sign("HMAC", key, strToU8(toSign));
+  const key = await crypto.subtle.importKey(
+    "raw",
+    u8ToArrayBuffer(strToU8(secret)), // <- ArrayBuffer puro
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, u8ToArrayBuffer(strToU8(toSign))); // <- ArrayBuffer puro
   const expected = new Uint8Array(sig);
   const got = b64ToU8(b64uToB64(s));
   return u8eq(expected, got);
