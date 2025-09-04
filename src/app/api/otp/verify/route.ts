@@ -57,30 +57,38 @@ export async function POST(req: NextRequest) {
     if (!approved) {
       return NextResponse.json(
         { ok: false, error: "Código inválido ou expirado." },
-        { status: 401 }
+        { status: 401, headers: { "Cache-Control": "no-store" } }
       );
     }
 
     // --------- Sessão segura + cookie de compat p/ UI ---------
     const sessionValue = await issueSession(e164, 24);
-    const res = NextResponse.json({ ok: true, phoneE164: e164 });
+    const res = NextResponse.json(
+      { ok: true, phoneE164: e164 },
+      { headers: { "Cache-Control": "no-store" } }
+    );
 
-    // Sessão segura (HttpOnly, servidor confia)
+    // Descobre o host atual (preview, apex, www, etc.)
+    const host = new URL(req.url).hostname;
+
+    // Sessão segura (HttpOnly)
     res.cookies.set("qwip_session", sessionValue, {
       httpOnly: true,
       sameSite: "strict",
       secure: true,
       path: "/",
       maxAge: 60 * 60 * 24, // 24h
+      domain: host,
     });
 
-    // Cookie legível pela UI (compat) — NÃO usado para auth no servidor
+    // Cookie legível pela UI (compat)
     res.cookies.set("qwip_phone_e164", encodeURIComponent(e164), {
       httpOnly: false,
       sameSite: "lax",
       secure: true,
       path: "/",
       maxAge: 60 * 60 * 24 * 30, // 30d
+      domain: host,
     });
 
     return res;
