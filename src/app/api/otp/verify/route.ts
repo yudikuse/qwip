@@ -1,3 +1,4 @@
+// src/app/api/otp/verify/route.ts
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
@@ -60,25 +61,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // --------- Sessão segura + cookie de compatibilidade p/ UI ---------
-    // 1) Cookie seguro (HttpOnly) que o servidor confia
+    // --------- Sessão segura + cookie de compat p/ UI ---------
     const sessionValue = await issueSession(e164, 24);
-
-    // 2) Cookie legível p/ UI (compat com fluxo atual) — NÃO é usado para autenticar no servidor
-    const uiCookie = `qwip_phone_e164=${encodeURIComponent(e164)}; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`;
-
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
 
-    // Remove qualquer resquício anterior e aplica os cookies
-    res.headers.append("Set-Cookie", "qwip_phone_e164=; Path=/; Max-Age=0; SameSite=Lax; Secure");
-    res.headers.append("Set-Cookie", uiCookie);
-
+    // Sessão segura (HttpOnly, servidor confia)
     res.cookies.set("qwip_session", sessionValue, {
       httpOnly: true,
       sameSite: "strict",
       secure: true,
       path: "/",
       maxAge: 60 * 60 * 24, // 24h
+    });
+
+    // Cookie legível pela UI (compat) — NÃO usado para auth no servidor
+    res.cookies.set("qwip_phone_e164", encodeURIComponent(e164), {
+      httpOnly: false,
+      sameSite: "lax",
+      secure: true,
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30, // 30d
     });
 
     return res;
