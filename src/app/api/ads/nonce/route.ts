@@ -25,10 +25,13 @@ export async function GET(req: NextRequest) {
         ua: req.headers.get("user-agent") || "",
         phone,
       },
-      60 // vence em 60s
+      60 // TTL do nonce (60s)
     );
 
-    return NextResponse.json({ ok: true, nonce }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(
+      { ok: true, nonce },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (e) {
     console.error("[nonce]", e);
     return NextResponse.json({ error: "internal" }, { status: 500 });
