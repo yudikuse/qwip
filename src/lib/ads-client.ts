@@ -1,67 +1,62 @@
 // src/lib/ads-client.ts
-// Cliente que obtém nonce e publica o anúncio com cabeçalho X-QWIP-NONCE.
-
-export type CreatePayload = {
+type CreateAdBody = {
   title: string;
   description: string;
   priceCents: number;
-  city: string;
-  uf?: string;
-  lat: number;
-  lng: number;
-  centerLat: number;
-  centerLng: number;
+  city: string | null;
+  uf: string | null;
+  lat: number | null;
+  lng: number | null;
+  centerLat: number | null;
+  centerLng: number | null;
   radiusKm: number;
   imageBase64: string;
 };
 
-type RespOk = { ok: true; status: number; data: any };
-type RespErr = { ok: false; status: number; data?: any; errorText?: string };
-export type CreateAdResp = RespOk | RespErr;
+export type CreateAdResp =
+  | { ok: true; status: number; data: { id: string } }
+  | { ok: false; status: number; data?: any; errorText?: string };
 
-async function parseResponse(res: Response): Promise<{ data?: any; errorText?: string }> {
-  const ct = res.headers.get("content-type") || "";
+export async function createAdSecure(body: CreateAdBody): Promise<CreateAdResp> {
   try {
-    if (ct.includes("application/json")) {
-      const j = await res.json();
-      return { data: j };
-    }
-    const t = await res.text();
-    return { errorText: t?.slice(0, 1000) || undefined };
-  } catch {
-    return { errorText: "Falha ao ler resposta do servidor." };
-  }
-}
+    // 1) pega o nonce (tem que voltar 200)
+    const n = await fetch("/api/ads/nonce", { method: "GET", credentials: "include" });
+    let nJson: any = null;
+    try { nJson = await n.json(); } catch {}
 
-export async function createAdSecure(payload: CreatePayload): Promise<CreateAdResp> {
-  try {
-    // 1) Nonce
-    const n = await fetch("/api/ads/nonce", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-    });
-    if (!n.ok) {
-      const { data, errorText } = await parseResponse(n);
-      return { ok: false, status: n.status, data, errorText: errorText || "Falha ao obter nonce." };
+    if (!n.ok || !nJson?.nonce) {
+      return {
+        ok: false,
+        status: n.status,
+        data: nJson,
+        errorText: `nonce error: ${n.status} ${JSON.stringify(nJson)}`,
+      };
     }
-    const nonceJson = await n.json(); // { nonce: string }
-    const nonce = nonceJson?.nonce;
-    if (!nonce) return { ok: false, status: 500, errorText: "Nonce ausente." };
 
-    // 2) Publica
-    const res = await fetch("/api/ads", {
+    // 2) envia o anúncio
+    const r = await fetch("/api/ads", {
       method: "POST",
       headers: {
-        "content-type": "application/json",
-        "x-qwip-nonce": String(nonce),
+        "Content-Type": "application/json",
+        "X-QWIP-NONCE": String(nJson.nonce),
       },
-      body: JSON.stringify(payload),
+      credentials: "include",
+      body: JSON.stringify(body),
     });
 
-    const { data, errorText } = await parseResponse(res);
-    if (!res.ok) return { ok: false, status: res.status, data, errorText };
-    return { ok: true, status: res.status, data };
+    let j: any = null;
+    try { j = await r.json(); } catch {}
+
+    if (!r.ok || !j?.ok) {
+      return {
+        ok: false,
+        status: r.status,
+        data: j,
+        errorText: `ads error: ${r.status} ${JSON.stringify(j)}`,
+      };
+    }
+    return { ok: true, status: r.status, data: { id: j.id } };
   } catch (e: any) {
-    return { ok: false, status: 0, errorText: e?.message || "Erro de rede." };
+    return { ok: false, status: 0, errorText: e?.message || "network error" };
   }
 }
