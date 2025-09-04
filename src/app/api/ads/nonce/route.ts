@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { signToken } from "@/lib/signing";
+import { verifySessionValue } from "@/lib/session";
 
 function ipFrom(req: NextRequest) {
   const xfwd = req.headers.get("x-forwarded-for");
@@ -12,19 +13,19 @@ function ipFrom(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    // No Next 15, tipado como Promise<ReadonlyRequestCookies>
     const jar = await cookies();
-    const phone = jar.get("qwip_phone_e164")?.value;
-
-    if (!phone) {
-      return NextResponse.json({ error: "not authenticated" }, { status: 401 });
+    const raw = jar.get("qwip_session")?.value || "";
+    const session = await verifySessionValue(raw);
+    if (!session.ok) {
+      return NextResponse.json({ error: "no-session" }, { status: 401 });
     }
 
-    const ua = req.headers.get("user-agent") || "";
+    const phone = session.claims.phone;
     const ip = ipFrom(req);
+    const ua = req.headers.get("user-agent") || "";
 
     const now = Math.floor(Date.now() / 1000);
-    const exp = now + 60; // nonce 60s
+    const exp = now + 60; // nonce curto (60s)
 
     const token = await signToken({
       sub: "ads",
