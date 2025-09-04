@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { createAdSecure } from "@/lib/ads-client"; // <<< ADICIONADO
+import { createAdSecure } from "@/lib/ads-client";
 
 type LatLng = { lat: number; lng: number };
 const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
@@ -30,6 +30,15 @@ function formatIntWithDots(intDigits: string) {
 function clampDigits(s: string, max: number) {
   return s.replace(/\D/g, "").slice(0, max);
 }
+
+// Converte File → base64 (apenas conteúdo, sem cabeçalho data:)
+const toB64 = (f: File) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.onerror = () => reject(new Error("Falha ao ler a imagem."));
+    r.readAsDataURL(f);
+  });
 
 export default function NovaPaginaAnuncio() {
   /* ========= GUARD OTP (somente cliente) ========= */
@@ -135,7 +144,7 @@ export default function NovaPaginaAnuncio() {
     };
   }, [coords]);
 
-  // CEP -> coordenadas (igual ao que já estava)
+  // CEP -> coordenadas
   const locateByCEP = async () => {
     const digits = (cep || "").replace(/\D/g, "");
     if (digits.length !== 8) {
@@ -233,7 +242,7 @@ export default function NovaPaginaAnuncio() {
 
   const showCEP = geoDenied || (triedGeo && !coords);
 
-  // --------- handlers da máscara (mesmos de antes; só deixei o input editável) ---------
+  // --------- handlers da máscara ---------
   function handlePriceKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     const k = e.key;
 
@@ -295,6 +304,21 @@ export default function NovaPaginaAnuncio() {
 
   const publish = async () => {
     try {
+      if (!file) {
+        alert("Selecione uma imagem.");
+        return;
+      }
+      if (!file.type.startsWith("image/")) {
+        alert("Arquivo inválido. Envie uma imagem.");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        alert("Imagem muito grande (máx. 5MB).");
+        return;
+      }
+
+      const imageBase64 = await toB64(file);
+
       const body = {
         title: title.trim(),
         description: desc.trim(),
@@ -306,9 +330,10 @@ export default function NovaPaginaAnuncio() {
         centerLat: coords?.lat ?? null,
         centerLng: coords?.lng ?? null,
         radiusKm: radius,
+        imageBase64, // <<<<<< ESSENCIAL PARA O BACKEND
       };
 
-      // <<< ALTERADO: usa createAdSecure para pegar nonce e postar com header X-QWIP-NONCE >>>
+      // envia com proteção (nonce + cookie)
       const { ok, status, data } = await createAdSecure(body);
 
       if (!ok) {
@@ -328,7 +353,8 @@ export default function NovaPaginaAnuncio() {
       }
 
       alert(data?.id ? `Anúncio criado! ID: ${data.id}` : "Anúncio criado!");
-    } catch {
+    } catch (err) {
+      console.error(err);
       alert("Erro inesperado ao criar anúncio.");
     }
   };
@@ -440,7 +466,7 @@ export default function NovaPaginaAnuncio() {
                   </button>
                 </div>
 
-                {geoDenied || (triedGeo && !coords) ? (
+                {showCEP ? (
                   <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
                     <input
                       value={cep}
@@ -461,7 +487,7 @@ export default function NovaPaginaAnuncio() {
 
               <button
                 onClick={publish}
-                disabled={!Boolean(file && title.trim() && priceCents > 0 && desc.trim())}
+                disabled={!canPublish}
                 className="mt-2 w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Publicar anúncio
