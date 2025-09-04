@@ -8,6 +8,8 @@ import { moderateImageBase64 } from "@/lib/vision";
 
 /** ===== Config ===== */
 const EXPIRES_HOURS = 24;
+// se quiser bloquear quando a moderação falhar, defina SAFE_VISION_STRICT=true no ambiente
+const STRICT = process.env.SAFE_VISION_STRICT === "true";
 
 /** ===== Rate-limit (memória; troque por Redis/KV depois) ===== */
 const buckets = new Map<string, { c: number; reset: number }>();
@@ -54,8 +56,9 @@ export async function POST(req: NextRequest) {
 
   // verifyToken é assíncrono
   const ver = await verifyToken(nonce);
-
-  if (!ver.ok) return NextResponse.json({ ok: false, error: `Nonce inválido (${ver.reason}).` }, { status: 401 });
+  if (!ver.ok) {
+    return NextResponse.json({ ok: false, error: `Nonce inválido (${ver.reason}).` }, { status: 401 });
+  }
   const c = ver.claims;
   if (c.sub !== "ads" || c.path !== "/api/ads" || c.ip !== ip || c.ua !== ua || c.phone !== phoneCookie) {
     return NextResponse.json({ ok: false, error: "Nonce não confere com a sessão." }, { status: 401 });
@@ -63,7 +66,12 @@ export async function POST(req: NextRequest) {
 
   // 4) payload
   let json: any = {};
-  try { json = await req.json(); } catch {}
+  try {
+    json = await req.json();
+  } catch {
+    // continua com json vazio para cair nas validações abaixo
+  }
+
   const imageBase64 = String(json?.imageBase64 || "");
 
   const title = String(json?.title ?? "").trim();
@@ -95,12 +103,21 @@ export async function POST(req: NextRequest) {
   try {
     const mod = await moderateImageBase64(imageBase64);
     if (mod.blocked) {
-      return NextResponse.json({ ok: false, error: "Imagem reprovada pela moderação automática." }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Imagem reprovada pela moderação automática." },
+        { status: 400 }
+      );
     }
   } catch (e) {
     console.error("[vision]", e);
-    // política: falhar fechado no MVP
-    return NextResponse.json({ ok: false, error: "Falha ao verificar a imagem. Tente outra." }, { status: 400 });
+    if (STRICT) {
+      // modo estrito: falha na moderação bloqueia
+      return NextResponse.json(
+        { ok: false, error: "Falha ao verificar a imagem. Tente outra." },
+        { status: 400 }
+      );
+    }
+    // modo fail-open: segue criação do anúncio
   }
 
   // 6) upsert do seller por phoneE164
