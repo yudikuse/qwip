@@ -13,7 +13,7 @@ function ipFrom(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const jar = await cookies();
+    const jar = cookies(); // sem await
     const raw = jar.get("qwip_session")?.value || "";
     const session = await verifySessionValue(raw);
     if (!session.ok) {
@@ -23,7 +23,6 @@ export async function GET(req: NextRequest) {
     const phone = session.claims.phone;
     const ip = ipFrom(req);
     const ua = req.headers.get("user-agent") || "";
-
     const now = Math.floor(Date.now() / 1000);
     const exp = now + 60; // nonce curto (60s)
 
