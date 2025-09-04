@@ -1,4 +1,6 @@
 // src/app/api/ads/route.ts
+// topo do arquivo
+export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/signing";
