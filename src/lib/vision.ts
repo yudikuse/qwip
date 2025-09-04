@@ -1,50 +1,78 @@
 // src/lib/vision.ts
+// Módulo de moderação de imagem "fail-safe": nunca lança erro.
+// Bloqueia somente quando o provedor responder com "flagged".
+// Se faltar chave/API falhar, por padrão NÃO bloqueia (modo estrito via env).
 
-/**
- * Import dinâmico do Google Vision para rodar apenas no Node (rotas server).
- * SafeSearch + Label (SafeSearch fica grátis quando Label é usado).
- */
-export async function moderateImageBase64(imageBase64: string) {
-  if (!imageBase64) return { blocked: true as const, reason: "missing" as const };
+export type ModResult = { blocked: boolean; reason?: string };
 
-  const vision = await import("@google-cloud/vision");
-  const client = new vision.ImageAnnotatorClient({
-    credentials: {
-      client_email: process.env.GCP_CLIENT_EMAIL,
-      private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    },
-    projectId: process.env.GCP_PROJECT_ID,
-  });
+const BYTES_MAX = 5 * 1024 * 1024; // 5MB (coerente com o front)
+const STRICT = process.env.SAFE_VISION_STRICT === "true";
+const OPENAI_KEY = process.env.OPENAI_API_KEY || "";
 
-  const [res] = await client.annotateImage({
-    image: { content: Buffer.from(imageBase64, "base64") },
-    features: [
-      { type: "SAFE_SEARCH_DETECTION" },
-      { type: "LABEL_DETECTION", maxResults: 8 },
-    ],
-  });
+/** Valida base64 simples (sem MIME header) e estima bytes */
+function approxBytesFromB64(b64: string) {
+  // ignora padding
+  const len = b64.replace(/=+$/, "").length;
+  return Math.floor((len * 3) / 4);
+}
 
-  const safe = res.safeSearchAnnotation ?? {};
-  const labels = (res.labelAnnotations ?? []).map(
-    (l) => (l.description ?? "").toLowerCase()
-  );
+export async function moderateImageBase64(b64: string): Promise<ModResult> {
+  try {
+    if (!b64 || typeof b64 !== "string") {
+      return { blocked: true, reason: "empty" };
+    }
 
-  // Converte qualquer coisa para string antes de comparar
-  const isBad = (v: unknown) =>
-    ["LIKELY", "VERY_LIKELY"].includes(String(v ?? ""));
+    // aceita tanto payload “puro” quanto um "data:image/...;base64,...."
+    const parts = b64.split(",");
+    const payload = parts.length > 1 ? parts.slice(1).join(",") : b64;
 
-  const blockedBySafe =
-    isBad((safe as any).adult) ||
-    isBad((safe as any).violence) ||
-    isBad((safe as any).racy);
+    // tamanho (aproximado) — mesmo limite do front
+    const bytes = approxBytesFromB64(payload);
+    if (bytes === 0) return { blocked: true, reason: "invalid_b64" };
+    if (bytes > BYTES_MAX) return { blocked: true, reason: "too_big" };
 
-  const denyTerms = (process.env.VISION_BLOCKLIST_LABELS || "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
+    // Se não há chave, não bloqueia (a não ser no modo estrito)
+    if (!OPENAI_KEY) {
+      return STRICT ? { blocked: true, reason: "no_api_key" } : { blocked: false };
+    }
 
-  const blockedByLabel =
-    denyTerms.length > 0 ? labels.some((l) => denyTerms.includes(l)) : false;
+    // ======= MODERAÇÃO =======
+    // Para imagens, use o modelo omni de moderação via /responses (mais tolerante)
+    // Sem dependências de SDK para evitar bundling no edge.
+    const r = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "omni-moderation-latest",
+        input: [
+          { role: "user", content: [
+              { type: "input_image", image_data: payload } // base64 puro
+            ]
+          }
+        ],
+      }),
+    });
 
-  return { blocked: blockedBySafe || blockedByLabel, safe, labels };
+    // Qualquer falha da API -> não bloqueia (a não ser no modo estrito)
+    if (!r.ok) {
+      if (STRICT) return { blocked: true, reason: `provider_${r.status}` };
+      return { blocked: false };
+    }
+
+    const j = await r.json();
+    // Estrutura genérica: procure um campo "output"/"results"/"flagged"
+    // Como isso varia entre versões, adotamos heurística segura:
+    const flagged =
+      j?.output?.[0]?.content?.[0]?.moderation?.flagged === true ||
+      j?.results?.[0]?.flagged === true ||
+      j?.flagged === true;
+
+    return { blocked: !!flagged, reason: flagged ? "flagged" : undefined };
+  } catch (e) {
+    console.error("[vision] moderation error", e);
+    return STRICT ? { blocked: true, reason: "error" } : { blocked: false };
+  }
 }
