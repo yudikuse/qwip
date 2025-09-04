@@ -26,7 +26,6 @@ function b64urlEncodeString(str: string): string {
     return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
   } else {
     // Node
-    // eslint-disable-next-line n/no-deprecated-api
     // @ts-ignore - Buffer existe no Node runtime
     const b64 = Buffer.from(str, "utf8").toString("base64");
     return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
@@ -55,7 +54,7 @@ function toHex(buffer: ArrayBuffer): string {
   return out;
 }
 
-// comparação em tempo (quase) constante para strings
+// comparação “tempo-constante” para strings
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let res = 0;
@@ -79,7 +78,6 @@ async function hmacSha256Hex(payload: string, secret: string): Promise<string> {
     const sig = await globalThis.crypto.subtle.sign("HMAC", key, enc.encode(payload));
     return toHex(sig);
   }
-  // Se estiver num Node antigo sem crypto.subtle, falhe explicitamente
   throw new Error("crypto.subtle not available");
 }
 
