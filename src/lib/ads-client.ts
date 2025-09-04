@@ -1,5 +1,5 @@
 // src/lib/ads-client.ts
-type CreateAdBody = {
+export type CreatePayload = {
   title: string;
   description: string;
   priceCents: number;
@@ -17,12 +17,18 @@ export type CreateAdResp =
   | { ok: true; status: number; data: { id: string } }
   | { ok: false; status: number; data?: any; errorText?: string };
 
-export async function createAdSecure(body: CreateAdBody): Promise<CreateAdResp> {
+export async function createAdSecure(body: CreatePayload): Promise<CreateAdResp> {
   try {
-    // 1) pega o nonce (tem que voltar 200)
-    const n = await fetch("/api/ads/nonce", { method: "GET", credentials: "include" });
+    // 1) pega o nonce
+    const n = await fetch("/api/ads/nonce", {
+      method: "GET",
+      credentials: "include",
+    });
+
     let nJson: any = null;
-    try { nJson = await n.json(); } catch {}
+    try {
+      nJson = await n.json();
+    } catch {}
 
     if (!n.ok || !nJson?.nonce) {
       return {
@@ -45,7 +51,9 @@ export async function createAdSecure(body: CreateAdBody): Promise<CreateAdResp> 
     });
 
     let j: any = null;
-    try { j = await r.json(); } catch {}
+    try {
+      j = await r.json();
+    } catch {}
 
     if (!r.ok || !j?.ok) {
       return {
@@ -55,6 +63,7 @@ export async function createAdSecure(body: CreateAdBody): Promise<CreateAdResp> 
         errorText: `ads error: ${r.status} ${JSON.stringify(j)}`,
       };
     }
+
     return { ok: true, status: r.status, data: { id: j.id } };
   } catch (e: any) {
     return { ok: false, status: 0, errorText: e?.message || "network error" };
