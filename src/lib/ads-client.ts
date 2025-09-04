@@ -1,6 +1,5 @@
 // src/lib/ads-client.ts
 // Cliente que obtém nonce e publica o anúncio com cabeçalho X-QWIP-NONCE.
-// Sempre tenta retornar uma mensagem útil vinda do backend (json ou texto).
 
 export type CreatePayload = {
   title: string;
