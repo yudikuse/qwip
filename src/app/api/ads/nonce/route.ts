@@ -1,8 +1,7 @@
 // src/app/api/ads/nonce/route.ts
-export const runtime = "nodejs"; // cookies() síncrono + crypto nativo
+export const runtime = "nodejs";
 
-import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { signToken } from "@/lib/signing";
 
@@ -13,7 +12,8 @@ function ipFrom(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const jar = cookies(); // síncrono em runtime nodejs
+    // No Next 15, tipado como Promise<ReadonlyRequestCookies>
+    const jar = await cookies();
     const phone = jar.get("qwip_phone_e164")?.value;
 
     if (!phone) {
@@ -22,27 +22,23 @@ export async function GET(req: NextRequest) {
 
     const ua = req.headers.get("user-agent") || "";
     const ip = ipFrom(req);
-    const iat = Math.floor(Date.now() / 1000);
-    const exp = iat + 2 * 60; // 2 minutos
 
-    const nonce = await signToken({
+    const now = Math.floor(Date.now() / 1000);
+    const exp = now + 60; // nonce 60s
+
+    const token = await signToken({
       sub: "ads",
       path: "/api/ads",
       phone,
       ip,
       ua,
-      iat,
+      iat: now,
       exp,
     });
 
-    return NextResponse.json(
-      { nonce },
-      { headers: { "Cache-Control": "no-store" } }
-    );
+    return NextResponse.json({ nonce: token }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
-    console.error("[nonce]", e);
+    console.error("[ads/nonce]", e);
     return NextResponse.json({ error: "nonce failed" }, { status: 500 });
-    // Se quiser diagnosticar melhor no cliente, inclua reason:
-    // return NextResponse.json({ error: "nonce failed", reason: String(e) }, { status: 500 });
   }
 }
