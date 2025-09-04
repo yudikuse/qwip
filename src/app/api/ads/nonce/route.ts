@@ -1,10 +1,10 @@
 // src/app/api/ads/nonce/route.ts
-import { NextRequest, NextResponse } from "next/server";
+export const runtime = "nodejs"; // cookies() síncrono + crypto nativo
+
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { signToken } from "@/lib/signing";
-
-// (Opcional) defina explicitamente Edge; com await cookies() funciona nos dois runtimes.
-export const runtime = "edge";
 
 function ipFrom(req: NextRequest) {
   const xfwd = req.headers.get("x-forwarded-for");
@@ -13,31 +13,36 @@ function ipFrom(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    // No runtime Edge o tipo é Promise<ReadonlyRequestCookies> → use await
-    const jar = await cookies();
+    const jar = cookies(); // síncrono em runtime nodejs
     const phone = jar.get("qwip_phone_e164")?.value;
 
     if (!phone) {
       return NextResponse.json({ error: "not authenticated" }, { status: 401 });
     }
 
-    const nonce = signToken(
-      {
-        sub: "ads",
-        path: "/api/ads",
-        ip: ipFrom(req),
-        ua: req.headers.get("user-agent") || "",
-        phone,
-      },
-      60 // TTL do nonce
-    );
+    const ua = req.headers.get("user-agent") || "";
+    const ip = ipFrom(req);
+    const iat = Math.floor(Date.now() / 1000);
+    const exp = iat + 2 * 60; // 2 minutos
+
+    const nonce = await signToken({
+      sub: "ads",
+      path: "/api/ads",
+      phone,
+      ip,
+      ua,
+      iat,
+      exp,
+    });
 
     return NextResponse.json(
-      { ok: true, nonce },
+      { nonce },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (e) {
     console.error("[nonce]", e);
-    return NextResponse.json({ error: "internal" }, { status: 500 });
+    return NextResponse.json({ error: "nonce failed" }, { status: 500 });
+    // Se quiser diagnosticar melhor no cliente, inclua reason:
+    // return NextResponse.json({ error: "nonce failed", reason: String(e) }, { status: 500 });
   }
 }
