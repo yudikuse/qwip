@@ -2,7 +2,6 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { signToken } from "@/lib/signing";
 import { verifySessionValue } from "@/lib/session";
 
@@ -13,8 +12,8 @@ function ipFrom(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const jar = cookies(); // sem await
-    const raw = jar.get("qwip_session")?.value || "";
+    // Lê direto do request (compatível com Next 15 / Node runtime)
+    const raw = req.cookies.get("qwip_session")?.value || "";
     const session = await verifySessionValue(raw);
     if (!session.ok) {
       return NextResponse.json({ error: "no-session" }, { status: 401 });
@@ -23,6 +22,7 @@ export async function GET(req: NextRequest) {
     const phone = session.claims.phone;
     const ip = ipFrom(req);
     const ua = req.headers.get("user-agent") || "";
+
     const now = Math.floor(Date.now() / 1000);
     const exp = now + 60; // nonce curto (60s)
 
@@ -36,7 +36,10 @@ export async function GET(req: NextRequest) {
       exp,
     });
 
-    return NextResponse.json({ nonce: token }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(
+      { nonce: token },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (e) {
     console.error("[ads/nonce]", e);
     return NextResponse.json({ error: "nonce failed" }, { status: 500 });
