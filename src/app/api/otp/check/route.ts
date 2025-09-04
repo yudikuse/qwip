@@ -1,6 +1,10 @@
+// src/app/api/otp/check/route.ts
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import { toE164BR } from "@/lib/phone";
 import { checkOtpViaVerify } from "@/lib/twilio";
+import { issueSession } from "@/lib/session";
 
 /**
  * Espera { to: string, code: string }
@@ -8,15 +12,21 @@ import { checkOtpViaVerify } from "@/lib/twilio";
  * - code: código recebido por SMS
  *
  * Respostas:
- * 200 { status: "approved", valid: true, phoneE164: "+55..." }  -> seta cookie
+ * 200 { status: "approved", valid: true, phoneE164: "+55..." }  -> seta cookies (sessão + UI)
  * 200 { status: "...",       valid: false }                      -> código incorreto/expirado
  * 400 { error: "..." }                                          -> dados inválidos/erro
  */
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const rawTo = (body?.to ?? body?.phone ?? "") as string;
-    const code = (body?.code ?? "") as string;
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
+    }
+
+    const rawTo = body?.to;
+    const code = String(body?.code ?? "").trim();
 
     const e164 = toE164BR(rawTo || "");
     if (!e164 || !code) {
@@ -34,21 +44,44 @@ export async function POST(req: Request) {
       );
     }
 
-    // Código aprovado -> seta cookie igual à /api/otp/verify
+    // --------- OTP aprovado -> setar cookies ---------
+    // 1) Sessão segura (HttpOnly) que o servidor confia
+    const sessionValue = await issueSession(e164, 24);
+
+    // 2) Cookie legível pela UI (compat com fluxo atual) — NÃO é usado para autenticação no servidor
+    const uiCookie = `qwip_phone_e164=${encodeURIComponent(e164)}; Path=/; Max-Age=${
+      60 * 60 * 24 * 30
+    }; SameSite=Lax; Secure`;
+
+    // Resposta igual ao contrato existente
     const res = NextResponse.json({
       status: result.status,
       valid: true,
       phoneE164: e164,
     });
 
-    res.headers.set(
+    // Zera qualquer cookie antigo e aplica o de UI novamente
+    res.headers.append(
       "Set-Cookie",
-      `qwip_phone_e164=${encodeURIComponent(e164)}; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`
+      "qwip_phone_e164=; Path=/; Max-Age=0; SameSite=Lax; Secure"
     );
+    res.headers.append("Set-Cookie", uiCookie);
+
+    // Cookie de sessão (HttpOnly, Secure, Strict, 24h)
+    res.cookies.set("qwip_session", sessionValue, {
+      httpOnly: true,
+      sameSite: "strict",
+      secure: true,
+      path: "/",
+      maxAge: 60 * 60 * 24, // 24h
+    });
 
     return res;
   } catch (err) {
     console.error("[otp/check]", err);
-    return NextResponse.json({ error: "Falha ao verificar código." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Falha ao verificar código." },
+      { status: 400 }
+    );
   }
 }
