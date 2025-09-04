@@ -12,38 +12,17 @@ const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
 const LIMITS = { minRadius: 1, maxRadius: 50 } as const;
 
 const STATE_TO_UF: Record<string, string> = {
-  Acre: "AC",
-  Alagoas: "AL",
-  Amapá: "AP",
-  Amazonas: "AM",
-  Bahia: "BA",
-  Ceará: "CE",
-  "Distrito Federal": "DF",
-  "Espírito Santo": "ES",
-  Goiás: "GO",
-  Maranhão: "MA",
-  "Mato Grosso": "MT",
-  "Mato Grosso do Sul": "MS",
-  "Minas Gerais": "MG",
-  Pará: "PA",
-  Paraíba: "PB",
-  Paraná: "PR",
-  Pernambuco: "PE",
-  Piauí: "PI",
-  "Rio de Janeiro": "RJ",
-  "Rio Grande do Norte": "RN",
-  "Rio Grande do Sul": "RS",
-  Rondônia: "RO",
-  Roraima: "RR",
-  "Santa Catarina": "SC",
-  "São Paulo": "SP",
-  Sergipe: "SE",
-  Tocantins: "TO",
+  Acre: "AC", Alagoas: "AL", Amapá: "AP", Amazonas: "AM",
+  Bahia: "BA", Ceará: "CE", "Distrito Federal": "DF", "Espírito Santo": "ES",
+  Goiás: "GO", Maranhão: "MA", "Mato Grosso": "MT", "Mato Grosso do Sul": "MS",
+  "Minas Gerais": "MG", Pará: "PA", Paraíba: "PB", Paraná: "PR",
+  Pernambuco: "PE", Piauí: "PI", "Rio de Janeiro": "RJ", "Rio Grande do Norte": "RN",
+  "Rio Grande do Sul": "RS", Rondônia: "RO", Roraima: "RR", "Santa Catarina": "SC",
+  "São Paulo": "SP", Sergipe: "SE", Tocantins: "TO",
 };
 
-// ======== máscara de preço (R$) ========
+// ===== Máscara de preço (R$) =====
 const MAX_INT_DIGITS = 12;
-
 function formatIntWithDots(intDigits: string) {
   const clean = intDigits.replace(/\D/g, "") || "0";
   return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
@@ -52,7 +31,7 @@ function clampDigits(s: string, max: number) {
   return s.replace(/\D/g, "").slice(0, max);
 }
 
-// File -> base64 (apenas o payload, sem "data:image/...;base64,")
+// Converte File → base64 (somente o payload)
 const toB64 = (f: File) =>
   new Promise<string>((resolve, reject) => {
     const r = new FileReader();
@@ -62,10 +41,10 @@ const toB64 = (f: File) =>
   });
 
 export default function NovaPaginaAnuncio() {
-  // Guard: exige cookie de verificação
+  // Guard: precisa do cookie de phone verificado
   useEffect(() => {
     try {
-      const has = document.cookie.split("; ").some((c) => c.startsWith("qwip_phone_e164="));
+      const has = document.cookie.split("; ").some(c => c.startsWith("qwip_phone_e164="));
       if (!has) {
         const current = window.location.pathname + window.location.search;
         window.location.replace(`/verificar?redirect=${encodeURIComponent(current)}`);
@@ -106,7 +85,7 @@ export default function NovaPaginaAnuncio() {
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
 
-  // Pegar geolocalização
+  // GPS
   const askGeolocation = () => {
     if (!("geolocation" in navigator)) return;
     setTriedGeo(true);
@@ -124,7 +103,7 @@ export default function NovaPaginaAnuncio() {
 
   // Reverse geocode
   useEffect(() => {
-    let stop = false;
+    let cancel = false;
     (async () => {
       if (!coords) return;
       try {
@@ -133,7 +112,7 @@ export default function NovaPaginaAnuncio() {
           { headers: { Accept: "application/json" }, cache: "no-store" }
         );
         const data = await res.json();
-        if (stop) return;
+        if (cancel) return;
 
         const nomeCidade =
           data?.address?.city ||
@@ -159,12 +138,10 @@ export default function NovaPaginaAnuncio() {
         setUF("");
       }
     })();
-    return () => {
-      stop = true;
-    };
+    return () => { cancel = true; };
   }, [coords]);
 
-  // CEP → coordenadas
+  // CEP → coords
   const locateByCEP = async () => {
     const digits = (cep || "").replace(/\D/g, "");
     if (digits.length !== 8) {
@@ -179,10 +156,7 @@ export default function NovaPaginaAnuncio() {
         const lat = d?.location?.coordinates?.latitude;
         const lng = d?.location?.coordinates?.longitude;
         if (typeof lat === "number" && typeof lng === "number") {
-          setCoords({ lat, lng });
-          setCity(d?.city || "Atual");
-          setUF(d?.state || "");
-          setGeoDenied(false);
+          setCoords({ lat, lng }); setCity(d?.city || "Atual"); setUF(d?.state || ""); setGeoDenied(false);
           return;
         }
       }
@@ -196,26 +170,16 @@ export default function NovaPaginaAnuncio() {
           const cidade: string | undefined = d.localidade;
           const ufLocal: string | undefined = d.uf;
           const pedacoRua: string = d.logradouro || d.bairro || "";
-          const query = [pedacoRua, cidade && ufLocal ? `${cidade} - ${ufLocal}` : ""]
-            .filter(Boolean)
-            .join(", ");
-
+          const query = [pedacoRua, cidade && ufLocal ? `${cidade} - ${ufLocal}` : ""].filter(Boolean).join(", ");
           if (query) {
             const q = encodeURIComponent(`${query}, Brasil`);
-            const n = await fetch(
-              `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${q}`,
-              { cache: "no-store" }
-            );
+            const n = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${q}`, { cache: "no-store" });
             if (n.ok) {
               const arr = await n.json();
               if (Array.isArray(arr) && arr.length > 0) {
-                const lat = parseFloat(arr[0].lat);
-                const lng = parseFloat(arr[0].lon);
+                const lat = parseFloat(arr[0].lat); const lng = parseFloat(arr[0].lon);
                 if (Number.isFinite(lat) && Number.isFinite(lng)) {
-                  setCoords({ lat, lng });
-                  setCity(cidade || "Atual");
-                  setUF(ufLocal || "");
-                  setGeoDenied(false);
+                  setCoords({ lat, lng }); setCity(cidade || "Atual"); setUF(ufLocal || ""); setGeoDenied(false);
                   return;
                 }
               }
@@ -227,30 +191,24 @@ export default function NovaPaginaAnuncio() {
 
     try {
       const n2 = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&country=BR&postalcode=${encodeURIComponent(
-          digits
-        )}&limit=1`,
+        `https://nominatim.openstreetmap.org/search?format=json&country=BR&postalcode=${encodeURIComponent(digits)}&limit=1`,
         { cache: "no-store" }
       );
       if (n2.ok) {
         const arr = await n2.json();
         if (Array.isArray(arr) && arr.length > 0) {
-          const lat = parseFloat(arr[0].lat);
-          const lng = parseFloat(arr[0].lon);
+          const lat = parseFloat(arr[0].lat); const lng = parseFloat(arr[0].lon);
           if (Number.isFinite(lat) && Number.isFinite(lng)) {
             setCoords({ lat, lng });
             const display = String(arr[0].display_name || "");
             const parts = display.split(",").map((s) => s.trim());
-            let cidadeGuess = "Atual";
-            let ufGuess = "";
+            let cidadeGuess = "Atual"; let ufGuess = "";
             if (parts.length >= 3) {
               cidadeGuess = parts[parts.length - 3];
               const estadoNome = parts[parts.length - 2];
               ufGuess = STATE_TO_UF[estadoNome] || "";
             }
-            setCity(cidadeGuess);
-            setUF(ufGuess);
-            setGeoDenied(false);
+            setCity(cidadeGuess); setUF(ufGuess); setGeoDenied(false);
             return;
           }
         }
@@ -262,46 +220,21 @@ export default function NovaPaginaAnuncio() {
 
   const showCEP = geoDenied || (triedGeo && !coords);
 
-  // Handlers da máscara
+  // Máscara handlers
   function handlePriceKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     const k = e.key;
     if (k === "Tab") return;
-
-    if (k === "," || k === ".") {
-      if (!editingCents) setEditingCents(true);
-      e.preventDefault();
-      return;
-    }
-
+    if (k === "," || k === ".") { if (!editingCents) setEditingCents(true); e.preventDefault(); return; }
     if (k === "Backspace") {
-      if (editingCents && centDigits.length > 0) {
-        setCentDigits((c) => c.slice(0, -1));
-        if (centDigits.length <= 1) setEditingCents(false);
-      } else {
-        setIntDigits((i) => i.slice(0, -1));
-      }
-      e.preventDefault();
-      return;
+      if (editingCents && centDigits.length > 0) { setCentDigits(c => c.slice(0, -1)); if (centDigits.length <= 1) setEditingCents(false); }
+      else { setIntDigits(i => i.slice(0, -1)); }
+      e.preventDefault(); return;
     }
-
-    if (k === "Delete") {
-      setIntDigits("");
-      setCentDigits("");
-      setEditingCents(false);
-      e.preventDefault();
-      return;
+    if (k === "Delete") { setIntDigits(""); setCentDigits(""); setEditingCents(false); e.preventDefault(); return; }
+    if (/^\d$/.test(k)) { if (editingCents) { if (centDigits.length < 2) setCentDigits(c => (c + k).slice(0, 2)); }
+      else { setIntDigits(i => clampDigits(i + k, MAX_INT_DIGITS)); }
+      e.preventDefault(); return;
     }
-
-    if (/^\d$/.test(k)) {
-      if (editingCents) {
-        if (centDigits.length < 2) setCentDigits((c) => (c + k).slice(0, 2));
-      } else {
-        setIntDigits((i) => clampDigits(i + k, MAX_INT_DIGITS));
-      }
-      e.preventDefault();
-      return;
-    }
-
     e.preventDefault();
   }
 
@@ -311,34 +244,24 @@ export default function NovaPaginaAnuncio() {
     const parts = normalized.split(".");
     const intPart = clampDigits(parts[0] || "0", MAX_INT_DIGITS);
     const centsPart = clampDigits(parts[1] || "", 2);
-
-    setIntDigits(intPart.replace(/^0+(?=\d)/, ""));
-    setCentDigits(centsPart);
-    setEditingCents(centsPart.length > 0);
-
+    setIntDigits(intPart.replace(/^0+(?=\d)/, "")); setCentDigits(centsPart); setEditingCents(centsPart.length > 0);
     e.preventDefault();
   }
 
-  // Agora também exige coords
+  // Agora só habilita com localização válida também
   const canPublish = Boolean(file && title.trim() && priceCents > 0 && desc.trim() && coords);
 
   // Publicar
   const publish = async () => {
     try {
-      if (!file) {
-        alert("Selecione uma imagem.");
-        return;
-      }
-      if (!file.type.startsWith("image/")) {
-        alert("Arquivo inválido. Envie uma imagem.");
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        alert("Imagem muito grande (máx. 5MB).");
-        return;
-      }
-      if (!coords) {
-        alert("Defina a localização: permita o GPS ou informe um CEP e clique em 'Localizar por CEP'.");
+      if (!file) { alert("Selecione uma imagem."); return; }
+      if (!file.type.startsWith("image/")) { alert("Arquivo inválido. Envie uma imagem."); return; }
+      if (!coords) { alert("Defina a localização (GPS ou CEP)."); return; }
+
+      // Opcional: limite de 4 MB para ficar confortável no POST
+      const MAX_BYTES = 4 * 1024 * 1024;
+      if (file.size > MAX_BYTES) {
+        alert("Imagem muito grande (máx. 4MB). Tente outra menor.");
         return;
       }
 
@@ -358,26 +281,22 @@ export default function NovaPaginaAnuncio() {
         imageBase64,
       };
 
-      const { ok, status, data } = await createAdSecure(body);
+      const { ok, status, data, errorText } = await createAdSecure(body);
 
       if (!ok) {
+        // Mostra mensagem vinda do backend quando existir
+        const msg =
+          (data && (data.error || data.message)) ||
+          errorText ||
+          (status === 400 && "Dados inválidos.") ||
+          (status === 413 && "Arquivo muito grande para envio.") ||
+          "Falha ao criar anúncio.";
+        alert(msg);
+        // Sessão expirada → redireciona
         if (status === 401) {
-          alert(data?.error || "Sessão expirada. Faça a verificação por SMS novamente.");
           const current = window.location.pathname + window.location.search;
           window.location.replace(`/verificar?redirect=${encodeURIComponent(current)}`);
-          return;
         }
-        if (status === 429) {
-          const wait = data?.retryAfterSec ?? 60;
-          alert(`Muitas tentativas. Tente novamente em ~${wait}s.`);
-          return;
-        }
-        // Mensagens comuns do backend (ex.: Vision)
-        if (data?.error) {
-          alert(data.error);
-          return;
-        }
-        alert("Falha ao criar anúncio.");
         return;
       }
 
@@ -393,10 +312,7 @@ export default function NovaPaginaAnuncio() {
       <div className="container mx-auto max-w-6xl px-4 py-8">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold">Criar anúncio</h1>
-          <Link
-            href="/"
-            className="rounded-lg border border-white/10 px-3 py-1.5 text-sm hover:bg-white/5"
-          >
+          <Link href="/" className="rounded-lg border border-white/10 px-3 py-1.5 text-sm hover:bg-white/5">
             Voltar
           </Link>
         </div>
@@ -470,9 +386,7 @@ export default function NovaPaginaAnuncio() {
                   min={LIMITS.minRadius}
                   max={LIMITS.maxRadius}
                   value={radius}
-                  onChange={(e) =>
-                    setRadius(parseInt(e.target.value, 10) || LIMITS.minRadius)
-                  }
+                  onChange={(e) => setRadius(parseInt(e.target.value, 10) || LIMITS.minRadius)}
                   className="w-full"
                 />
               </div>
@@ -495,7 +409,7 @@ export default function NovaPaginaAnuncio() {
                   </button>
                 </div>
 
-                {showCEP ? (
+                {(geoDenied || (triedGeo && !coords)) ? (
                   <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
                     <input
                       value={cep}
@@ -545,13 +459,8 @@ export default function NovaPaginaAnuncio() {
 
               <div className="p-4">
                 <div className="text-sm font-semibold">{title || "Título do anúncio"}</div>
-                <div className="mt-1 text-xs text-zinc-400">
-                  Preço: {priceMasked ? `R$ ${priceMasked}` : "—"}
-                </div>
-                <div className="mt-1 text-xs text-zinc-400">
-                  Cidade: {city}
-                  {uf ? `, ${uf}` : ""}
-                </div>
+                <div className="mt-1 text-xs text-zinc-400">Preço: {priceMasked ? `R$ ${priceMasked}` : "—"}</div>
+                <div className="mt-1 text-xs text-zinc-400">Cidade: {city}{uf ? `, ${uf}` : ""}</div>
 
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   <button className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400">
