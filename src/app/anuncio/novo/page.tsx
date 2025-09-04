@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { createAdSecure } from "@/lib/ads-client";
+import { createAdSecure, type CreatePayload } from "@/lib/ads-client";
 
 type LatLng = { lat: number; lng: number };
 const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
@@ -31,7 +31,7 @@ function clampDigits(s: string, max: number) {
   return s.replace(/\D/g, "").slice(0, max);
 }
 
-// Converte File → base64 (somente o payload)
+// File → base64 (somente payload, sem "data:image/...;base64,")
 const toB64 = (f: File) =>
   new Promise<string>((resolve, reject) => {
     const r = new FileReader();
@@ -41,10 +41,10 @@ const toB64 = (f: File) =>
   });
 
 export default function NovaPaginaAnuncio() {
-  // Guard: precisa do cookie de phone verificado
+  // Guard: precisa do cookie de telefone verificado
   useEffect(() => {
     try {
-      const has = document.cookie.split("; ").some(c => c.startsWith("qwip_phone_e164="));
+      const has = document.cookie.split("; ").some((c) => c.startsWith("qwip_phone_e164="));
       if (!has) {
         const current = window.location.pathname + window.location.search;
         window.location.replace(`/verificar?redirect=${encodeURIComponent(current)}`);
@@ -231,7 +231,8 @@ export default function NovaPaginaAnuncio() {
       e.preventDefault(); return;
     }
     if (k === "Delete") { setIntDigits(""); setCentDigits(""); setEditingCents(false); e.preventDefault(); return; }
-    if (/^\d$/.test(k)) { if (editingCents) { if (centDigits.length < 2) setCentDigits(c => (c + k).slice(0, 2)); }
+    if (/^\d$/.test(k)) {
+      if (editingCents) { if (centDigits.length < 2) setCentDigits(c => (c + k).slice(0, 2)); }
       else { setIntDigits(i => clampDigits(i + k, MAX_INT_DIGITS)); }
       e.preventDefault(); return;
     }
@@ -248,7 +249,7 @@ export default function NovaPaginaAnuncio() {
     e.preventDefault();
   }
 
-  // Agora só habilita com localização válida também
+  // Só habilita publicar com localização válida
   const canPublish = Boolean(file && title.trim() && priceCents > 0 && desc.trim() && coords);
 
   // Publicar
@@ -258,16 +259,13 @@ export default function NovaPaginaAnuncio() {
       if (!file.type.startsWith("image/")) { alert("Arquivo inválido. Envie uma imagem."); return; }
       if (!coords) { alert("Defina a localização (GPS ou CEP)."); return; }
 
-      // Opcional: limite de 4 MB para ficar confortável no POST
+      // Limite amistoso para corpo do request (ajuste se necessário no backend)
       const MAX_BYTES = 4 * 1024 * 1024;
-      if (file.size > MAX_BYTES) {
-        alert("Imagem muito grande (máx. 4MB). Tente outra menor.");
-        return;
-      }
+      if (file.size > MAX_BYTES) { alert("Imagem muito grande (máx. 4MB). Tente outra menor."); return; }
 
       const imageBase64 = await toB64(file);
 
-      const body = {
+      const body: CreatePayload = {
         title: title.trim(),
         description: desc.trim(),
         priceCents,
@@ -281,18 +279,22 @@ export default function NovaPaginaAnuncio() {
         imageBase64,
       };
 
-      const { ok, status, data, errorText } = await createAdSecure(body);
+      const res = await createAdSecure(body);
 
-      if (!ok) {
-        // Mostra mensagem vinda do backend quando existir
+      if (!res.ok) {
+        const status = res.status;
+        const data = "data" in res ? (res as any).data : undefined;
+        const errorText = "errorText" in res ? (res as any).errorText as (string | undefined) : undefined;
+
         const msg =
           (data && (data.error || data.message)) ||
           errorText ||
           (status === 400 && "Dados inválidos.") ||
           (status === 413 && "Arquivo muito grande para envio.") ||
           "Falha ao criar anúncio.";
+
         alert(msg);
-        // Sessão expirada → redireciona
+
         if (status === 401) {
           const current = window.location.pathname + window.location.search;
           window.location.replace(`/verificar?redirect=${encodeURIComponent(current)}`);
@@ -300,7 +302,7 @@ export default function NovaPaginaAnuncio() {
         return;
       }
 
-      alert(data?.id ? `Anúncio criado! ID: ${data.id}` : "Anúncio criado!");
+      alert(res.data?.id ? `Anúncio criado! ID: ${res.data.id}` : "Anúncio criado!");
     } catch (err) {
       console.error(err);
       alert("Erro inesperado ao criar anúncio.");
