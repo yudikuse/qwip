@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { signToken } from "@/lib/signing";
 
+// (Opcional) defina explicitamente Edge; com await cookies() funciona nos dois runtimes.
+export const runtime = "edge";
+
 function ipFrom(req: NextRequest) {
   const xfwd = req.headers.get("x-forwarded-for");
   return (xfwd?.split(",")[0] || "").trim() || "0.0.0.0";
@@ -10,7 +13,8 @@ function ipFrom(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const jar = cookies(); // síncrono no App Router
+    // No runtime Edge o tipo é Promise<ReadonlyRequestCookies> → use await
+    const jar = await cookies();
     const phone = jar.get("qwip_phone_e164")?.value;
 
     if (!phone) {
@@ -25,7 +29,7 @@ export async function GET(req: NextRequest) {
         ua: req.headers.get("user-agent") || "",
         phone,
       },
-      60 // TTL do nonce (60s)
+      60 // TTL do nonce
     );
 
     return NextResponse.json(
