@@ -31,7 +31,7 @@ function clampDigits(s: string, max: number) {
   return s.replace(/\D/g, "").slice(0, max);
 }
 
-// File → base64 (somente payload, sem "data:image/...;base64,")
+// File → base64 (apenas payload)
 const toB64 = (f: File) =>
   new Promise<string>((resolve, reject) => {
     const r = new FileReader();
@@ -259,9 +259,8 @@ export default function NovaPaginaAnuncio() {
       if (!file.type.startsWith("image/")) { alert("Arquivo inválido. Envie uma imagem."); return; }
       if (!coords) { alert("Defina a localização (GPS ou CEP)."); return; }
 
-      // Limite amistoso para corpo do request (ajuste se necessário no backend)
       const MAX_BYTES = 4 * 1024 * 1024;
-      if (file.size > MAX_BYTES) { alert("Imagem muito grande (máx. 4MB). Tente outra menor."); return; }
+      if (file.size > MAX_BYTES) { alert("Imagem muito grande (máx. 4MB)."); return; }
 
       const imageBase64 = await toB64(file);
 
@@ -279,6 +278,7 @@ export default function NovaPaginaAnuncio() {
         imageBase64,
       };
 
+      // >>>>>>>>>>> ALTERAÇÃO PRINCIPAL: sem desestruturar errorText <<<<<<<<<<
       const res = await createAdSecure(body);
 
       if (!res.ok) {
