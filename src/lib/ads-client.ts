@@ -19,16 +19,13 @@ export type CreateAdResp =
 
 export async function createAdSecure(body: CreatePayload): Promise<CreateAdResp> {
   try {
-    // 1) pega o nonce
+    // 1) Nonce
     const n = await fetch("/api/ads/nonce", {
       method: "GET",
       credentials: "include",
     });
-
     let nJson: any = null;
-    try {
-      nJson = await n.json();
-    } catch {}
+    try { nJson = await n.json(); } catch {}
 
     if (!n.ok || !nJson?.nonce) {
       return {
@@ -39,7 +36,7 @@ export async function createAdSecure(body: CreatePayload): Promise<CreateAdResp>
       };
     }
 
-    // 2) envia o anúncio
+    // 2) POST do anúncio
     const r = await fetch("/api/ads", {
       method: "POST",
       headers: {
@@ -51,9 +48,7 @@ export async function createAdSecure(body: CreatePayload): Promise<CreateAdResp>
     });
 
     let j: any = null;
-    try {
-      j = await r.json();
-    } catch {}
+    try { j = await r.json(); } catch {}
 
     if (!r.ok || !j?.ok) {
       return {
