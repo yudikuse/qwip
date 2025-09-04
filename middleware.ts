@@ -13,7 +13,7 @@ export function middleware(req: NextRequest) {
   res.headers.set("X-Frame-Options", "DENY");
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("Referrer-Policy", "no-referrer");
-  res.headers.set("Permissions-Policy", "geolocation=(), microphone=(), camera=(), payment=()");
+  res.headers.set("Permissions-Policy", "geolocation=(self), microphone=(), camera=(), payment=()");
   res.headers.set("X-Permitted-Cross-Domain-Policies", "none");
   res.headers.set("X-DNS-Prefetch-Control", "off");
   res.headers.set('X-QWIP-Security-MW', '1'); // marcador temporário
