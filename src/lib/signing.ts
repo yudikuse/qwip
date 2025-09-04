@@ -1,10 +1,6 @@
 // src/lib/signing.ts
 import crypto from "crypto";
 
-/**
- * Use uma SECRET forte nas variáveis de ambiente:
- *  - SIGNING_SECRET  (ou QWIP_SIGNING_SECRET)
- */
 const SECRET =
   process.env.SIGNING_SECRET ||
   process.env.QWIP_SIGNING_SECRET ||
@@ -30,13 +26,12 @@ function hmac(payload: string) {
   return crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
 }
 function timingSafeEq(a: string, b: string) {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ab, bb);
+  const A = Buffer.from(a);
+  const B = Buffer.from(b);
+  if (A.length !== B.length) return false;
+  return crypto.timingSafeEqual(A, B);
 }
 
-/** Assina um nonce com TTL (segundos). */
 export function signToken(
   claims: Omit<NonceClaims, "iat" | "exp">,
   ttlSec = 60
@@ -49,21 +44,20 @@ export function signToken(
   return `${payload}.${sig}`;
 }
 
-/** Verifica o nonce assinado. */
-export function verifyToken(token: string):
-  | { ok: true; claims: NonceClaims }
-  | { ok: false; reason: string } {
+export function verifyToken(
+  token: string
+): { ok: true; claims: NonceClaims } | { ok: false; reason: string } {
   try {
     const [payload, sig] = token.split(".");
     if (!payload || !sig) return { ok: false, reason: "format" };
     const expected = hmac(payload);
     if (!timingSafeEq(sig, expected)) return { ok: false, reason: "sig" };
 
-    const json = JSON.parse(b64urlDecode(payload)) as NonceClaims;
+    const claims = JSON.parse(b64urlDecode(payload)) as NonceClaims;
     const now = Math.floor(Date.now() / 1000);
-    if (json.exp < now) return { ok: false, reason: "expired" };
+    if (claims.exp < now) return { ok: false, reason: "expired" };
 
-    return { ok: true, claims: json };
+    return { ok: true, claims };
   } catch {
     return { ok: false, reason: "malformed" };
   }
