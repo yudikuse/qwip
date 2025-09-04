@@ -60,12 +60,12 @@ async function verifySessionCookie(raw: string | undefined | null): Promise<bool
   const secret = process.env.SIGNING_SECRET || process.env.QWIP_SIGNING_SECRET || "dev-secret-change-me";
   const key = await crypto.subtle.importKey(
     "raw",
-    u8ToArrayBuffer(strToU8(secret)), // <- ArrayBuffer puro
+    u8ToArrayBuffer(strToU8(secret)), // ArrayBuffer puro
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
-  const sig = await crypto.subtle.sign("HMAC", key, u8ToArrayBuffer(strToU8(toSign))); // <- ArrayBuffer puro
+  const sig = await crypto.subtle.sign("HMAC", key, u8ToArrayBuffer(strToU8(toSign))); // ArrayBuffer puro
   const expected = new Uint8Array(sig);
   const got = b64ToU8(b64uToB64(s));
   return u8eq(expected, got);
@@ -100,7 +100,7 @@ export async function middleware(req: NextRequest) {
   // ---------- Regras para APIs (/api/*): CORS restritivo + preflight ----------
   if (pathname.startsWith("/api")) {
     const requestOrigin = req.headers.get("origin"); // quem está chamando
-    const siteOrigin = req.nextUrl.origin;           // seu domínio (ex.: https://qwip.pro)
+    const siteOrigin = req.nextUrl.origin;           // seu domínio
 
     // Preflight (sempre responder e encerrar)
     if (req.method === "OPTIONS") {
