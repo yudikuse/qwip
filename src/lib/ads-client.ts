@@ -1,80 +1,68 @@
 // src/lib/ads-client.ts
+// Cliente que obtém nonce e publica o anúncio com cabeçalho X-QWIP-NONCE.
+// Sempre tenta retornar uma mensagem útil vinda do backend (json ou texto).
 
-/** Payload que o backend espera para criar um anúncio */
-export type NewAdPayload = {
+export type CreatePayload = {
   title: string;
   description: string;
   priceCents: number;
-
-  city?: string;
+  city: string;
   uf?: string;
-
-  lat: number | null;
-  lng: number | null;
-  centerLat: number | null;
-  centerLng: number | null;
-
+  lat: number;
+  lng: number;
+  centerLat: number;
+  centerLng: number;
   radiusKm: number;
-
-  /** imagem em base64 (APENAS o conteúdo, sem "data:image/...;base64,") */
   imageBase64: string;
 };
 
-type JsonOk<T> = { ok: true; status: number; data: T };
-type JsonErr = { ok: false; status: number; data: any };
+type RespOk = { ok: true; status: number; data: any };
+type RespErr = { ok: false; status: number; data?: any; errorText?: string };
+export type CreateAdResp = RespOk | RespErr;
 
-async function toJson<T>(res: Response): Promise<JsonOk<T> | JsonErr> {
-  let data: any = null;
+async function parseResponse(res: Response): Promise<{ data?: any; errorText?: string }> {
+  const ct = res.headers.get("content-type") || "";
   try {
-    data = await res.json();
+    if (ct.includes("application/json")) {
+      const j = await res.json();
+      return { data: j };
+    }
+    const t = await res.text();
+    return { errorText: t?.slice(0, 1000) || undefined };
   } catch {
-    // sem body json
+    return { errorText: "Falha ao ler resposta do servidor." };
   }
-  if (!res.ok) return { ok: false, status: res.status, data };
-  return { ok: true, status: res.status, data };
 }
 
-/** Pede um nonce ao servidor (rate-limited por IP/cookie) */
-export async function fetchNonce() {
-  const res = await fetch("/api/ads/nonce", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ts: Date.now() }), // payload mínimo
-    cache: "no-store",
-    credentials: "same-origin",
-  });
-  return toJson<{ nonce: string; retryAfterSec?: number }>(res);
-}
+export async function createAdSecure(payload: CreatePayload): Promise<CreateAdResp> {
+  try {
+    // 1) Nonce
+    const n = await fetch("/api/ads/nonce", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    });
+    if (!n.ok) {
+      const { data, errorText } = await parseResponse(n);
+      return { ok: false, status: n.status, data, errorText: errorText || "Falha ao obter nonce." };
+    }
+    const nonceJson = await n.json(); // { nonce: string }
+    const nonce = nonceJson?.nonce;
+    if (!nonce) return { ok: false, status: 500, errorText: "Nonce ausente." };
 
-/**
- * Cria o anúncio com proteção:
- * 1) busca um NONCE
- * 2) envia o payload com header X-QWIP-NONCE
- * Cookies de sessão são enviados automaticamente (mesma origem).
- */
-export async function createAdSecure(payload: NewAdPayload) {
-  // guarda-chuva de validação rápida no cliente
-  if (!payload.imageBase64) {
-    return {
-      ok: false as const,
-      status: 400,
-      data: { error: "Imagem obrigatória." },
-    };
+    // 2) Publica
+    const res = await fetch("/api/ads", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-qwip-nonce": String(nonce),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const { data, errorText } = await parseResponse(res);
+    if (!res.ok) return { ok: false, status: res.status, data, errorText };
+    return { ok: true, status: res.status, data };
+  } catch (e: any) {
+    return { ok: false, status: 0, errorText: e?.message || "Erro de rede." };
   }
-
-  const nonceRes = await fetchNonce();
-  if (!nonceRes.ok) return nonceRes as JsonErr;
-
-  const res = await fetch("/api/ads", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-qwip-nonce": nonceRes.data.nonce,
-    },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-    credentials: "same-origin",
-  });
-
-  return toJson<{ id: string }>(res);
 }
