@@ -41,7 +41,7 @@ const STATE_TO_UF: Record<string, string> = {
   Tocantins: "TO",
 };
 
-// ======== Máscara de preço (R$) =========
+// ======== máscara de preço (R$) ========
 const MAX_INT_DIGITS = 12;
 
 function formatIntWithDots(intDigits: string) {
@@ -52,7 +52,7 @@ function clampDigits(s: string, max: number) {
   return s.replace(/\D/g, "").slice(0, max);
 }
 
-// Converte File → base64 (apenas o payload, sem "data:image/...;base64,")
+// File -> base64 (apenas o payload, sem "data:image/...;base64,")
 const toB64 = (f: File) =>
   new Promise<string>((resolve, reject) => {
     const r = new FileReader();
@@ -265,7 +265,6 @@ export default function NovaPaginaAnuncio() {
   // Handlers da máscara
   function handlePriceKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     const k = e.key;
-
     if (k === "Tab") return;
 
     if (k === "," || k === ".") {
@@ -320,7 +319,8 @@ export default function NovaPaginaAnuncio() {
     e.preventDefault();
   }
 
-  const canPublish = Boolean(file && title.trim() && priceCents > 0 && desc.trim());
+  // Agora também exige coords
+  const canPublish = Boolean(file && title.trim() && priceCents > 0 && desc.trim() && coords);
 
   // Publicar
   const publish = async () => {
@@ -337,6 +337,10 @@ export default function NovaPaginaAnuncio() {
         alert("Imagem muito grande (máx. 5MB).");
         return;
       }
+      if (!coords) {
+        alert("Defina a localização: permita o GPS ou informe um CEP e clique em 'Localizar por CEP'.");
+        return;
+      }
 
       const imageBase64 = await toB64(file);
 
@@ -346,10 +350,10 @@ export default function NovaPaginaAnuncio() {
         priceCents,
         city,
         uf,
-        lat: coords?.lat ?? null,
-        lng: coords?.lng ?? null,
-        centerLat: coords?.lat ?? null,
-        centerLng: coords?.lng ?? null,
+        lat: coords.lat,
+        lng: coords.lng,
+        centerLat: coords.lat,
+        centerLng: coords.lng,
         radiusKm: radius,
         imageBase64,
       };
@@ -368,7 +372,12 @@ export default function NovaPaginaAnuncio() {
           alert(`Muitas tentativas. Tente novamente em ~${wait}s.`);
           return;
         }
-        alert(data?.error || "Falha ao criar anúncio.");
+        // Mensagens comuns do backend (ex.: Vision)
+        if (data?.error) {
+          alert(data.error);
+          return;
+        }
+        alert("Falha ao criar anúncio.");
         return;
       }
 
@@ -567,8 +576,7 @@ export default function NovaPaginaAnuncio() {
           </div>
           <GeoMap center={coords} radiusKm={radius} onLocationChange={setCoords} height={320} />
           <p className="mt-2 text-xs text-zinc-500">
-            Se a localização não aparecer, clique em “Usar minha localização”. Caso negue, informe
-            seu CEP.
+            Se a localização não aparecer, clique em “Usar minha localização”. Caso negue, informe seu CEP.
           </p>
         </section>
       </div>
