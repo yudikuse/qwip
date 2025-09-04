@@ -1,3 +1,5 @@
+export const runtime = "nodejs";
+
 import { NextRequest, NextResponse } from "next/server";
 import { toE164BR } from "@/lib/phone";
 import { checkOtpViaVerify } from "@/lib/twilio";
@@ -7,6 +9,7 @@ import {
   checkCooldown,
   tooMany,
 } from "@/lib/rate-limit";
+import { issueSession } from "@/lib/session";
 
 export async function POST(req: NextRequest) {
   try {
@@ -57,12 +60,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Cookie com o E.164 para manter o fluxo atual
+    // --------- Sessão segura + cookie de compatibilidade p/ UI ---------
+    // 1) Cookie seguro (HttpOnly) que o servidor confia
+    const sessionValue = await issueSession(e164, 24);
+
+    // 2) Cookie legível p/ UI (compat com fluxo atual) — NÃO é usado para autenticar no servidor
+    const uiCookie = `qwip_phone_e164=${encodeURIComponent(e164)}; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`;
+
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
-    res.headers.set(
-      "Set-Cookie",
-      `qwip_phone_e164=${encodeURIComponent(e164)}; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`
-    );
+
+    // Remove qualquer resquício anterior e aplica os cookies
+    res.headers.append("Set-Cookie", "qwip_phone_e164=; Path=/; Max-Age=0; SameSite=Lax; Secure");
+    res.headers.append("Set-Cookie", uiCookie);
+
+    res.cookies.set("qwip_session", sessionValue, {
+      httpOnly: true,
+      sameSite: "strict",
+      secure: true,
+      path: "/",
+      maxAge: 60 * 60 * 24, // 24h
+    });
+
     return res;
   } catch (err) {
     console.error("[otp/verify]", err);
