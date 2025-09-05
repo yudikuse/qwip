@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { createAdSecure, type CreatePayload } from "@/lib/ads-client";
+import { bestEffortPrecisePosition } from "@/lib/geo";
 
 type LatLng = { lat: number; lng: number };
 const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
@@ -89,7 +90,7 @@ export default function NovaPaginaAnuncio() {
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
 
-  // GPS (alta precisão + fallback CEP quando ruim)
+  // GPS com refino por watchPosition
   const askGeolocation = () => {
     if (!("geolocation" in navigator)) return;
     setTriedGeo(true);
@@ -97,32 +98,21 @@ export default function NovaPaginaAnuncio() {
     setLowPrecision(false);
     setAccuracy(null);
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const a = Number(pos.coords.accuracy ?? 0);
-        const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setCoords(p);
-        setAccuracy(Number.isFinite(a) ? a : null);
+    bestEffortPrecisePosition({ targetAccuracyMeters: 150, hardTimeoutMs: 12000 })
+      .then((p) => {
+        setCoords({ lat: p.lat, lng: p.lng });
+        setAccuracy(p.accuracy ?? null);
         setGeoDenied(false);
 
-        // Se a precisão vier ruim (>1.5km), pede CEP (Chrome/desktop costuma cair aqui quando usa IP)
-        if (!Number.isFinite(a) || a > 1500) {
+        if (!p.accuracy || p.accuracy > 1500) {
           setLowPrecision(true);
-          // dica sutil sem travar fluxo
           alert("Não consegui obter sua posição precisa. Se puder, informe seu CEP para melhorar a localização.");
         }
-        setGeoLoading(false);
-      },
-      (err) => {
+      })
+      .catch((err: any) => {
         if (err?.code === 1) setGeoDenied(true); // permission denied
-        setGeoLoading(false);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 12000,
-        maximumAge: 0, // força leitura “agora” (evita cache do IP)
-      }
-    );
+      })
+      .finally(() => setGeoLoading(false));
   };
 
   // Reverse geocode
@@ -303,7 +293,6 @@ export default function NovaPaginaAnuncio() {
         imageBase64,
       };
 
-      // Sem desestruturar errorText (evita crash)
       const res = await createAdSecure(body);
 
       if (!res.ok) {
@@ -442,7 +431,7 @@ export default function NovaPaginaAnuncio() {
                   </button>
                 </div>
 
-                { (geoDenied || (triedGeo && !coords) || lowPrecision) ? (
+                {(geoDenied || (triedGeo && !coords) || lowPrecision) ? (
                   <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
                     <input
                       value={cep}
