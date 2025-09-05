@@ -9,57 +9,23 @@ import { moderateImageBase64 } from "@/lib/vision";
 
 /** ===== Config ===== */
 const EXPIRES_HOURS = 24;
-
-/** ===== Moderação de TEXTO (inline, PT-BR simples) ===== */
-type ModResultText = { ok: true } | { ok: false; reason: string; match?: string };
-
-const BAD_WORDS = ["porra", "caralho", "merda", "puta", "fdp", "pqp"];
-const BAD_PATTERNS: RegExp[] = [
-  /\bwa\.me\/\d+/i,
-  /\bwhats(app)?\.com\/(d|channel|invite)/i,
-  /\bhttps?:\/\/[^\s]+/i,
-  /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/i,         // CPF
-  /\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/i, // CNPJ
-  /\+?\d[\d\s().-]{8,}\d/,                     // telefones genéricos
-];
-
-function moderateTextPTBR(title: string, description: string): ModResultText {
-  const text = `${title}\n${description}`.toLowerCase();
-  for (const w of BAD_WORDS) {
-    if (text.includes(w)) return { ok: false, reason: "linguagem inadequada", match: w };
-  }
-  for (const rx of BAD_PATTERNS) {
-    const m = text.match(rx);
-    if (m) return { ok: false, reason: "conteúdo proibido", match: m[0] };
-  }
-  if (title.trim().length < 3) return { ok: false, reason: "título muito curto" };
-  if (description.length > 1000) return { ok: false, reason: "descrição muito longa" };
-  return { ok: true };
-}
+const STRICT = process.env.SAFE_VISION_STRICT === "true";
 
 /** ===== Rate-limit (memória; troque por Redis/KV depois) ===== */
 const buckets = new Map<string, { c: number; reset: number }>();
 function rateByKey(key: string, limit: number, windowSec: number) {
   const now = Date.now();
   const b = buckets.get(key);
-  if (!b || b.reset < now) {
-    buckets.set(key, { c: 1, reset: now + windowSec * 1000 });
-    return { ok: true, remaining: limit - 1, retryAfterSec: 0 };
-  }
-  if (b.c >= limit) {
-    return { ok: false, remaining: 0, retryAfterSec: Math.ceil((b.reset - now) / 1000) };
-  }
-  b.c += 1;
-  return { ok: true, remaining: limit - b.c, retryAfterSec: 0 };
+  if (!b || b.reset < now) { buckets.set(key, { c: 1, reset: now + windowSec * 1000 }); return { ok: true, remaining: limit - 1, retryAfterSec: 0 }; }
+  if (b.c >= limit) return { ok: false, remaining: 0, retryAfterSec: Math.ceil((b.reset - now) / 1000) };
+  b.c += 1; return { ok: true, remaining: limit - b.c, retryAfterSec: 0 };
 }
 function ipFrom(req: NextRequest) {
   const xfwd = req.headers.get("x-forwarded-for");
   return (xfwd?.split(",")[0] || "").trim() || "0.0.0.0";
 }
 
-/** ===== Handler ===== */
 export async function POST(req: NextRequest) {
-  // 1) rate-limit por IP
   const ip = ipFrom(req);
   const rl = rateByKey(`ads:${ip}:1m`, 5, 60);
   if (!rl.ok) {
@@ -69,42 +35,41 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2) sessão (cookie assinado)
+  // ---- Autorização: sessão segura OU cookie legacy (transição) ----
+  let phoneCookie: string | undefined;
   const rawSession = req.cookies.get("qwip_session")?.value || "";
   const session = await verifySessionValue(rawSession);
-  if (!session.ok) {
+  if (session.ok) phoneCookie = session.claims.phone;
+  if (!phoneCookie) {
+    const legacy = req.cookies.get("qwip_phone_e164")?.value;
+    if (legacy) {
+      try { phoneCookie = decodeURIComponent(legacy); } catch { phoneCookie = legacy; }
+    }
+  }
+  if (!phoneCookie) {
     return NextResponse.json({ ok: false, error: "Sessão inválida/expirada." }, { status: 401 });
   }
-  const phoneCookie = session.claims.phone;
 
-  // 3) nonce/HMAC (proteção adicional por requisição)
+  // ---- Nonce/HMAC (proteção por requisição) ----
   const nonce = req.headers.get("x-qwip-nonce") || "";
   const ua = req.headers.get("user-agent") || "";
-  if (!nonce) {
-    return NextResponse.json({ ok: false, error: "Requisição sem nonce." }, { status: 400 });
-  }
+  if (!nonce) return NextResponse.json({ ok: false, error: "Requisição sem nonce." }, { status: 400 });
 
   const ver = await verifyToken(nonce);
-  if (!ver.ok) {
-    return NextResponse.json({ ok: false, error: `Nonce inválido (${ver.reason}).` }, { status: 401 });
-  }
+  if (!ver.ok) return NextResponse.json({ ok: false, error: `Nonce inválido (${ver.reason}).` }, { status: 401 });
+
   const c = ver.claims;
   if (c.sub !== "ads" || c.path !== "/api/ads" || c.ip !== ip || c.ua !== ua || c.phone !== phoneCookie) {
     return NextResponse.json({ ok: false, error: "Nonce não confere com a sessão." }, { status: 401 });
   }
 
-  // 4) payload
+  // ---- Payload ----
   let json: any = {};
-  try {
-    json = await req.json();
-  } catch {}
-
+  try { json = await req.json(); } catch {}
   const imageBase64 = String(json?.imageBase64 || "");
-
   const title = String(json?.title ?? "").trim();
   const description = String(json?.description ?? "").trim();
   const priceCents = Number(json?.priceCents ?? 0) || 0;
-
   const city = String(json?.city ?? "").trim();
   const uf = String(json?.uf ?? "").trim().toUpperCase();
   const lat = Number(json?.lat ?? 0) || 0;
@@ -113,54 +78,24 @@ export async function POST(req: NextRequest) {
   const centerLng = Number(json?.centerLng ?? 0) || 0;
   const radiusKm = Number(json?.radiusKm ?? 0) || 0;
 
-  // 5) validações simples
-  if (!title || title.length > 120) {
-    return NextResponse.json({ ok: false, error: "Título inválido." }, { status: 400 });
-  }
-  if (description.length > 1000) {
-    return NextResponse.json({ ok: false, error: "Descrição muito longa." }, { status: 400 });
-  }
-  if (!Number.isFinite(priceCents) || priceCents < 0 || priceCents > 99_999_99) {
-    return NextResponse.json({ ok: false, error: "Preço inválido." }, { status: 400 });
-  }
-  if (!city || uf.length !== 2) {
-    return NextResponse.json({ ok: false, error: "Localidade inválida." }, { status: 400 });
-  }
-  if (![lat, lng, centerLat, centerLng, radiusKm].every(Number.isFinite)) {
-    return NextResponse.json({ ok: false, error: "Coordenadas inválidas." }, { status: 400 });
-  }
+  if (!title || title.length < 3 || title.length > 120) return NextResponse.json({ ok: false, error: "Título inválido." }, { status: 400 });
+  if (description.length > 1000) return NextResponse.json({ ok: false, error: "Descrição muito longa." }, { status: 400 });
+  if (!Number.isFinite(priceCents) || priceCents < 0 || priceCents > 99_999_99) return NextResponse.json({ ok: false, error: "Preço inválido." }, { status: 400 });
+  if (!city || uf.length !== 2) return NextResponse.json({ ok: false, error: "Localidade inválida." }, { status: 400 });
+  if (![lat, lng, centerLat, centerLng, radiusKm].every(Number.isFinite)) return NextResponse.json({ ok: false, error: "Coordenadas inválidas." }, { status: 400 });
 
-  // 6) moderação (texto + imagem)
-  {
-    // Texto
-    const tmod = moderateTextPTBR(title, description);
-    if (!tmod.ok) {
-      return NextResponse.json(
-        { ok: false, error: `Conteúdo reprovado: ${tmod.reason}.` },
-        { status: 400 }
-      );
-    }
-
-    // Imagem
-    if (imageBase64) {
-      try {
-        const img = await moderateImageBase64(imageBase64); // { blocked, reason }
-        if (img.blocked) {
-          // loga motivo técnico só no servidor
-          console.warn("[ads/moderation] imagem bloqueada", { reason: img.reason });
-          return NextResponse.json(
-            { ok: false, error: "Imagem reprovada pela moderação." },
-            { status: 400 }
-          );
-        }
-      } catch (err) {
-        console.error("[ads/moderation-image]", err);
-        return NextResponse.json({ ok: false, error: "Falha na moderação da imagem." }, { status: 400 });
-      }
+  if (imageBase64) {
+    try {
+      const safe = await moderateImageBase64(imageBase64);
+      if (!safe && STRICT) return NextResponse.json({ ok: false, error: "Imagem reprovada pela moderação." }, { status: 400 });
+      if (!safe) console.warn("[ads/moderation] imagem sinalizada, seguindo (não estrito)");
+    } catch (err) {
+      console.error("[ads/moderation]", err);
+      if (STRICT) return NextResponse.json({ ok: false, error: "Falha na moderação da imagem." }, { status: 400 });
     }
   }
 
-  // 7) garantir seller (vincula ao telefone da sessão)
+  // ---- Vincula seller pelo telefone (session ou legacy) ----
   let sellerId: string;
   try {
     const seller = await prisma.seller.upsert({
@@ -175,27 +110,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Falha ao registrar vendedor." }, { status: 500 });
   }
 
-  // 8) cria o anúncio
-  const expiresAt = new Date(Date.now() + EXPIRES_HOURS * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + EXPIRES_HOURS * 3600 * 1000);
   try {
     const ad = await prisma.ad.create({
       data: {
-        title,
-        description,
-        priceCents,
-        city,
-        uf,
-        lat,
-        lng,
-        centerLat,
-        centerLng,
-        radiusKm,
-        expiresAt,
-        sellerId,
+        title, description, priceCents, city, uf, lat, lng, centerLat, centerLng, radiusKm,
+        expiresAt, sellerId,
       },
       select: { id: true },
     });
-
     return NextResponse.json({ ok: true, id: ad.id }, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     console.error("[ads/create]", err);
