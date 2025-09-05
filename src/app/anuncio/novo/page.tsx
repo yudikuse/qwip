@@ -6,6 +6,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { createAdSecure, type CreatePayload } from "@/lib/ads-client";
 import { bestEffortPrecisePosition } from "@/lib/geo";
+import AddressSearch from "@/components/AddressSearch";
 
 type LatLng = { lat: number; lng: number };
 const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
@@ -42,7 +43,7 @@ const toB64 = (f: File) =>
   });
 
 export default function NovaPaginaAnuncio() {
-  // Guard: precisa do cookie de telefone verificado
+  // Guard: precisa do cookie de telefone verificado (fallback cliente)
   useEffect(() => {
     try {
       const has = document.cookie.split("; ").some((c) => c.startsWith("qwip_phone_e164="));
@@ -98,7 +99,7 @@ export default function NovaPaginaAnuncio() {
     setLowPrecision(false);
     setAccuracy(null);
 
-    bestEffortPrecisePosition({ targetAccuracyMeters: 150, hardTimeoutMs: 12000 })
+    bestEffortPrecisePosition({ targetAccuracyMeters: 150, hardTimeoutMs: 15000 })
       .then((p) => {
         setCoords({ lat: p.lat, lng: p.lng });
         setAccuracy(p.accuracy ?? null);
@@ -106,7 +107,7 @@ export default function NovaPaginaAnuncio() {
 
         if (!p.accuracy || p.accuracy > 1500) {
           setLowPrecision(true);
-          alert("Não consegui obter sua posição precisa. Se puder, informe seu CEP para melhorar a localização.");
+          alert("Não consegui obter sua posição precisa. Se puder, use a busca de endereço/CEP para corrigir.");
         }
       })
       .catch((err: any) => {
@@ -232,8 +233,8 @@ export default function NovaPaginaAnuncio() {
     alert("CEP não encontrado. Tente outro CEP ou use “Usar minha localização”.");
   };
 
-  // Mostra campo de CEP se: negou permissão, não conseguiu coordenadas, ou precisão ruim
-  const showCEP = geoDenied || (triedGeo && !coords) || lowPrecision;
+  // Mostra campo de CEP e busca se: negou permissão, não conseguiu coordenadas, ou precisão ruim
+  const showManualInputs = geoDenied || (triedGeo && !coords) || lowPrecision;
 
   // Máscara handlers
   function handlePriceKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -272,7 +273,7 @@ export default function NovaPaginaAnuncio() {
     try {
       if (!file) { alert("Selecione uma imagem."); return; }
       if (!file.type.startsWith("image/")) { alert("Arquivo inválido. Envie uma imagem."); return; }
-      if (!coords) { alert("Defina a localização (GPS ou CEP)."); return; }
+      if (!coords) { alert("Defina a localização (GPS/Endereço/CEP)."); return; }
 
       const MAX_BYTES = 4 * 1024 * 1024;
       if (file.size > MAX_BYTES) { alert("Imagem muito grande (máx. 4MB)."); return; }
@@ -412,7 +413,7 @@ export default function NovaPaginaAnuncio() {
                   <div>
                     <div className="text-sm font-medium">Localização</div>
                     <div className="text-xs text-zinc-400">
-                      Usaremos sua posição atual. Se negar, informe seu CEP.
+                      Use GPS, ou refine por endereço/CEP. Você também pode clicar no mapa.
                     </div>
                     {typeof accuracy === "number" && (
                       <div className="mt-1 text-[11px] text-zinc-500">
@@ -421,33 +422,59 @@ export default function NovaPaginaAnuncio() {
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={askGeolocation}
-                    disabled={geoLoading}
-                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500 disabled:opacity-60"
-                  >
-                    {geoLoading ? "Obtendo localização..." : "Usar minha localização"}
-                  </button>
-                </div>
-
-                {(geoDenied || (triedGeo && !coords) || lowPrecision) ? (
-                  <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-                    <input
-                      value={cep}
-                      onChange={(e) => setCep(e.target.value)}
-                      placeholder="Informe seu CEP (apenas números)"
-                      className="rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
-                    />
+                  <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={locateByCEP}
-                      className="rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/5"
+                      onClick={askGeolocation}
+                      disabled={geoLoading}
+                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500 disabled:opacity-60"
                     >
-                      Localizar por CEP
+                      {geoLoading ? "Obtendo…" : "Usar minha localização"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={askGeolocation}
+                      disabled={geoLoading}
+                      className="rounded-md border border-white/10 px-3 py-1.5 text-sm hover:bg-white/5"
+                    >
+                      Recalibrar GPS
                     </button>
                   </div>
-                ) : null}
+                </div>
+
+                {showManualInputs && (
+                  <>
+                    <div className="mt-3">
+                      <AddressSearch
+                        onPick={(p) => {
+                          setCoords({ lat: p.lat, lng: p.lng });
+                          if (p.city) setCity(p.city);
+                          if (p.uf) setUF(p.uf);
+                          setGeoDenied(false);
+                          setLowPrecision(false);
+                          setAccuracy(50); // estimativa otimista após escolha manual
+                        }}
+                        placeholder="Buscar endereço, bairro, cidade…"
+                      />
+                    </div>
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                      <input
+                        value={cep}
+                        onChange={(e) => setCep(e.target.value)}
+                        placeholder="Ou informe seu CEP (apenas números)"
+                        className="rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={locateByCEP}
+                        className="rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/5"
+                      >
+                        Localizar por CEP
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
 
               <button
@@ -507,7 +534,7 @@ export default function NovaPaginaAnuncio() {
           </div>
           <GeoMap center={coords} radiusKm={radius} onLocationChange={setCoords} height={320} />
           <p className="mt-2 text-xs text-zinc-500">
-            Se a localização não aparecer, clique em “Usar minha localização”. Caso negue, informe seu CEP.
+            Você pode clicar no mapa para ajustar o pino. Se o GPS errar, use a busca de endereço/CEP.
           </p>
         </section>
       </div>
