@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "JSON inválido." }, { status: 400 });
     }
 
-    const phoneRaw: string | undefined = body?.phone ?? body?.phoneE164;
+    const phoneRaw: string | undefined = body?.phone ?? body?.phoneE164 ?? body?.to;
     const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
     if (!e164) {
       return NextResponse.json({ ok: false, error: "Telefone inválido." }, { status: 400 });
@@ -40,12 +40,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Falha ao enviar código." }, { status: 500 });
     }
 
-    // Gravamos o E.164 por 5 minutos para o /api/otp/check usar como fallback
+    // Cookie temporário de 5min pro /api/otp/check usar como fallback
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
-    res.headers.append(
-      "Set-Cookie",
-      `qwip_otp_phone=${encodeURIComponent(e164)}; Path=/; Max-Age=${60 * 5}; SameSite=Lax; Secure`
-    );
+    res.cookies.set("qwip_otp_phone", e164, {
+      path: "/",
+      maxAge: 60 * 5,
+      sameSite: "lax",
+      secure: true,
+      httpOnly: true, // não precisa no client
+    });
     return res;
   } catch (err) {
     console.error("[otp/start]", err);
