@@ -76,6 +76,10 @@ export default function NovaPaginaAnuncio() {
 
   // Localização
   const [coords, setCoords] = useState<LatLng | null>(null);
+  const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [lowPrecision, setLowPrecision] = useState(false);
+  const [geoLoading, setGeoLoading] = useState(false);
+
   const [cep, setCep] = useState("");
   const [geoDenied, setGeoDenied] = useState(false);
   const [triedGeo, setTriedGeo] = useState(false);
@@ -85,19 +89,39 @@ export default function NovaPaginaAnuncio() {
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
 
-  // GPS
+  // GPS (alta precisão + fallback CEP quando ruim)
   const askGeolocation = () => {
     if (!("geolocation" in navigator)) return;
     setTriedGeo(true);
+    setGeoLoading(true);
+    setLowPrecision(false);
+    setAccuracy(null);
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        const a = Number(pos.coords.accuracy ?? 0);
+        const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setCoords(p);
+        setAccuracy(Number.isFinite(a) ? a : null);
         setGeoDenied(false);
+
+        // Se a precisão vier ruim (>1.5km), pede CEP (Chrome/desktop costuma cair aqui quando usa IP)
+        if (!Number.isFinite(a) || a > 1500) {
+          setLowPrecision(true);
+          // dica sutil sem travar fluxo
+          alert("Não consegui obter sua posição precisa. Se puder, informe seu CEP para melhorar a localização.");
+        }
+        setGeoLoading(false);
       },
       (err) => {
-        if (err?.code === 1) setGeoDenied(true);
+        if (err?.code === 1) setGeoDenied(true); // permission denied
+        setGeoLoading(false);
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0, // força leitura “agora” (evita cache do IP)
+      }
     );
   };
 
@@ -156,7 +180,7 @@ export default function NovaPaginaAnuncio() {
         const lat = d?.location?.coordinates?.latitude;
         const lng = d?.location?.coordinates?.longitude;
         if (typeof lat === "number" && typeof lng === "number") {
-          setCoords({ lat, lng }); setCity(d?.city || "Atual"); setUF(d?.state || ""); setGeoDenied(false);
+          setCoords({ lat, lng }); setCity(d?.city || "Atual"); setUF(d?.state || ""); setGeoDenied(false); setLowPrecision(false);
           return;
         }
       }
@@ -179,7 +203,7 @@ export default function NovaPaginaAnuncio() {
               if (Array.isArray(arr) && arr.length > 0) {
                 const lat = parseFloat(arr[0].lat); const lng = parseFloat(arr[0].lon);
                 if (Number.isFinite(lat) && Number.isFinite(lng)) {
-                  setCoords({ lat, lng }); setCity(cidade || "Atual"); setUF(ufLocal || ""); setGeoDenied(false);
+                  setCoords({ lat, lng }); setCity(cidade || "Atual"); setUF(ufLocal || ""); setGeoDenied(false); setLowPrecision(false);
                   return;
                 }
               }
@@ -208,7 +232,7 @@ export default function NovaPaginaAnuncio() {
               const estadoNome = parts[parts.length - 2];
               ufGuess = STATE_TO_UF[estadoNome] || "";
             }
-            setCity(cidadeGuess); setUF(ufGuess); setGeoDenied(false);
+            setCity(cidadeGuess); setUF(ufGuess); setGeoDenied(false); setLowPrecision(false);
             return;
           }
         }
@@ -218,7 +242,8 @@ export default function NovaPaginaAnuncio() {
     alert("CEP não encontrado. Tente outro CEP ou use “Usar minha localização”.");
   };
 
-  const showCEP = geoDenied || (triedGeo && !coords);
+  // Mostra campo de CEP se: negou permissão, não conseguiu coordenadas, ou precisão ruim
+  const showCEP = geoDenied || (triedGeo && !coords) || lowPrecision;
 
   // Máscara handlers
   function handlePriceKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -278,7 +303,7 @@ export default function NovaPaginaAnuncio() {
         imageBase64,
       };
 
-      // >>>>>>>>>>> ALTERAÇÃO PRINCIPAL: sem desestruturar errorText <<<<<<<<<<
+      // Sem desestruturar errorText (evita crash)
       const res = await createAdSecure(body);
 
       if (!res.ok) {
@@ -400,18 +425,24 @@ export default function NovaPaginaAnuncio() {
                     <div className="text-xs text-zinc-400">
                       Usaremos sua posição atual. Se negar, informe seu CEP.
                     </div>
+                    {typeof accuracy === "number" && (
+                      <div className="mt-1 text-[11px] text-zinc-500">
+                        precisão estimada: ~{Math.round(accuracy)} m
+                      </div>
+                    )}
                   </div>
 
                   <button
                     type="button"
                     onClick={askGeolocation}
-                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
+                    disabled={geoLoading}
+                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500 disabled:opacity-60"
                   >
-                    Usar minha localização
+                    {geoLoading ? "Obtendo localização..." : "Usar minha localização"}
                   </button>
                 </div>
 
-                {(geoDenied || (triedGeo && !coords)) ? (
+                { (geoDenied || (triedGeo && !coords) || lowPrecision) ? (
                   <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
                     <input
                       value={cep}
