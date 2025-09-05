@@ -1,41 +1,51 @@
 // middleware.ts
 import { NextRequest, NextResponse } from "next/server";
 
-// Caminhos que exigem login por SMS (mantém seu fluxo original por cookie de UI)
+// Rotas que exigem login por SMS (fluxo original por cookie de UI)
 const PROTECTED = ["/anuncio/novo"];
 
-export function middleware(req: NextRequest) {
-  const { pathname, search } = req.nextUrl;
-
-  // Resposta padrão
-  const res = NextResponse.next();
-
-  // ---------- Cabeçalhos de segurança ----------
+function securityHeaders(res: NextResponse) {
   res.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
   res.headers.set("X-Frame-Options", "DENY");
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("Referrer-Policy", "no-referrer");
-  // CORREÇÃO: permitir geolocalização para o próprio site (volta a exibir o prompt)
+  // Permite geolocalização no próprio site (volta o prompt)
   res.headers.set("Permissions-Policy", "geolocation=(self), microphone=(), camera=(), payment=()");
   res.headers.set("X-Permitted-Cross-Domain-Policies", "none");
   res.headers.set("X-DNS-Prefetch-Control", "off");
+  return res;
+}
 
-  // ---------- Proteção de rotas por cookie de UI (igual ao começo do dia) ----------
-  if (PROTECTED.some((p) => pathname.startsWith(p))) {
-    const hasPhone = req.cookies.get("qwip_phone_e164")?.value;
-    if (!hasPhone) {
-      const url = new URL("/verificar", req.nextUrl.origin);
-      url.searchParams.set("redirect", pathname + (search || ""));
-      return NextResponse.redirect(url);
-    }
+export function middleware(req: NextRequest) {
+  const { pathname, searchParams } = req.nextUrl;
+
+  // ---------- Gate: redireciona cedo se faltar cookie ----------
+  const isProtected = PROTECTED.some((p) => pathname.startsWith(p));
+  const phoneCookie = req.cookies.get("qwip_phone_e164")?.value || "";
+  const forceBypass = searchParams.get("force") === "skip"; // util p/ testes
+
+  if (isProtected && !phoneCookie && !forceBypass) {
+    const url = new URL("/verificar", req.nextUrl.origin);
+    url.searchParams.set("redirect", pathname + (req.nextUrl.search || ""));
+    const redir = NextResponse.redirect(url, { status: 302 });
+    securityHeaders(redir);
+    // headers de diagnóstico
+    redir.headers.set("X-QWIP-MW", "redirect");
+    redir.headers.set("X-QWIP-Auth", "phone:absent");
+    return redir;
   }
 
-  // ---------- Regras para APIs (/api/*): CORS restritivo + preflight ----------
+  // ---------- Fluxo normal ----------
+  const res = securityHeaders(NextResponse.next());
+
+  // Diagnóstico sempre presente nas respostas
+  res.headers.set("X-QWIP-MW", "pass");
+  res.headers.set("X-QWIP-Auth", phoneCookie ? "phone:present" : "phone:absent");
+
+  // CORS mínimo para /api/*
   if (pathname.startsWith("/api")) {
-    const requestOrigin = req.headers.get("origin");
     const siteOrigin = req.nextUrl.origin;
 
-    // Preflight (sempre responder e encerrar)
     if (req.method === "OPTIONS") {
       const preflight = new NextResponse(null, { status: 204 });
       preflight.headers.set("Access-Control-Allow-Origin", siteOrigin);
@@ -45,15 +55,6 @@ export function middleware(req: NextRequest) {
       return preflight;
     }
 
-    // Só permite métodos de escrita se for mesma origem
-    const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method);
-    const sameOrigin = !requestOrigin || requestOrigin === siteOrigin;
-
-    if (isWrite && !sameOrigin) {
-      return new NextResponse("Forbidden", { status: 403 });
-    }
-
-    // Cabeçalho CORS para respostas de API
     res.headers.set("Access-Control-Allow-Origin", siteOrigin);
     res.headers.set("Vary", "Origin");
   }
@@ -63,5 +64,6 @@ export function middleware(req: NextRequest) {
 
 // Aplica globalmente (páginas e APIs)
 export const config = {
-  matcher: ["/:path*"],
+  // evita pegar assets estáticos, mas cobre todas as páginas/app/api
+  matcher: ["/((?!_next|.*\\..*).*)"],
 };
