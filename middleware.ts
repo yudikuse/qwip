@@ -1,35 +1,38 @@
 // middleware.ts
 import { NextRequest, NextResponse } from "next/server";
 
-// Rotas que exigem sessão criada após OTP
+// Caminhos que exigem login por SMS (gate leve, baseado no cookie de UI como você já tinha)
 const PROTECTED = ["/anuncio/novo"];
 
 export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
-
-  // ---------- Security headers ----------
   const res = NextResponse.next();
+
+  // ---------- Cabeçalhos de segurança (seguros e não quebram UI) ----------
   res.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
   res.headers.set("X-Frame-Options", "DENY");
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("Referrer-Policy", "no-referrer");
+  // permitir geolocalização para o prompt do navegador
   res.headers.set("Permissions-Policy", "geolocation=(self), microphone=(), camera=(), payment=()");
   res.headers.set("X-Permitted-Cross-Domain-Policies", "none");
   res.headers.set("X-DNS-Prefetch-Control", "off");
+  res.headers.set("X-QWIP-Security-MW", "1"); // marcador temporário
 
-  // ---------- Proteção inicial (Edge) ----------
+  // ---------- Gate leve de páginas (compatível com seu front atual) ----------
   if (PROTECTED.some((p) => pathname.startsWith(p))) {
-    const hasSession = Boolean(req.cookies.get("qwip_session")?.value);
-    if (!hasSession) {
+    const hasUiCookie = req.cookies.get("qwip_phone_e164")?.value;
+    if (!hasUiCookie) {
       const url = new URL("/verificar", req.nextUrl.origin);
       url.searchParams.set("redirect", pathname + (search || ""));
       return NextResponse.redirect(url);
     }
   }
 
-  // ---------- CORS básico para /api/* ----------
+  // ---------- APIs: CORS básico (não tocar) ----------
   if (pathname.startsWith("/api")) {
     const siteOrigin = req.nextUrl.origin;
+
     if (req.method === "OPTIONS") {
       const preflight = new NextResponse(null, { status: 204 });
       preflight.headers.set("Access-Control-Allow-Origin", siteOrigin);
@@ -38,6 +41,8 @@ export function middleware(req: NextRequest) {
       preflight.headers.set("Access-Control-Max-Age", "600");
       return preflight;
     }
+
+    // cabeçalho CORS para respostas de API
     res.headers.set("Access-Control-Allow-Origin", siteOrigin);
     res.headers.set("Vary", "Origin");
   }
