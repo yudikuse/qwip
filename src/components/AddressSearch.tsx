@@ -1,7 +1,7 @@
 // src/components/AddressSearch.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Picked = { lat: number; lng: number; city?: string; uf?: string };
 
@@ -36,7 +36,6 @@ export default function AddressSearch({
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement | null>(null);
 
-  // fecha dropdown ao clicar fora
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       if (!boxRef.current) return;
@@ -46,7 +45,6 @@ export default function AddressSearch({
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  // debounce
   const debouncedQ = useDebounce(q, 400);
 
   useEffect(() => {
@@ -65,9 +63,7 @@ export default function AddressSearch({
         const data = (await r.json()) as Item[];
         setList(data || []);
         setOpen(true);
-      } catch {
-        // silencia
-      }
+      } catch {}
     })();
   }, [debouncedQ]);
 
@@ -82,11 +78,8 @@ export default function AddressSearch({
 
     const iso =
       a["ISO3166-2-lvl4"] || a["ISO3166-2-lvl3"] || a["ISO3166-2-lvl2"] || "";
-    if (typeof iso === "string" && iso.startsWith("BR-")) {
-      uf = iso.slice(3);
-    } else if (a.state && STATE_TO_UF[a.state]) {
-      uf = STATE_TO_UF[a.state];
-    }
+    if (typeof iso === "string" && iso.startsWith("BR-")) uf = iso.slice(3);
+    else if (a.state && STATE_TO_UF[a.state]) uf = STATE_TO_UF[a.state];
 
     onPick({ lat, lng, city, uf });
     setOpen(false);
