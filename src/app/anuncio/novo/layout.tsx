@@ -3,21 +3,24 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifySessionValue } from "@/lib/session";
 
-export default async function NovoAnuncioLayout({
+export const runtime = "nodejs";
+
+export default async function AnuncioNovoLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // Lê a sessão assinada do cookie HttpOnly
-  const jar = await cookies(); // <- importante no Next 15
+  // Lê o cookie de sessão assinado (não use "use client" aqui)
+  const jar = cookies();
   const raw = jar.get("qwip_session")?.value || "";
-  const session = await verifySessionValue(raw);
 
-  // Sem sessão válida? Envia para o fluxo de verificação por SMS
+  // Verifica assinatura e expiração
+  const session = await verifySessionValue(raw);
   if (!session.ok) {
-    redirect(`/verificar?redirect=/anuncio/novo`);
+    // Sem sessão -> volta para o fluxo de SMS
+    redirect(`/verificar?redirect=${encodeURIComponent("/anuncio/novo")}`);
   }
 
-  // Sessão OK → renderiza a página normalmente
+  // Sessão ok -> renderiza a página normalmente
   return <>{children}</>;
 }
