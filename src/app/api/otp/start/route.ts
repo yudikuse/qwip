@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "JSON inválido." }, { status: 400 });
     }
 
+    // aceita phone, phoneE164 ou to
     const phoneRaw: string | undefined = body?.phone ?? body?.phoneE164 ?? body?.to;
     const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
     if (!e164) {
@@ -20,12 +21,11 @@ export async function POST(req: NextRequest) {
 
     const ip = getClientIP(req);
 
-    // Cooldown por telefone: 10s
+    // cooldowns e limites
     {
       const c = checkCooldown(`otp:start:${e164}`, 10);
       if (!c.ok) return tooMany("Aguarde antes de pedir outro código.", c.retryAfterSec);
     }
-    // Limites
     {
       const r = limitByKey(`otp:start:${ip}:1m`, 15, 60);
       if (!r.ok) return tooMany("Muitas tentativas deste IP.", r.retryAfterSec);
@@ -40,14 +40,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Falha ao enviar código." }, { status: 500 });
     }
 
-    // Cookie temporário de 5min pro /api/otp/check usar como fallback
+    // cookie temporário (5 min) para o /api/otp/check usar como fallback
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
     res.cookies.set("qwip_otp_phone", e164, {
       path: "/",
       maxAge: 60 * 5,
       sameSite: "lax",
       secure: true,
-      httpOnly: true, // não precisa no client
+      httpOnly: true,
     });
     return res;
   } catch (err) {
