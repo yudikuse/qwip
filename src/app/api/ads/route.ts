@@ -9,8 +9,43 @@ import { moderateImageBase64 } from "@/lib/vision";
 
 /** ===== Config ===== */
 const EXPIRES_HOURS = 24;
-// se quiser bloquear quando a moderação falhar, defina SAFE_VISION_STRICT=true no ambiente
+// se quiser bloquear quando a moderação de imagem falhar, defina SAFE_VISION_STRICT=true no ambiente
 const STRICT = process.env.SAFE_VISION_STRICT === "true";
+
+/** ===== Moderação de TEXTO (inline, PT-BR simples) ===== */
+type ModResult = { ok: true } | { ok: false; reason: string; match?: string };
+
+const BAD_WORDS = [
+  // palavrões comuns (exemplos — ajuste conforme seu caso)
+  "porra", "caralho", "merda", "puta", "fdp", "pqp",
+];
+const BAD_PATTERNS: RegExp[] = [
+  // links/whatsapp (evitar levar conversa pra fora)
+  /\bwa\.me\/\d+/i,
+  /\bwhats(app)?\.com\/(d|channel|invite)/i,
+  /\bhttps?:\/\/[^\s]+/i,
+  // dados sensíveis óbvios
+  /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/i,         // CPF
+  /\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/i, // CNPJ
+  // telefones genéricos (com DDD, E.164 etc.)
+  /\+?\d[\d\s().-]{8,}\d/,
+];
+
+function moderateTextPTBR(title: string, description: string): ModResult {
+  const text = `${title}\n${description}`.toLowerCase();
+
+  for (const w of BAD_WORDS) {
+    if (text.includes(w)) return { ok: false, reason: "linguagem inadequada", match: w };
+  }
+  for (const rx of BAD_PATTERNS) {
+    const m = text.match(rx);
+    if (m) return { ok: false, reason: "conteúdo proibido", match: m[0] };
+  }
+  if (title.trim().length < 3) return { ok: false, reason: "título muito curto" };
+  if (description.length > 1000) return { ok: false, reason: "descrição muito longa" };
+
+  return { ok: true };
+}
 
 /** ===== Rate-limit (memória; troque por Redis/KV depois) ===== */
 const buckets = new Map<string, { c: number; reset: number }>();
@@ -91,7 +126,7 @@ export async function POST(req: NextRequest) {
   const radiusKm = Number(json?.radiusKm ?? 0) || 0;
 
   // 5) validações simples
-  if (!title || title.length < 3 || title.length > 120) {
+  if (!title || title.length > 120) {
     return NextResponse.json({ ok: false, error: "Título inválido." }, { status: 400 });
   }
   if (description.length > 1000) {
@@ -107,19 +142,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Coordenadas inválidas." }, { status: 400 });
   }
 
-  // 6) moderação da imagem (quando enviada)
-  if (imageBase64) {
-    try {
-      const safe = await moderateImageBase64(imageBase64);
-      if (!safe && STRICT) {
-        return NextResponse.json({ ok: false, error: "Imagem reprovada pela moderação." }, { status: 400 });
-      }
-      // se não for estrito, apenas logamos e seguimos
-      if (!safe) console.warn("[ads/moderation] imagem sinalizada, seguindo por não estrito");
-    } catch (err) {
-      console.error("[ads/moderation]", err);
-      if (STRICT) {
-        return NextResponse.json({ ok: false, error: "Falha na moderação da imagem." }, { status: 400 });
+  // 6) moderação (texto + imagem)
+  {
+    // Texto (sempre)
+    const tmod = moderateTextPTBR(title, description);
+    if (!tmod.ok) {
+      return NextResponse.json(
+        { ok: false, error: `Conteúdo reprovado: ${tmod.reason}.` },
+        { status: 400 }
+      );
+    }
+
+    // Imagem (quando enviada)
+    if (imageBase64) {
+      try {
+        const safe = await moderateImageBase64(imageBase64);
+        if (!safe && STRICT) {
+          return NextResponse.json({ ok: false, error: "Imagem reprovada pela moderação." }, { status: 400 });
+        }
+        // se não for estrito, apenas loga e segue
+        if (!safe) console.warn("[ads/moderation] imagem sinalizada, seguindo por não estrito");
+      } catch (err) {
+        console.error("[ads/moderation]", err);
+        if (STRICT) {
+          return NextResponse.json({ ok: false, error: "Falha na moderação da imagem." }, { status: 400 });
+        }
       }
     }
   }
