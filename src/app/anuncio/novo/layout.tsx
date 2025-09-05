@@ -10,17 +10,15 @@ export default async function AnuncioNovoLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Lê o cookie de sessão assinado (não use "use client" aqui)
-  const jar = cookies();
-  const raw = jar.get("qwip_session")?.value || "";
+  // Em Next 15, cookies() pode ser assíncrono neste contexto
+  const jar = await cookies();
+  const raw = jar.get("qwip_session")?.value ?? "";
 
-  // Verifica assinatura e expiração
+  // Verifica assinatura/expiração da sessão (emitida após OTP)
   const session = await verifySessionValue(raw);
   if (!session.ok) {
-    // Sem sessão -> volta para o fluxo de SMS
     redirect(`/verificar?redirect=${encodeURIComponent("/anuncio/novo")}`);
   }
 
-  // Sessão ok -> renderiza a página normalmente
   return <>{children}</>;
 }
