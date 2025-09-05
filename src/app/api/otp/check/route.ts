@@ -7,6 +7,7 @@ import {
   checkCooldown,
   tooMany,
 } from "@/lib/rate-limit";
+import { cookies } from "next/headers";
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,7 +19,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "JSON inválido." }, { status: 400 });
     }
 
-    const phoneRaw: string | undefined = body?.phone ?? body?.phoneE164;
+    const jar = await cookies();
+    const cookiePhone = jar.get("qwip_otp_phone")?.value;
+
+    const phoneRaw: string | undefined =
+      body?.phone ?? body?.phoneE164 ?? cookiePhone;
+
     const code: string | undefined = body?.code;
     const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
 
@@ -57,15 +63,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Cookie com o E.164 para manter o fluxo atual
+    // Cookie com o E.164 para manter o fluxo atual da UI
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
-    res.headers.set(
+
+    // limpa o cookie temporário do fluxo OTP
+    res.headers.append(
+      "Set-Cookie",
+      `qwip_otp_phone=; Path=/; Max-Age=0; SameSite=Lax; Secure`
+    );
+
+    // mantém seu cookie de UI por 30 dias
+    res.headers.append(
       "Set-Cookie",
       `qwip_phone_e164=${encodeURIComponent(e164)}; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`
     );
+
     return res;
   } catch (err) {
-    console.error("[otp/verify]", err);
+    console.error("[otp/check]", err);
     return NextResponse.json({ ok: false, error: "Falha ao verificar código." }, { status: 500 });
   }
 }
