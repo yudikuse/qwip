@@ -97,9 +97,7 @@ export async function POST(req: NextRequest) {
   let json: any = {};
   try {
     json = await req.json();
-  } catch {
-    // segue para validações abaixo
-  }
+  } catch {}
 
   const imageBase64 = String(json?.imageBase64 || "");
 
@@ -134,7 +132,7 @@ export async function POST(req: NextRequest) {
 
   // 6) moderação (texto + imagem)
   {
-    // Texto (sempre)
+    // Texto
     const tmod = moderateTextPTBR(title, description);
     if (!tmod.ok) {
       return NextResponse.json(
@@ -143,16 +141,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Imagem (quando enviada)
+    // Imagem
     if (imageBase64) {
       try {
-        const img = await moderateImageBase64(imageBase64); // <- retorna { blocked, reason }
+        const img = await moderateImageBase64(imageBase64); // { blocked, reason }
         if (img.blocked) {
-          const msg = img.reason ? `Imagem reprovada pela moderação (${img.reason}).` : "Imagem reprovada pela moderação.";
-          return NextResponse.json({ ok: false, error: msg }, { status: 400 });
+          // loga motivo técnico só no servidor
+          console.warn("[ads/moderation] imagem bloqueada", { reason: img.reason });
+          return NextResponse.json(
+            { ok: false, error: "Imagem reprovada pela moderação." },
+            { status: 400 }
+          );
         }
       } catch (err) {
-        // Se a função lançar erro inesperado, jogamos 400 para não arriscar publicar
         console.error("[ads/moderation-image]", err);
         return NextResponse.json({ ok: false, error: "Falha na moderação da imagem." }, { status: 400 });
       }
