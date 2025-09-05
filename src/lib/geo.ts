@@ -4,7 +4,7 @@ export type GeoPoint = { lat: number; lng: number; accuracy?: number };
 export function getPrecisePosition(opts?: { timeoutMs?: number }): Promise<GeoPoint> {
   return new Promise((resolve, reject) => {
     if (!("geolocation" in navigator)) {
-      return reject(new Error("geoloc indisponível"));
+      return reject(new Error("Geolocalização indisponível no navegador."));
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -13,8 +13,8 @@ export function getPrecisePosition(opts?: { timeoutMs?: number }): Promise<GeoPo
       },
       (err) => reject(err),
       {
-        enableHighAccuracy: true,        // pede GPS/Wi-Fi quando possível
-        timeout: opts?.timeoutMs ?? 10000,
+        enableHighAccuracy: true,           // força GPS/Wi-Fi quando disponível
+        timeout: opts?.timeoutMs ?? 12000,  // 12s
         maximumAge: 0,
       }
     );
