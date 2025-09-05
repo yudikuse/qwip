@@ -1,81 +1,71 @@
-// src/app/api/otp/check/route.ts
-export const runtime = "nodejs";
-
 import { NextRequest, NextResponse } from "next/server";
 import { toE164BR } from "@/lib/phone";
 import { checkOtpViaVerify } from "@/lib/twilio";
-import { issueSession } from "@/lib/session";
+import {
+  getClientIP,
+  limitByKey,
+  checkCooldown,
+  tooMany,
+} from "@/lib/rate-limit";
 
-/**
- * Espera { to: string, code: string }
- * - to: telefone BR; normalizamos para E.164
- * - code: código por SMS
- *
- * Respostas:
- * 200 { status: "approved", valid: true, phoneE164 } -> seta cookies (sessão + UI)
- * 200 { status: "...",       valid: false }          -> código incorreto/expirado
- * 400 { error: "..." }                                -> dados inválidos/erro
- */
 export async function POST(req: NextRequest) {
   try {
+    // --------- validação do payload ---------
     let body: any = {};
     try {
       body = await req.json();
     } catch {
-      return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "JSON inválido." }, { status: 400 });
     }
 
-    const rawTo = body?.to;
-    const code = String(body?.code ?? "").trim();
+    const phoneRaw: string | undefined = body?.phone ?? body?.phoneE164;
+    const code: string | undefined = body?.code;
+    const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
 
-    const e164 = toE164BR(rawTo || "");
     if (!e164 || !code) {
-      return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
     }
 
+    // --------- BLINDAGEM (rate limit + cooldown) ---------
+    const ip = getClientIP(req);
+
+    // 1) Cooldown por telefone: 10s entre verificações
+    {
+      const c = checkCooldown(`otp:verify:${e164}`, 10);
+      if (!c.ok) return tooMany("Aguarde antes de tentar verificar novamente.", c.retryAfterSec);
+    }
+
+    // 2) Tentativas por IP: 15 / 1min
+    {
+      const r = limitByKey(`otp:verify:${ip}:1m`, 15, 60);
+      if (!r.ok) return tooMany("Muitas tentativas deste IP.", r.retryAfterSec);
+    }
+
+    // 3) Tentativas por telefone: 5 / 10min
+    {
+      const r = limitByKey(`otp:verify:${e164}:10m`, 5, 600);
+      if (!r.ok) return tooMany("Muitas tentativas para este número.", r.retryAfterSec);
+    }
+
+    // --------- Twilio Verify ---------
     const result = await checkOtpViaVerify(e164, code);
     const approved = result?.status === "approved";
-
     if (!approved) {
       return NextResponse.json(
-        { status: result?.status ?? "unverified", valid: false },
-        { status: 200, headers: { "Cache-Control": "no-store" } }
+        { ok: false, error: "Código inválido ou expirado." },
+        { status: 401 }
       );
     }
 
-    // ---- OTP aprovado -> setar cookies (com domínio do host atual) ----
-    const sessionValue = await issueSession(e164, 24);
-    const res = NextResponse.json(
-      { status: result.status, valid: true, phoneE164: e164 },
-      { headers: { "Cache-Control": "no-store" } }
+    // Cookie com o E.164 para manter o fluxo atual
+    const res = NextResponse.json({ ok: true, phoneE164: e164 });
+    res.headers.set(
+      "Set-Cookie",
+      `qwip_phone_e164=${encodeURIComponent(e164)}; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`
     );
-
-    // Descobre o host atual (preview, apex, www, etc.)
-    const host = new URL(req.url).hostname;
-
-    // 1) Sessão segura (HttpOnly) – o servidor confia nisto
-    res.cookies.set("qwip_session", sessionValue, {
-      httpOnly: true,
-      sameSite: "strict",
-      secure: true,
-      path: "/",
-      maxAge: 60 * 60 * 24, // 24h
-      domain: host,
-    });
-
-    // 2) Cookie legível pela UI (compat) — NÃO usado para auth no servidor
-    res.cookies.set("qwip_phone_e164", encodeURIComponent(e164), {
-      httpOnly: false,
-      sameSite: "lax",
-      secure: true,
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30, // 30d
-      domain: host,
-    });
-
     return res;
   } catch (err) {
-    console.error("[otp/check]", err);
-    return NextResponse.json({ error: "Falha ao verificar código." }, { status: 400 });
+    console.error("[otp/verify]", err);
+    return NextResponse.json({ ok: false, error: "Falha ao verificar código." }, { status: 500 });
   }
 }
