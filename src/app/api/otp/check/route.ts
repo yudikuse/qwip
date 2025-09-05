@@ -44,7 +44,10 @@ export async function POST(req: NextRequest) {
     const result = await checkOtpViaVerify(e164, code);
     const approved = result?.status === "approved";
     if (!approved) {
-      return NextResponse.json({ ok: false, error: "Código inválido ou expirado." }, { status: 401 });
+      return NextResponse.json(
+        { ok: false, error: "Código inválido ou expirado." },
+        { status: 401 }
+      );
     }
 
     // grava cookie final e apaga o temporário
