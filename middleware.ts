@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Rotas que exigem login por SMS
 const PROTECTED = ["/anuncio/novo"];
 
 function securityHeaders(res: NextResponse) {
@@ -7,6 +8,7 @@ function securityHeaders(res: NextResponse) {
   res.headers.set("X-Frame-Options", "DENY");
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("Referrer-Policy", "no-referrer");
+  // permite o prompt de geolocalização
   res.headers.set("Permissions-Policy", "geolocation=(self), microphone=(), camera=(), payment=()");
   res.headers.set("X-Permitted-Cross-Domain-Policies", "none");
   res.headers.set("X-DNS-Prefetch-Control", "off");
@@ -16,7 +18,15 @@ function securityHeaders(res: NextResponse) {
 export function middleware(req: NextRequest) {
   const { pathname, searchParams } = req.nextUrl;
 
-  // Gate: redireciona cedo se faltar cookie de UI
+  // Normaliza: /verify -> /verificar (preserva query)
+  if (pathname === "/verify") {
+    const url = new URL("/verificar", req.nextUrl.origin);
+    searchParams.forEach((v, k) => url.searchParams.set(k, v));
+    const redir = NextResponse.redirect(url, { status: 307 });
+    return securityHeaders(redir);
+  }
+
+  // Gate por cookie de UI (mantém fluxo original)
   const isProtected = PROTECTED.some((p) => pathname.startsWith(p));
   const phoneCookie = req.cookies.get("qwip_phone_e164")?.value || "";
   const forceBypass = searchParams.get("force") === "skip";
@@ -31,6 +41,7 @@ export function middleware(req: NextRequest) {
     return redir;
   }
 
+  // Resposta normal + CORS p/ /api/*
   const res = securityHeaders(NextResponse.next());
   res.headers.set("X-QWIP-MW", "pass");
   res.headers.set("X-QWIP-Auth", phoneCookie ? "phone:present" : "phone:absent");
@@ -55,5 +66,6 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
+  // cobre páginas e /api, ignora assets
   matcher: ["/((?!_next|.*\\..*).*)"],
 };
