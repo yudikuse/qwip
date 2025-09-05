@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { toE164BR } from "@/lib/phone";
 import { checkOtpViaVerify } from "@/lib/twilio";
-import {
-  getClientIP,
-  limitByKey,
-  checkCooldown,
-  tooMany,
-} from "@/lib/rate-limit";
+import { getClientIP, limitByKey, checkCooldown, tooMany } from "@/lib/rate-limit";
 import { cookies } from "next/headers";
 
 export async function POST(req: NextRequest) {
@@ -22,10 +17,11 @@ export async function POST(req: NextRequest) {
     const jar = await cookies();
     const cookiePhone = jar.get("qwip_otp_phone")?.value;
 
+    // Aceita os nomes usados no client atual
     const phoneRaw: string | undefined =
-      body?.phone ?? body?.phoneE164 ?? cookiePhone;
+      body?.phone ?? body?.phoneE164 ?? body?.to ?? cookiePhone;
 
-    const code: string | undefined = body?.code;
+    const code: string | undefined = body?.code ?? body?.otp;
     const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
 
     if (!e164 || !code) {
@@ -34,20 +30,14 @@ export async function POST(req: NextRequest) {
 
     // --------- BLINDAGEM (rate limit + cooldown) ---------
     const ip = getClientIP(req);
-
-    // 1) Cooldown por telefone: 10s entre verificações
     {
       const c = checkCooldown(`otp:verify:${e164}`, 10);
       if (!c.ok) return tooMany("Aguarde antes de tentar verificar novamente.", c.retryAfterSec);
     }
-
-    // 2) Tentativas por IP: 15 / 1min
     {
       const r = limitByKey(`otp:verify:${ip}:1m`, 15, 60);
       if (!r.ok) return tooMany("Muitas tentativas deste IP.", r.retryAfterSec);
     }
-
-    // 3) Tentativas por telefone: 5 / 10min
     {
       const r = limitByKey(`otp:verify:${e164}:10m`, 5, 600);
       if (!r.ok) return tooMany("Muitas tentativas para este número.", r.retryAfterSec);
@@ -63,20 +53,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Cookie com o E.164 para manter o fluxo atual da UI
+    // --------- Cookies ---------
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
 
-    // limpa o cookie temporário do fluxo OTP
-    res.headers.append(
-      "Set-Cookie",
-      `qwip_otp_phone=; Path=/; Max-Age=0; SameSite=Lax; Secure`
-    );
+    // apaga o temporário
+    res.cookies.set("qwip_otp_phone", "", {
+      path: "/",
+      maxAge: 0,
+      sameSite: "lax",
+      secure: true,
+      httpOnly: true,
+    });
 
-    // mantém seu cookie de UI por 30 dias
-    res.headers.append(
-      "Set-Cookie",
-      `qwip_phone_e164=${encodeURIComponent(e164)}; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`
-    );
+    // mantém o cookie de UI (lido pelo middleware) por 30 dias
+    res.cookies.set("qwip_phone_e164", e164, {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+      sameSite: "lax",
+      secure: true,
+      httpOnly: false, // deixe visível, como no fluxo original
+    });
 
     return res;
   } catch (err) {
