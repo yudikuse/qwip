@@ -43,7 +43,7 @@ const toB64 = (f: File) =>
   });
 
 export default function NovaPaginaAnuncio() {
-  // Guard: precisa do cookie de telefone verificado (fallback cliente)
+  // Guard cliente (extra): precisa do cookie de telefone verificado
   useEffect(() => {
     try {
       const has = document.cookie.split("; ").some((c) => c.startsWith("qwip_phone_e164="));
@@ -82,6 +82,8 @@ export default function NovaPaginaAnuncio() {
   const [lowPrecision, setLowPrecision] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
 
+  const [manuallyFixed, setManuallyFixed] = useState(false);
+
   const [cep, setCep] = useState("");
   const [geoDenied, setGeoDenied] = useState(false);
   const [triedGeo, setTriedGeo] = useState(false);
@@ -98,6 +100,7 @@ export default function NovaPaginaAnuncio() {
     setGeoLoading(true);
     setLowPrecision(false);
     setAccuracy(null);
+    setManuallyFixed(false); // volta para "GPS como fonte"
 
     bestEffortPrecisePosition({ targetAccuracyMeters: 150, hardTimeoutMs: 15000 })
       .then((p) => {
@@ -107,7 +110,7 @@ export default function NovaPaginaAnuncio() {
 
         if (!p.accuracy || p.accuracy > 1500) {
           setLowPrecision(true);
-          alert("Não consegui obter sua posição precisa. Se puder, use a busca de endereço/CEP para corrigir.");
+          // não marca manual; pedimos correção manual se for publicar
         }
       })
       .catch((err: any) => {
@@ -156,7 +159,7 @@ export default function NovaPaginaAnuncio() {
     return () => { cancel = true; };
   }, [coords]);
 
-  // CEP → coords
+  // CEP → coords (marca manual)
   const locateByCEP = async () => {
     const digits = (cep || "").replace(/\D/g, "");
     if (digits.length !== 8) {
@@ -171,7 +174,8 @@ export default function NovaPaginaAnuncio() {
         const lat = d?.location?.coordinates?.latitude;
         const lng = d?.location?.coordinates?.longitude;
         if (typeof lat === "number" && typeof lng === "number") {
-          setCoords({ lat, lng }); setCity(d?.city || "Atual"); setUF(d?.state || ""); setGeoDenied(false); setLowPrecision(false);
+          setCoords({ lat, lng }); setCity(d?.city || "Atual"); setUF(d?.state || "");
+          setGeoDenied(false); setLowPrecision(false); setManuallyFixed(true); setAccuracy(80);
           return;
         }
       }
@@ -194,7 +198,8 @@ export default function NovaPaginaAnuncio() {
               if (Array.isArray(arr) && arr.length > 0) {
                 const lat = parseFloat(arr[0].lat); const lng = parseFloat(arr[0].lon);
                 if (Number.isFinite(lat) && Number.isFinite(lng)) {
-                  setCoords({ lat, lng }); setCity(cidade || "Atual"); setUF(ufLocal || ""); setGeoDenied(false); setLowPrecision(false);
+                  setCoords({ lat, lng }); setCity(cidade || "Atual"); setUF(ufLocal || "");
+                  setGeoDenied(false); setLowPrecision(false); setManuallyFixed(true); setAccuracy(80);
                   return;
                 }
               }
@@ -223,7 +228,8 @@ export default function NovaPaginaAnuncio() {
               const estadoNome = parts[parts.length - 2];
               ufGuess = STATE_TO_UF[estadoNome] || "";
             }
-            setCity(cidadeGuess); setUF(ufGuess); setGeoDenied(false); setLowPrecision(false);
+            setCity(cidadeGuess); setUF(ufGuess);
+            setGeoDenied(false); setLowPrecision(false); setManuallyFixed(true); setAccuracy(80);
             return;
           }
         }
@@ -233,7 +239,7 @@ export default function NovaPaginaAnuncio() {
     alert("CEP não encontrado. Tente outro CEP ou use “Usar minha localização”.");
   };
 
-  // Mostra campo de CEP e busca se: negou permissão, não conseguiu coordenadas, ou precisão ruim
+  // Mostrar entradas manuais quando necessário
   const showManualInputs = geoDenied || (triedGeo && !coords) || lowPrecision;
 
   // Máscara handlers
@@ -266,14 +272,23 @@ export default function NovaPaginaAnuncio() {
   }
 
   // Só habilita publicar com localização válida
-  const canPublish = Boolean(file && title.trim() && priceCents > 0 && desc.trim() && coords);
+  const canPublish = Boolean(
+    file && title.trim() && priceCents > 0 && desc.trim() && coords
+  );
 
-  // Publicar
+  // Publicar (bloqueia se impreciso e não corrigido)
   const publish = async () => {
     try {
       if (!file) { alert("Selecione uma imagem."); return; }
       if (!file.type.startsWith("image/")) { alert("Arquivo inválido. Envie uma imagem."); return; }
       if (!coords) { alert("Defina a localização (GPS/Endereço/CEP)."); return; }
+
+      // BLOQUEIO de imprecisão sem correção manual
+      const acc = accuracy ?? 1e9; // se não temos accuracy, tratamos como impreciso
+      if (acc > 5000 && !manuallyFixed) {
+        alert("Sua localização está imprecisa (>5 km). Ajuste pelo mapa, busca de endereço ou CEP antes de publicar.");
+        return;
+      }
 
       const MAX_BYTES = 4 * 1024 * 1024;
       if (file.size > MAX_BYTES) { alert("Imagem muito grande (máx. 4MB)."); return; }
@@ -420,6 +435,11 @@ export default function NovaPaginaAnuncio() {
                         precisão estimada: ~{Math.round(accuracy)} m
                       </div>
                     )}
+                    {(!manuallyFixed && (accuracy ?? 1e9) > 5000) && (
+                      <div className="mt-1 rounded bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300 ring-1 ring-amber-500/20">
+                        Precisão baixa. Corrija no mapa, busca de endereço ou CEP (obrigatório para publicar).
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex gap-2">
@@ -452,7 +472,8 @@ export default function NovaPaginaAnuncio() {
                           if (p.uf) setUF(p.uf);
                           setGeoDenied(false);
                           setLowPrecision(false);
-                          setAccuracy(50); // estimativa otimista após escolha manual
+                          setManuallyFixed(true);
+                          setAccuracy(50); // estimativa após escolha manual
                         }}
                         placeholder="Buscar endereço, bairro, cidade…"
                       />
@@ -532,7 +553,19 @@ export default function NovaPaginaAnuncio() {
               Raio atual: <span className="font-medium text-zinc-200">{radius} km</span>
             </div>
           </div>
-          <GeoMap center={coords} radiusKm={radius} onLocationChange={setCoords} height={320} />
+          <GeoMap
+            center={coords}
+            radiusKm={radius}
+            onLocationChange={(p, meta) => {
+              setCoords(p);
+              if (meta?.manual) {
+                setManuallyFixed(true);
+                setAccuracy(50);
+                setLowPrecision(false);
+              }
+            }}
+            height={320}
+          />
           <p className="mt-2 text-xs text-zinc-500">
             Você pode clicar no mapa para ajustar o pino. Se o GPS errar, use a busca de endereço/CEP.
           </p>
