@@ -12,34 +12,28 @@ function ipFrom(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    // Lê direto do request (compatível com Next 15 / Node runtime)
+    // 1) tenta sessão segura
     const raw = req.cookies.get("qwip_session")?.value || "";
     const session = await verifySessionValue(raw);
-    if (!session.ok) {
-      return NextResponse.json({ error: "no-session" }, { status: 401 });
+    let phone = session.ok ? session.claims.phone : undefined;
+
+    // 2) fallback para cookie de UI (compat)
+    if (!phone) {
+      const legacy = req.cookies.get("qwip_phone_e164")?.value;
+      if (legacy) {
+        try { phone = decodeURIComponent(legacy); } catch { phone = legacy; }
+      }
     }
 
-    const phone = session.claims.phone;
+    if (!phone) return NextResponse.json({ error: "no-session" }, { status: 401 });
+
     const ip = ipFrom(req);
     const ua = req.headers.get("user-agent") || "";
-
     const now = Math.floor(Date.now() / 1000);
-    const exp = now + 60; // nonce curto (60s)
+    const exp = now + 60;
 
-    const token = await signToken({
-      sub: "ads",
-      path: "/api/ads",
-      phone,
-      ip,
-      ua,
-      iat: now,
-      exp,
-    });
-
-    return NextResponse.json(
-      { nonce: token },
-      { headers: { "Cache-Control": "no-store" } }
-    );
+    const token = await signToken({ sub: "ads", path: "/api/ads", phone, ip, ua, iat: now, exp });
+    return NextResponse.json({ nonce: token }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     console.error("[ads/nonce]", e);
     return NextResponse.json({ error: "nonce failed" }, { status: 500 });
