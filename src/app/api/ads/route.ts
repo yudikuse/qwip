@@ -9,31 +9,22 @@ import { moderateImageBase64 } from "@/lib/vision";
 
 /** ===== Config ===== */
 const EXPIRES_HOURS = 24;
-// se quiser bloquear quando a moderação de imagem falhar, defina SAFE_VISION_STRICT=true no ambiente
-const STRICT = process.env.SAFE_VISION_STRICT === "true";
 
 /** ===== Moderação de TEXTO (inline, PT-BR simples) ===== */
-type ModResult = { ok: true } | { ok: false; reason: string; match?: string };
+type ModResultText = { ok: true } | { ok: false; reason: string; match?: string };
 
-const BAD_WORDS = [
-  // palavrões comuns (exemplos — ajuste conforme seu caso)
-  "porra", "caralho", "merda", "puta", "fdp", "pqp",
-];
+const BAD_WORDS = ["porra", "caralho", "merda", "puta", "fdp", "pqp"];
 const BAD_PATTERNS: RegExp[] = [
-  // links/whatsapp (evitar levar conversa pra fora)
   /\bwa\.me\/\d+/i,
   /\bwhats(app)?\.com\/(d|channel|invite)/i,
   /\bhttps?:\/\/[^\s]+/i,
-  // dados sensíveis óbvios
   /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/i,         // CPF
   /\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/i, // CNPJ
-  // telefones genéricos (com DDD, E.164 etc.)
-  /\+?\d[\d\s().-]{8,}\d/,
+  /\+?\d[\d\s().-]{8,}\d/,                     // telefones genéricos
 ];
 
-function moderateTextPTBR(title: string, description: string): ModResult {
+function moderateTextPTBR(title: string, description: string): ModResultText {
   const text = `${title}\n${description}`.toLowerCase();
-
   for (const w of BAD_WORDS) {
     if (text.includes(w)) return { ok: false, reason: "linguagem inadequada", match: w };
   }
@@ -43,7 +34,6 @@ function moderateTextPTBR(title: string, description: string): ModResult {
   }
   if (title.trim().length < 3) return { ok: false, reason: "título muito curto" };
   if (description.length > 1000) return { ok: false, reason: "descrição muito longa" };
-
   return { ok: true };
 }
 
@@ -108,7 +98,7 @@ export async function POST(req: NextRequest) {
   try {
     json = await req.json();
   } catch {
-    // continua com json vazio para cair nas validações abaixo
+    // segue para validações abaixo
   }
 
   const imageBase64 = String(json?.imageBase64 || "");
@@ -156,17 +146,15 @@ export async function POST(req: NextRequest) {
     // Imagem (quando enviada)
     if (imageBase64) {
       try {
-        const safe = await moderateImageBase64(imageBase64);
-        if (!safe && STRICT) {
-          return NextResponse.json({ ok: false, error: "Imagem reprovada pela moderação." }, { status: 400 });
+        const img = await moderateImageBase64(imageBase64); // <- retorna { blocked, reason }
+        if (img.blocked) {
+          const msg = img.reason ? `Imagem reprovada pela moderação (${img.reason}).` : "Imagem reprovada pela moderação.";
+          return NextResponse.json({ ok: false, error: msg }, { status: 400 });
         }
-        // se não for estrito, apenas loga e segue
-        if (!safe) console.warn("[ads/moderation] imagem sinalizada, seguindo por não estrito");
       } catch (err) {
-        console.error("[ads/moderation]", err);
-        if (STRICT) {
-          return NextResponse.json({ ok: false, error: "Falha na moderação da imagem." }, { status: 400 });
-        }
+        // Se a função lançar erro inesperado, jogamos 400 para não arriscar publicar
+        console.error("[ads/moderation-image]", err);
+        return NextResponse.json({ ok: false, error: "Falha na moderação da imagem." }, { status: 400 });
       }
     }
   }
