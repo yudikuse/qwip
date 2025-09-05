@@ -1,150 +1,116 @@
+// src/components/GeoMap.tsx
 "use client";
 
-import "leaflet/dist/leaflet.css";
-import { useEffect, useMemo, useRef } from "react";
-import L, { LatLngExpression, Map as LMap } from "leaflet";
+import { useEffect, useRef } from "react";
+import type { Map as LeafletMap, Marker as LeafletMarker, Circle as LeafletCircle } from "leaflet";
 
-export type LatLng = { lat: number; lng: number };
-
-type Props = {
-  /** Centro do mapa; se null, o componente tenta geolocalizar no client */
-  center: LatLng | null;
-  /** Raio em KM */
-  radiusKm: number;
-  /** Notifica o container quando conseguimos obter localização (geoloc/CEP) */
-  onLocationChange?: (coords: LatLng) => void;
-  /** Altura do mapa */
-  height?: number;
-};
-
-const DefaultIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl:
-    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
+type LatLng = { lat: number; lng: number };
 
 export default function GeoMap({
   center,
   radiusKm,
   onLocationChange,
-  height = 300,
-}: Props) {
-  const mapRef = useRef<LMap | null>(null);
-  const markerRef = useRef<L.Marker | null>(null);
-  const circleRef = useRef<L.Circle | null>(null);
-  const containerId = useMemo(
-    () => `leaflet-${Math.random().toString(36).slice(2, 9)}`,
-    []
-  );
+  height = 320,
+}: {
+  center: LatLng | null;
+  radiusKm: number;
+  onLocationChange?: (p: LatLng, meta?: { manual?: boolean }) => void;
+  height?: number;
+}) {
+  const mapRef = useRef<LeafletMap | null>(null);
+  const markerRef = useRef<LeafletMarker | null>(null);
+  const circleRef = useRef<LeafletCircle | null>(null);
+  const programmaticRef = useRef(false);
 
-  // cria mapa
+  // init
   useEffect(() => {
-    if (mapRef.current) return;
+    (async () => {
+      if (mapRef.current) return;
+      const L = await import("leaflet");
 
-    const initial: LatLngExpression = center
-      ? [center.lat, center.lng]
-      : [-14.235, -51.9253]; // fallback Brasil
+      // ícone padrão (corrige path quando usando bundlers)
+      const DefaultIcon = L.icon({
+        iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+        iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+        shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41],
+      });
+      (L as any).Marker.prototype.options.icon = DefaultIcon;
 
-    mapRef.current = L.map(containerId, {
-      center: initial,
-      zoom: 13,
-      zoomControl: true,
-      attributionControl: true,
-    });
+      const map = L.map("qwip-geomap", {
+        center: center ? [center.lat, center.lng] : [-15.7797, -47.9297], // Brasília fallback
+        zoom: center ? 13 : 6,
+        attributionControl: false,
+      });
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+      }).addTo(map);
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap",
-    }).addTo(mapRef.current);
+      const m = L.marker(map.getCenter(), { draggable: true }).addTo(map);
+      const c = L.circle(map.getCenter(), { radius: (radiusKm || 1) * 1000, color: "#10b981" }).addTo(map);
 
-    // se já veio centro
-    if (center) {
-      markerRef.current = L.marker(initial, { icon: DefaultIcon }).addTo(
-        mapRef.current
-      );
-      circleRef.current = L.circle(initial, {
-        radius: radiusKm * 1000,
-        color: "#22c55e",
-        fillColor: "#22c55e",
-        fillOpacity: 0.15,
-      }).addTo(mapRef.current);
-    }
+      // eventos manuais: clique e drag → manual:true
+      map.on("click", (ev: any) => {
+        const p = { lat: ev.latlng.lat, lng: ev.latlng.lng };
+        programmaticRef.current = true;
+        m.setLatLng(ev.latlng);
+        c.setLatLng(ev.latlng);
+        programmaticRef.current = false;
+        onLocationChange?.(p, { manual: true });
+      });
 
-    // se não veio, tenta geolocalizar
-    if (!center && typeof window !== "undefined" && "geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          onLocationChange?.(coords);
-          if (!mapRef.current) return;
-          const ll: LatLngExpression = [coords.lat, coords.lng];
-          mapRef.current.setView(ll, 15);
-          markerRef.current = L.marker(ll, { icon: DefaultIcon }).addTo(
-            mapRef.current
-          );
-          circleRef.current = L.circle(ll, {
-            radius: radiusKm * 1000,
-            color: "#22c55e",
-            fillColor: "#22c55e",
-            fillOpacity: 0.15,
-          }).addTo(mapRef.current);
-        },
-        () => {
-          // usuário negou — o container mostra campo de CEP
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    }
+      m.on("dragend", () => {
+        const ll = m.getLatLng();
+        const p = { lat: ll.lat, lng: ll.lng };
+        programmaticRef.current = true;
+        c.setLatLng(ll);
+        programmaticRef.current = false;
+        onLocationChange?.(p, { manual: true });
+      });
+
+      mapRef.current = map;
+      markerRef.current = m;
+      circleRef.current = c;
+    })();
 
     return () => {
-      mapRef.current?.remove();
+      try {
+        mapRef.current?.remove();
+      } catch {}
       mapRef.current = null;
+      markerRef.current = null;
+      circleRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [containerId]);
+  }, []);
 
-  // atualiza posição/raio quando props mudam
+  // sync center (programático)
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!center || !mapRef.current || !markerRef.current || !circleRef.current) return;
+    const L = mapRef.current;
+    const M = markerRef.current;
+    const C = circleRef.current;
+    programmaticRef.current = true;
+    M.setLatLng([center.lat, center.lng]);
+    C.setLatLng([center.lat, center.lng]);
+    L.setView([center.lat, center.lng], Math.max(L.getZoom(), 13), { animate: true });
+    programmaticRef.current = false;
+  }, [center]);
 
-    if (center) {
-      const ll: LatLngExpression = [center.lat, center.lng];
-
-      if (!markerRef.current) {
-        markerRef.current = L.marker(ll, { icon: DefaultIcon }).addTo(
-          mapRef.current
-        );
-      } else {
-        markerRef.current.setLatLng(ll);
-      }
-
-      if (!circleRef.current) {
-        circleRef.current = L.circle(ll, {
-          radius: radiusKm * 1000,
-          color: "#22c55e",
-          fillColor: "#22c55e",
-          fillOpacity: 0.15,
-        }).addTo(mapRef.current);
-      } else {
-        circleRef.current.setLatLng(ll);
-        circleRef.current.setRadius(radiusKm * 1000);
-      }
-
-      mapRef.current.setView(ll);
-    } else {
-      // sem center: ainda permite mudar apenas o raio
-      if (circleRef.current) circleRef.current.setRadius(radiusKm * 1000);
-    }
-  }, [center, radiusKm]);
+  // sync radius
+  useEffect(() => {
+    if (!circleRef.current) return;
+    circleRef.current.setRadius((radiusKm || 1) * 1000);
+  }, [radiusKm]);
 
   return (
     <div
-      id={containerId}
-      style={{ width: "100%", height, borderRadius: 12, overflow: "hidden" }}
-      className="border border-white/10"
+      id="qwip-geomap"
+      style={{ width: "100%", height }}
+      className="overflow-hidden rounded-xl border border-white/10"
     />
   );
 }
