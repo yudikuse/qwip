@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Rotas que exigem login por SMS
+// Routes that need login (by cookie qwip_phone_e164)
 const PROTECTED = ["/anuncio/novo"];
 
-function securityHeaders(res: NextResponse) {
+// Add security headers
+function addSecurityHeaders(res: NextResponse) {
   res.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
   res.headers.set("X-Frame-Options", "DENY");
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("Referrer-Policy", "no-referrer");
-  // permite o prompt de geolocalização
+  // Allow geolocation prompt (for “Usar minha localização” button)
   res.headers.set("Permissions-Policy", "geolocation=(self), microphone=(), camera=(), payment=()");
   res.headers.set("X-Permitted-Cross-Domain-Policies", "none");
   res.headers.set("X-DNS-Prefetch-Control", "off");
@@ -18,34 +19,34 @@ function securityHeaders(res: NextResponse) {
 export function middleware(req: NextRequest) {
   const { pathname, searchParams } = req.nextUrl;
 
-  // Normaliza: /verify -> /verificar (preserva query)
+  // Redirect /verify → /verificar (preserving query parameters)
   if (pathname === "/verify") {
     const url = new URL("/verificar", req.nextUrl.origin);
-    searchParams.forEach((v, k) => url.searchParams.set(k, v));
-    const redir = NextResponse.redirect(url, { status: 307 });
-    return securityHeaders(redir);
+    searchParams.forEach((val, key) => url.searchParams.set(key, val));
+    return addSecurityHeaders(NextResponse.redirect(url, { status: 307 }));
   }
 
-  // Gate por cookie de UI (mantém fluxo original)
-  const isProtected = PROTECTED.some((p) => pathname.startsWith(p));
-  const phoneCookie = req.cookies.get("qwip_phone_e164")?.value || "";
-  const forceBypass = searchParams.get("force") === "skip";
+  // Check cookie on protected routes
+  const needsAuth = PROTECTED.some((p) => pathname.startsWith(p));
+  const phoneCookie = req.cookies.get("qwip_phone_e164")?.value;
+  const bypass = searchParams.get("force") === "skip";
 
-  if (isProtected && !phoneCookie && !forceBypass) {
+  if (needsAuth && !phoneCookie && !bypass) {
+    // Redirect to /verificar with redirect param
     const url = new URL("/verificar", req.nextUrl.origin);
     url.searchParams.set("redirect", pathname + (req.nextUrl.search || ""));
-    const redir = NextResponse.redirect(url, { status: 302 });
-    securityHeaders(redir);
-    redir.headers.set("X-QWIP-MW", "redirect");
-    redir.headers.set("X-QWIP-Auth", "phone:absent");
-    return redir;
+    const res = NextResponse.redirect(url, { status: 302 });
+    addSecurityHeaders(res);
+    res.headers.set("X-QWIP-MW", "redirect");
+    res.headers.set("X-QWIP-Auth", "phone:absent");
+    return res;
   }
 
-  // Resposta normal + CORS p/ /api/*
-  const res = securityHeaders(NextResponse.next());
+  const res = addSecurityHeaders(NextResponse.next());
   res.headers.set("X-QWIP-MW", "pass");
   res.headers.set("X-QWIP-Auth", phoneCookie ? "phone:present" : "phone:absent");
 
+  // Basic CORS handling for /api routes
   if (pathname.startsWith("/api")) {
     const siteOrigin = req.nextUrl.origin;
 
@@ -66,6 +67,6 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // cobre páginas e /api, ignora assets
+  // Ignore static assets (/_next, etc.), apply to pages and API
   matcher: ["/((?!_next|.*\\..*).*)"],
 };
