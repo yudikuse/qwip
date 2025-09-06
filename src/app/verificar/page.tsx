@@ -1,25 +1,18 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 /* =========================
-   Tipos p/ respostas da API
+   Type definitions for API responses
    ========================= */
-type StartOk = { ok?: boolean; status?: string; phoneE164?: string };
+type StartOk = { ok?: boolean; phoneE164?: string };
 type StartErr = { error?: string };
-type CheckOk = { ok?: boolean; status?: string; valid?: boolean; phoneE164?: string };
+type CheckOk = { ok?: boolean; phoneE164?: string };
 type CheckErr = { error?: string };
 
-/* ===== Type guards seguras ===== */
-function isRecord(x: unknown): x is Record<string, unknown> {
-  return typeof x === 'object' && x !== null;
-}
-function isErrorWithMessage(x: unknown): x is { message: string } {
-  return isRecord(x) && typeof x.message === 'string';
-}
-
-/* ===== Helpers de telefone ===== */
+/* ===== Helpers ===== */
 function onlyDigits(s: string) {
   return s.replace(/\D/g, '');
 }
@@ -32,10 +25,9 @@ function formatBR(digits: string) {
   return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3, 7)}-${d.slice(7, 11)}`;
 }
 function isValidBrazilMobile(digits: string) {
-  return /^[1-9]{2}9\d{8}$/.test(digits); // (DD) 9 + 8 dígitos
+  return /^[1-9]{2}9\d{8}$/.test(digits);
 }
 
-/* ============ Modal de Termos ============ */
 function TermsModal({
   open,
   onClose,
@@ -153,29 +145,28 @@ function TermsModal({
   );
 }
 
-/* ============ Página de Verificação ============ */
 export default function VerifyPage() {
-  const search = useSearchParams();
-  const redirectTo = search?.get('redirect')?.startsWith('/') ? search.get('redirect')! : '/anuncio/novo';
+  const searchParams = useSearchParams();
+  const redirectParam = searchParams?.get('redirect');
+  const redirectTo = redirectParam && redirectParam.startsWith("/")
+    ? redirectParam
+    : "/anuncio/novo";
 
-  // telefone
-  const [rawPhone, setRawPhone] = useState(''); // só dígitos
-  const [maskedPhone, setMaskedPhone] = useState(''); // máscara
+  // phone state
+  const [rawPhone, setRawPhone] = useState('');
+  const [maskedPhone, setMaskedPhone] = useState('');
   const validPhone = isValidBrazilMobile(rawPhone);
 
-  // consentimento LGPD
+  // terms state
   const TERMS_KEY = 'qwip_terms_v1';
   const [consent, setConsent] = useState(false);
   const [showModal, setShowModal] = useState(false);
-
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const accepted = localStorage.getItem(TERMS_KEY) === 'true';
-      if (accepted) setConsent(true);
-    }
+    const accepted = localStorage.getItem(TERMS_KEY) === 'true';
+    if (accepted) setConsent(true);
   }, []);
 
-  // UI / API states
+  // UI state
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [msg, setMsg] = useState('');
@@ -197,9 +188,7 @@ export default function VerifyPage() {
   }
   function acceptTerms() {
     setConsent(true);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(TERMS_KEY, 'true');
-    }
+    localStorage.setItem(TERMS_KEY, 'true');
     setShowModal(false);
   }
 
@@ -216,15 +205,14 @@ export default function VerifyPage() {
       });
 
       const data = (await r.json()) as StartOk | StartErr;
-
-      if (r.ok) {
+      if (r.ok && (data as StartOk)?.ok) {
         setSent(true);
         setMsg('Código enviado! Confira seu WhatsApp (ou SMS).');
       } else {
         setMsg((data as StartErr)?.error ?? 'Falhou ao enviar o código.');
       }
-    } catch (e: unknown) {
-      setMsg(isErrorWithMessage(e) ? e.message : 'Erro inesperado.');
+    } catch (e) {
+      setMsg('Erro inesperado.');
     } finally {
       setSending(false);
     }
@@ -234,8 +222,8 @@ export default function VerifyPage() {
     try {
       setChecking(true);
       setMsg('');
-
       const to = `+55${rawPhone}`;
+
       const r = await fetch('/api/otp/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -243,21 +231,24 @@ export default function VerifyPage() {
       });
 
       const data = (await r.json()) as CheckOk | CheckErr;
-
       if (r.ok && (data as CheckOk)?.ok) {
-        // redundância: grava o cookie também no client (middleware lê esse cookie)
+        // Redundant: set cookie via client in case server cookie fails
         document.cookie =
           `qwip_phone_e164=${encodeURIComponent(to)}; ` +
           `Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`;
 
-        setMsg('✅ Verificado com sucesso! Redirecionando...');
-        // redireciona para o destino
-        try { window.location.replace(redirectTo); } catch { window.location.href = redirectTo; }
+        setMsg('✅ Verificado! Redirecionando...');
+        // Redirect to the intended page
+        try {
+          window.location.replace(redirectTo);
+        } catch {
+          window.location.href = redirectTo;
+        }
       } else {
         setMsg((data as CheckErr)?.error ?? 'Falha ao verificar o código.');
       }
-    } catch (e: unknown) {
-      setMsg(isErrorWithMessage(e) ? e.message : 'Erro inesperado.');
+    } catch {
+      setMsg('Erro inesperado.');
     } finally {
       setChecking(false);
     }
@@ -267,9 +258,9 @@ export default function VerifyPage() {
     <div className="min-h-screen bg-neutral-900 text-white flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="rounded-2xl bg-neutral-800/70 backdrop-blur border border-neutral-700 p-6 md:p-8 shadow-2xl">
-          {/* Header */}
           <div className="flex flex-col items-center gap-2 mb-6">
             <div className="grid h-12 w-12 place-items-center rounded-full bg-green-500/15 border border-green-400/30">
+              {/* Shield icon */}
               <svg viewBox="0 0 24 24" className="h-6 w-6 text-green-400" fill="currentColor">
                 <path d="M20.52 3.48A11.86 11.86 0 0 0 12.07 0C5.73 0 .59 4.91.59 11a10.4 10.4 0 0 0 1.37 5.23L0 24l7.94-2.05A12.07 12.07 0 0 0 12.07 22c6.34 0 11.48-4.9 11.48-11S18.41 0 12.07 0h.02a11.86 11.86 0 0 1 8.43 3.48zM12.07 20a10 10 0 0 1-5.2-1.48l-.37-.22-4.73 1.22 1.26-4.6-.24-.38A8.34 8.34 0 0 1 3.74 11c0-4.6 3.79-8 8.33-8s8.33 3.4 8.33 8-3.79 8-8.33 8zm4.61-5.76c-.25-.12-1.49-.73-1.72-.81-.23-.08-.4-.12-.56.12-.16.24-.64.81-.79.98-.14.16-.29.18-.54.06-.25-.12-1.04-.38-1.98-1.22-.73-.64-1.23-1.43-1.37-1.67-.14-.24-.01-.37.11-.48.12-.12.25-.29.37-.44.12-.15.16-.24.24-.41.08-.16.04-.31-.02-.43-.06-.12-.56-1.33-.77-1.8-.2-.48-.41-.41-.56-.41h-.48c-.16 0-.43.06-.66.31s-.86.84-.86 2.04.88 2.37 1 2.53c.12.16 1.73 2.64 4.2 3.6.59.25 1.05.4 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.49-.61 1.7-1.19.21-.58.21-1.08.14-1.19-.06-.11-.22-.17-.47-.29z" />
               </svg>
@@ -280,7 +271,7 @@ export default function VerifyPage() {
             </p>
           </div>
 
-          {/* Phone */}
+          {/* Phone input */}
           <label className="block text-sm text-neutral-300 mb-1">Seu WhatsApp</label>
           <div className="flex items-center gap-2">
             <span className="select-none rounded-lg bg-neutral-700/70 border border-neutral-600 px-3 py-2 text-neutral-200">
@@ -307,7 +298,7 @@ export default function VerifyPage() {
             )}
           </p>
 
-          {/* Consentimento LGPD */}
+          {/* Consent */}
           <div className="mt-4 flex items-start gap-2 text-sm">
             <input
               id="consent"
@@ -315,11 +306,10 @@ export default function VerifyPage() {
               checked={consent}
               onChange={(e) => {
                 setConsent(e.target.checked);
-                if (e.target.checked && typeof window !== 'undefined') {
-                  localStorage.setItem('qwip_terms_v1', 'true');
-                }
-                if (!e.target.checked && typeof window !== 'undefined') {
-                  localStorage.removeItem('qwip_terms_v1');
+                if (e.target.checked) {
+                  localStorage.setItem(TERMS_KEY, 'true');
+                } else {
+                  localStorage.removeItem(TERMS_KEY);
                 }
               }}
               className="mt-1 h-4 w-4 accent-green-500"
@@ -337,7 +327,7 @@ export default function VerifyPage() {
             </label>
           </div>
 
-          {/* Enviar código */}
+          {/* Send code button */}
           <button
             onClick={sendCode}
             disabled={!canSend}
@@ -346,7 +336,7 @@ export default function VerifyPage() {
             {sending ? 'Enviando...' : 'Enviar código'}
           </button>
 
-          {/* Código */}
+          {/* Code input and check button */}
           {sent && (
             <div className="mt-6">
               <label className="block text-sm text-neutral-300 mb-1">Código recebido</label>
@@ -368,10 +358,10 @@ export default function VerifyPage() {
             </div>
           )}
 
-          {/* Mensagens */}
+          {/* Messages */}
           {msg && <div className="mt-4 text-sm text-center text-neutral-200">{msg}</div>}
 
-          {/* Nota */}
+          {/* Note */}
           <p className="mt-6 text-[13px] leading-relaxed text-neutral-400 text-center">
             Enviamos o código apenas para confirmar sua conta e proteger seu anúncio de spam.
           </p>
