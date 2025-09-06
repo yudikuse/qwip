@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { toE164BR } from "@/lib/phone";
 import { sendOtpViaVerify } from "@/lib/twilio";
-import { getClientIP, limitByKey, checkCooldown, tooMany } from "@/lib/rate-limit";
+import {
+  getClientIP,
+  limitByKey,
+  checkCooldown,
+  tooMany,
+} from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,8 +24,6 @@ export async function POST(req: NextRequest) {
     }
 
     const ip = getClientIP(req);
-
-    // Rate limiting / cooldown
     {
       const c = checkCooldown(`otp:start:${e164}`, 10);
       if (!c.ok) return tooMany("Aguarde antes de pedir outro código.", c.retryAfterSec);
@@ -39,7 +42,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Falha ao enviar código." }, { status: 500 });
     }
 
-    // Cookie storing phone for fallback in /api/otp/check
+    // Cookie temporário (5 min) para o /api/otp/check usar como fallback
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
     res.cookies.set("qwip_otp_phone", e164, {
       path: "/",
@@ -50,7 +53,7 @@ export async function POST(req: NextRequest) {
     });
     return res;
   } catch (err) {
-    console.error("[otp/start]", err);
+    console.error("[api/otp/start]", err);
     return NextResponse.json({ ok: false, error: "Falha ao iniciar verificação." }, { status: 500 });
   }
 }
