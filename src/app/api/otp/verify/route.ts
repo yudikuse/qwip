@@ -11,33 +11,21 @@ export async function POST(req: NextRequest) {
     } catch {
       return NextResponse.json({ ok: false, error: "JSON inválido." }, { status: 400 });
     }
+
     const phoneRaw: string | undefined = body?.phone ?? body?.phoneE164 ?? body?.to;
     const code: string | undefined = body?.code;
     const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
+
     if (!e164 || !code) {
       return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
     }
+
+    // rate limit / cooldown
     const ip = getClientIP(req);
-    const c1 = checkCooldown(`otp:verify:${e164}`, 10);
-    if (!c1.ok) return tooMany("Aguarde antes de tentar verificar novamente.", c1.retryAfterSec);
-    const r1 = limitByKey(`otp:verify:${ip}:1m`, 15, 60);
-    if (!r1.ok) return tooMany("Muitas tentativas deste IP.", r1.retryAfterSec);
-    const r2 = limitByKey(`otp:verify:${e164}:10m`, 5, 600);
-    if (!r2.ok) return tooMany("Muitas tentativas para este número.", r2.retryAfterSec);
-
-    const result = await checkOtpViaVerify(e164, code);
-    if (result?.status !== "approved") {
-      return NextResponse.json({ ok: false, error: "Código inválido ou expirado." }, { status: 401 });
+    if (!checkCooldown(`otp:verify:${e164}`, 10).ok) {
+      return tooMany("Aguarde antes de tentar verificar novamente.", 10);
     }
-
-    const res = NextResponse.json({ ok: true, phoneE164: e164 });
-    res.headers.set(
-      "Set-Cookie",
-      `qwip_phone_e164=${encodeURIComponent(e164)}; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`
-    );
-    return res;
-  } catch (err) {
-    console.error("[api/otp/verify]", err);
-    return NextResponse.json({ ok: false, error: "Falha ao verificar código." }, { status: 500 });
-  }
-}
+    if (!limitByKey(`otp:verify:${ip}:1m`, 15, 60).ok) {
+      return tooMany("Muitas tentativas deste IP.", 60);
+    }
+    if (!limitByKey(`otp:verify:${e164}:10m`, 5, 600).ok
