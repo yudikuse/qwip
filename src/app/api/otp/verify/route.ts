@@ -1,11 +1,21 @@
-// src/app/api/otp/verify/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { toE164BR } from "@/lib/phone";
 import { checkOtpViaVerify } from "@/lib/twilio";
-import { getClientIP, limitByKey, checkCooldown, tooMany } from "@/lib/rate-limit";
+import {
+  getClientIP,
+  limitByKey,
+  checkCooldown,
+  tooMany,
+} from "@/lib/rate-limit";
 
+/**
+ * Endpoint de verificação de OTP (não é página).
+ * Espera: { phone | phoneE164 | to, code }
+ * Valida o código via Twilio Verify e, se aprovado, grava o cookie visível ao client.
+ */
 export async function POST(req: NextRequest) {
   try {
+    // Lê e valida o payload
     let body: any = {};
     try {
       body = await req.json();
@@ -13,7 +23,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "JSON inválido." }, { status: 400 });
     }
 
-    // aceita phone, phoneE164 ou to
     const phoneRaw: string | undefined = body?.phone ?? body?.phoneE164 ?? body?.to;
     const code: string | undefined = body?.code;
     const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
@@ -22,16 +31,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
     }
 
-    // limites e cooldowns iguais aos outros endpoints
+    // Limites e cooldowns
     const ip = getClientIP(req);
-    const c1 = checkCooldown(`otp:verify:${e164}`, 10);
-    if (!c1.ok) return tooMany("Aguarde antes de tentar verificar novamente.", c1.retryAfterSec);
-    const r1 = limitByKey(`otp:verify:${ip}:1m`, 15, 60);
-    if (!r1.ok) return tooMany("Muitas tentativas deste IP.", r1.retryAfterSec);
-    const r2 = limitByKey(`otp:verify:${e164}:10m`, 5, 600);
-    if (!r2.ok) return tooMany("Muitas tentativas para este número.", r2.retryAfterSec);
+    {
+      const c = checkCooldown(`otp:verify:${e164}`, 10);
+      if (!c.ok) return tooMany("Aguarde antes de tentar verificar novamente.", c.retryAfterSec);
+    }
+    {
+      const r = limitByKey(`otp:verify:${ip}:1m`, 15, 60);
+      if (!r.ok) return tooMany("Muitas tentativas deste IP.", r.retryAfterSec);
+    }
+    {
+      const r = limitByKey(`otp:verify:${e164}:10m`, 5, 600);
+      if (!r.ok) return tooMany("Muitas tentativas para este número.", r.retryAfterSec);
+    }
 
-    // Verificação via Twilio
+    // Verifica o código na Twilio Verify
     const result = await checkOtpViaVerify(e164, code);
     const approved = result?.status === "approved";
     if (!approved) {
@@ -41,7 +56,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Se aprovado, grava o cookie compatível (visível ao cliente) e retorna ok
+    // Grava cookie visível (lido pelo middleware) por 30 dias
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
     res.headers.set(
       "Set-Cookie",
