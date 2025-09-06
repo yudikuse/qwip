@@ -16,7 +16,6 @@ export async function POST(req: NextRequest) {
     const jar = await cookies();
     const cookiePhone = jar.get("qwip_otp_phone")?.value;
 
-    // aceita 'phone', 'phoneE164' ou 'to'
     const phoneRaw: string | undefined =
       body?.phone ?? body?.phoneE164 ?? body?.to ?? cookiePhone;
 
@@ -44,15 +43,13 @@ export async function POST(req: NextRequest) {
     const result = await checkOtpViaVerify(e164, code);
     const approved = result?.status === "approved";
     if (!approved) {
-      return NextResponse.json(
-        { ok: false, error: "Código inválido ou expirado." },
-        { status: 401 }
-      );
+      return NextResponse.json({ ok: false, error: "Código inválido ou expirado." }, { status: 401 });
     }
 
-    // grava cookie final e apaga o temporário
+    // Set cookie for the UI and delete temporary phone cookie
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
 
+    // Remove temporary
     res.cookies.set("qwip_otp_phone", "", {
       path: "/",
       maxAge: 0,
@@ -61,13 +58,13 @@ export async function POST(req: NextRequest) {
       httpOnly: true,
     });
 
-    // este é o cookie que o middleware lê
+    // This is the cookie your middleware reads
     res.cookies.set("qwip_phone_e164", e164, {
       path: "/",
       maxAge: 60 * 60 * 24 * 30,
       sameSite: "lax",
       secure: true,
-      httpOnly: false, // visível ao client, como no fluxo original
+      httpOnly: false,
     });
 
     return res;
