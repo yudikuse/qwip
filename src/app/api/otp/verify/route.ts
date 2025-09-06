@@ -9,13 +9,12 @@ import {
 } from "@/lib/rate-limit";
 
 /**
- * Endpoint de verificação de OTP (não é página).
+ * Endpoint de verificação de OTP (API).
  * Espera: { phone | phoneE164 | to, code }
  * Valida o código via Twilio Verify e, se aprovado, grava o cookie visível ao client.
  */
 export async function POST(req: NextRequest) {
   try {
-    // Lê e valida o payload
     let body: any = {};
     try {
       body = await req.json();
