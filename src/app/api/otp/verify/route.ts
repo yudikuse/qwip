@@ -4,11 +4,6 @@ import { toE164BR } from "@/lib/phone";
 import { checkOtpViaVerify } from "@/lib/twilio";
 import { getClientIP, limitByKey, checkCooldown, tooMany } from "@/lib/rate-limit";
 
-/**
- * POST /api/otp/verify
- * Body: { phone | phoneE164 | to, code }
- * Valida via Twilio Verify e grava cookie visível ao client.
- */
 export async function POST(req: NextRequest) {
   try {
     // Body
@@ -39,7 +34,6 @@ export async function POST(req: NextRequest) {
       if (!r.ok) return tooMany("Muitas tentativas deste IP.", r.retryAfterSec);
     }
     {
-      // 👇 AQUI estava faltando o parêntese de fechamento
       const r = limitByKey(`otp:verify:${e164}:10m`, 5, 600);
       if (!r.ok) return tooMany("Muitas tentativas para este número.", r.retryAfterSec);
     }
@@ -55,10 +49,13 @@ export async function POST(req: NextRequest) {
 
     // Cookie por 30 dias (lido pelo middleware)
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
-    res.headers.set(
-      "Set-Cookie",
-      `qwip_phone_e164=${encodeURIComponent(e164)}; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`
-    );
+    res.cookies.set("qwip_phone_e164", e164, {
+      path: "/",
+      sameSite: "lax",
+      secure: true,
+      httpOnly: false, // precisa ser visível no client
+      maxAge: 60 * 60 * 24 * 30,
+    });
     return res;
   } catch (err) {
     console.error("[api/otp/verify] erro:", err);
