@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { toE164BR } from "@/lib/phone";
 import { checkOtpViaVerify } from "@/lib/twilio";
-import { getClientIP, limitByKey, checkCooldown, tooMany } from "@/lib/rate-limit";
+import {
+  getClientIP,
+  limitByKey,
+  checkCooldown,
+  tooMany,
+} from "@/lib/rate-limit";
 import { cookies } from "next/headers";
 
 export async function POST(req: NextRequest) {
@@ -18,7 +23,6 @@ export async function POST(req: NextRequest) {
 
     const phoneRaw: string | undefined =
       body?.phone ?? body?.phoneE164 ?? body?.to ?? cookiePhone;
-
     const code: string | undefined = body?.code ?? body?.otp;
     const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
 
@@ -43,13 +47,15 @@ export async function POST(req: NextRequest) {
     const result = await checkOtpViaVerify(e164, code);
     const approved = result?.status === "approved";
     if (!approved) {
-      return NextResponse.json({ ok: false, error: "Código inválido ou expirado." }, { status: 401 });
+      return NextResponse.json(
+        { ok: false, error: "Código inválido ou expirado." },
+        { status: 401 }
+      );
     }
 
-    // Set cookie for the UI and delete temporary phone cookie
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
 
-    // Remove temporary
+    // Apaga cookie temporário
     res.cookies.set("qwip_otp_phone", "", {
       path: "/",
       maxAge: 0,
@@ -58,7 +64,7 @@ export async function POST(req: NextRequest) {
       httpOnly: true,
     });
 
-    // This is the cookie your middleware reads
+    // Grava cookie final (30 dias) para o middleware ler
     res.cookies.set("qwip_phone_e164", e164, {
       path: "/",
       maxAge: 60 * 60 * 24 * 30,
@@ -69,7 +75,7 @@ export async function POST(req: NextRequest) {
 
     return res;
   } catch (err) {
-    console.error("[otp/check]", err);
+    console.error("[api/otp/check]", err);
     return NextResponse.json({ ok: false, error: "Falha ao verificar código." }, { status: 500 });
   }
 }
