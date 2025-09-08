@@ -26,7 +26,6 @@ function dec(u8: Uint8Array): string {
   return new TextDecoder().decode(u8);
 }
 function bytesToB64(u8: Uint8Array): string {
-  // Edge: btoa disponível; Node: usar Buffer
   if (typeof btoa !== "undefined") {
     let s = "";
     for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
@@ -193,29 +192,47 @@ export async function verifySessionValue(
   return verifySessionToken(token);
 }
 
-// Compat: alguns arquivos importam issueSession(...)
-// Suporta assinaturas flexíveis:
-//   issueSession(phone)
-//   issueSession(phone, res)
-//   issueSession({ phone, ttlSeconds?, res? })
+// --------- issueSession: sobrecargas para legado ----------
+// Suporta chamadas:
+//   issueSession(phone)                                   -> retorna token
+//   issueSession(phone, 24)                               -> 24 horas de TTL, retorna token
+//   issueSession(phone, res)                              -> define cookie e retorna token
+//   issueSession(phone, 24, res)                          -> TTL horas + define cookie
+//   issueSession({ phone, ttlSeconds?, res? })            -> estilo objeto
+
+export async function issueSession(phone: string): Promise<string>;
+export async function issueSession(phone: string, ttlHours: number): Promise<string>;
+export async function issueSession(phone: string, res: NextResponse): Promise<string>;
+export async function issueSession(phone: string, ttlHours: number, res: NextResponse): Promise<string>;
+export async function issueSession(opts: { phone: string; ttlSeconds?: number; res?: NextResponse }): Promise<string>;
 export async function issueSession(
   arg1: string | { phone: string; ttlSeconds?: number; res?: NextResponse },
-  arg2?: NextResponse
+  arg2?: number | NextResponse,
+  arg3?: NextResponse
 ): Promise<string> {
+  // Normaliza parâmetros
   let phone: string;
-  let res: NextResponse | undefined;
   let ttlSeconds: number | undefined;
+  let res: NextResponse | undefined;
 
   if (typeof arg1 === "string") {
     phone = arg1;
-    res = arg2;
+    if (typeof arg2 === "number") {
+      // Se o número for pequeno, tratamos como HORAS (legado: 24 = 24h)
+      ttlSeconds = arg2 > 1000 ? Math.floor(arg2) : Math.floor(arg2 * 3600);
+      res = arg3;
+    } else if (arg2) {
+      res = arg2 as NextResponse;
+    }
   } else {
     phone = arg1.phone;
-    res = arg1.res;
     ttlSeconds = arg1.ttlSeconds;
+    res = arg1.res;
   }
 
   const token = await createSessionToken({ phone, ttlSeconds });
-  if (res) setSessionCookie(res, token, { maxAgeSeconds: ttlSeconds ?? DEFAULT_TTL_SECONDS });
+  if (res) {
+    setSessionCookie(res, token, { maxAgeSeconds: ttlSeconds ?? DEFAULT_TTL_SECONDS });
+  }
   return token;
 }
