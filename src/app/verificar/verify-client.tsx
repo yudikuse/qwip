@@ -1,34 +1,25 @@
-// src/app/verificar/verify-client.tsx
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-
-// Tipos discriminados para o TS fazer narrowing corretamente
-type StartResp =
-  | { ok: true; phoneE164: string; status?: number }
-  | { ok: false; error: string; status?: number };
-
-type CheckResp =
-  | { ok: true; approved: true; status?: number }
-  | { ok: false; error: string; status?: number };
+import type { StartResp, CheckResp } from "@/lib/twilio";
+import { maskPhoneE164 } from "@/lib/phone";
 
 export default function VerifyClient() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const redirect = params.get("redirect") || "/";
+
+  const [step, setStep] = useState<"phone" | "code">("phone");
   const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
   const [sentTo, setSentTo] = useState<string | null>(null);
+  const [code, setCode] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const router = useRouter();
-  const params = useSearchParams();
+  const maskedSent = useMemo(() => maskPhoneE164(sentTo), [sentTo]);
 
-  const redirect = useMemo(() => {
-    const raw = params.get("redirect");
-    return raw ? decodeURIComponent(raw) : "/anuncio/novo";
-  }, [params]);
-
-  const onSend = useCallback(async () => {
+  const start = useCallback(async () => {
     setMsg(null);
     setLoading(true);
     try {
@@ -37,144 +28,112 @@ export default function VerifyClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone }),
       });
-
       const data: StartResp = await resp.json();
-
       if (!resp.ok || !data.ok) {
-        setMsg(
-          "error" in data
-            ? data.error
-            : `Falha ao enviar código (${data.status ?? resp.status}).`
-        );
+        setMsg(data.error || `Falha ao enviar código (${data.status ?? resp.status}).`);
         return;
       }
-
-      setSentTo(data.phoneE164);
-      setMsg(null);
-    } catch (e) {
-      setMsg("Erro ao enviar código. Tente novamente.");
+      setSentTo(data.phoneE164 || null);
+      setStep("code");
+    } catch (e: any) {
+      setMsg("Erro de rede ao iniciar verificação.");
     } finally {
       setLoading(false);
     }
   }, [phone]);
 
-  const onVerify = useCallback(async () => {
+  const confirm = useCallback(async () => {
     setMsg(null);
     setLoading(true);
     try {
-      const resp = await fetch("/api/otp/verify", {
+      const resp = await fetch("/api/otp/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, code }),
+        body: JSON.stringify({ code }),
       });
-
       const data: CheckResp = await resp.json();
-
-      if (!resp.ok || !data.ok || !("approved" in data && data.approved)) {
-        setMsg(
-          "error" in data
-            ? data.error
-            : `Código inválido ou expirado (${data.status ?? resp.status}).`
-        );
+      if (!resp.ok || !data.ok) {
+        setMsg(data.error || `Código inválido ou expirado (${data.status ?? resp.status}).`);
         return;
       }
-
-      // navegação controlada no cliente após a aprovação
+      // OK → redireciona
       router.replace(redirect);
-    } catch (e) {
-      setMsg("Erro ao validar o código. Tente novamente.");
+    } catch {
+      setMsg("Erro de rede ao validar código.");
     } finally {
       setLoading(false);
     }
-  }, [phone, code, redirect, router]);
+  }, [code, redirect, router]);
 
-  // === Layout (mantido: card central, título, inputs, botões) ===
+  // UI/estilo preservado (mesma estrutura de cartão)
   return (
-    <div className="min-h-[calc(100dvh)] bg-[#0b0f0e] text-white flex items-center justify-center px-4">
-      <div className="w-full max-w-[680px] rounded-2xl bg-[#151a19] shadow-2xl shadow-black/30 p-8">
-        <h1 className="text-2xl md:text-[28px] font-bold mb-2">
-          Vamos começar!
-        </h1>
-        <p className="text-sm text-white/70 mb-6">
+    <div className="min-h-[70vh] w-full flex items-center justify-center">
+      <div className="w-full max-w-2xl rounded-2xl bg-neutral-900/80 shadow-xl p-8 border border-neutral-800">
+        <h1 className="text-3xl font-semibold mb-2">Vamos começar!</h1>
+        <p className="text-sm text-neutral-300 mb-6">
           Insira seu WhatsApp para receber o código.
         </p>
 
-        {!sentTo ? (
-          <>
-            <label className="block text-sm font-semibold mb-2">
-              Seu WhatsApp (só números)
-            </label>
+        {step === "phone" && (
+          <div className="space-y-4">
+            <label className="text-sm block">Seu WhatsApp (só números)</label>
             <input
-              inputMode="numeric"
-              pattern="[0-9]*"
-              placeholder="DD + celular (ex.: 11999998888)"
-              className="w-full rounded-md bg-[#222726] text-white placeholder-white/40 px-4 py-3 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-emerald-500 transition"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              disabled={loading}
+              placeholder="DD + celular (ex.: 11999998888)"
+              className="w-full rounded-md bg-neutral-800 border border-neutral-700 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500"
+              inputMode="numeric"
             />
-            <p className="text-xs text-white/50 mt-2">
-              Não inclua +55, já colocamos automaticamente.
-            </p>
-
             {msg && (
-              <div className="mt-4 text-sm text-red-400 bg-red-400/10 border border-red-400/30 rounded-md px-3 py-2">
+              <div className="rounded-md border border-red-700 bg-red-900/30 text-red-300 px-4 py-2">
                 {msg}
               </div>
             )}
-
             <button
-              onClick={onSend}
-              disabled={loading || !phone.trim()}
-              className="mt-6 w-full rounded-md bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-3 font-semibold transition"
+              onClick={start}
+              disabled={loading}
+              className="w-full rounded-md bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 px-4 py-3 font-medium"
             >
               {loading ? "Enviando..." : "Enviar código"}
             </button>
-          </>
-        ) : (
-          <>
-            <label className="block text-sm font-semibold mb-2">
-              Código recebido por SMS
-            </label>
+          </div>
+        )}
+
+        {step === "code" && (
+          <div className="space-y-4">
+            <label className="text-sm block">Código recebido por SMS</label>
             <input
-              inputMode="numeric"
-              pattern="[0-9]*"
-              placeholder="000000"
-              className="w-full rounded-md bg-[#222726] text-white placeholder-white/40 px-4 py-3 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-emerald-500 transition"
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              disabled={loading}
+              placeholder="Código recebido por SMS"
+              className="w-full rounded-md bg-neutral-800 border border-neutral-700 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500"
+              inputMode="numeric"
             />
-            <p className="text-xs text-white/50 mt-2">
-              Enviado para <span className="font-medium">{sentTo}</span>
+            <p className="text-xs text-neutral-400">
+              Enviado para {maskedSent}.
             </p>
-
             {msg && (
-              <div className="mt-4 text-sm text-red-400 bg-red-400/10 border border-red-400/30 rounded-md px-3 py-2">
+              <div className="rounded-md border border-red-700 bg-red-900/30 text-red-300 px-4 py-2">
                 {msg}
               </div>
             )}
-
             <button
-              onClick={onVerify}
-              disabled={loading || !code.trim()}
-              className="mt-6 w-full rounded-md bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-3 font-semibold transition"
+              onClick={confirm}
+              disabled={loading}
+              className="w-full rounded-md bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 px-4 py-3 font-medium"
             >
               {loading ? "Confirmando..." : "Confirmar código"}
             </button>
-
             <button
-              type="button"
               onClick={() => {
-                setSentTo(null);
-                setCode("");
+                setStep("phone");
                 setMsg(null);
               }}
-              className="mt-3 w-full text-sm text-white/70 hover:text-white transition"
+              className="text-sm text-neutral-300 underline underline-offset-4"
             >
               Editar número
             </button>
-          </>
+          </div>
         )}
       </div>
     </div>
