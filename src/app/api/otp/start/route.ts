@@ -4,10 +4,22 @@ import { toE164BR } from "@/lib/phone";
 import { startOtpViaVerify } from "@/lib/twilio";
 import { getClientIP, limitByKey, checkCooldown, tooMany } from "@/lib/rate-limit";
 
+/**
+ * POST /api/otp/start
+ * Body: { to | phone | phoneE164 }
+ * - Inicia o envio do OTP via Twilio Verify
+ */
 export async function POST(req: NextRequest) {
   try {
-    const { to } = await req.json();
-    const e164 = to ? toE164BR(String(to)) : null;
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
+    }
+
+    const phoneRaw: string | undefined = body?.to ?? body?.phone ?? body?.phoneE164;
+    const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
     if (!e164) return NextResponse.json({ error: "Telefone inválido." }, { status: 400 });
 
     const ip = getClientIP(req);
@@ -26,6 +38,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, status: "sent" });
   } catch (e) {
+    console.error("[api/otp/start] erro:", e);
     return NextResponse.json({ error: "Erro inesperado." }, { status: 500 });
   }
 }
