@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       if (!r.ok) return tooMany("Muitos envios deste IP.", r.retryAfterSec);
     }
 
-    const ok = await startOtpViaVerify(e164);
+    const ok = await startOtpViaVerify(e164); // usa canal da env (sms/whatsapp)
     if (!ok) return NextResponse.json({ error: "Falha ao iniciar verificação." }, { status: 500 });
 
     return NextResponse.json({ ok: true, status: "sent" });
