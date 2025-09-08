@@ -5,10 +5,8 @@ import { checkOtpViaVerify } from "@/lib/twilio";
 import { getClientIP, limitByKey, checkCooldown, tooMany } from "@/lib/rate-limit";
 
 /**
- * POST /api/otp/verify
- * Body: { to | phone | phoneE164, code }
- * - Verifica OTP (Twilio Verify)
- * - Se aprovado, grava cookie legível no client (30 dias)
+ * Verifica o código OTP e grava o cookie de sessão telefônica.
+ * Espera: { phone | phoneE164 | to, code }
  */
 export async function POST(req: NextRequest) {
   try {
@@ -19,7 +17,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "JSON inválido." }, { status: 400 });
     }
 
-    const phoneRaw: string | undefined = body?.to ?? body?.phone ?? body?.phoneE164;
+    const phoneRaw: string | undefined = body?.phone ?? body?.phoneE164 ?? body?.to;
     const code: string | undefined = body?.code;
     const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
 
@@ -28,6 +26,8 @@ export async function POST(req: NextRequest) {
     }
 
     const ip = getClientIP(req);
+
+    // Cooldown + rate limits
     {
       const c = checkCooldown(`otp:verify:${e164}`, 10);
       if (!c.ok) return tooMany("Aguarde antes de tentar verificar novamente.", c.retryAfterSec);
@@ -42,22 +42,26 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await checkOtpViaVerify(e164, code);
-    if (result?.status !== "approved") {
+    const approved = (result as any)?.status === "approved" || (result as any)?.approved === true;
+
+    if (!approved) {
       return NextResponse.json(
         { ok: false, error: "Código inválido ou expirado." },
         { status: 401 }
       );
     }
 
-    // cookie visível ao client (para middleware e páginas client)
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
+
+    // Cookie por 30 dias. HttpOnly (middleware lê; JS não precisa).
     res.cookies.set("qwip_phone_e164", e164, {
       path: "/",
+      maxAge: 60 * 60 * 24 * 30,
       sameSite: "lax",
       secure: true,
-      httpOnly: false,
-      maxAge: 60 * 60 * 24 * 30,
+      httpOnly: true,
     });
+
     return res;
   } catch (err) {
     console.error("[api/otp/verify]", err);
