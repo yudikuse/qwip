@@ -1,12 +1,8 @@
 // src/lib/session.ts
-// Criação e validação de sessão via cookie HttpOnly assinado (formato: v1.<payload>.<sig>)
-// Compatível com o middleware.ts já publicado.
-//
-// Uso típico na rota /api/otp/verify:
-//   const token = await createSessionToken({ phone: e164 });
-//   const res = NextResponse.json({ ok: true });
-//   setSessionCookie(res, token);
-//   return res;
+// Sessão via cookie HttpOnly assinado (formato: v1.<payload>.<sig>)
+// Compatível com o middleware.ts e com imports legados:
+//   - verifySessionValue(token)
+//   - issueSession(...)
 
 import type { NextResponse } from "next/server";
 
@@ -19,15 +15,10 @@ function getSigningSecret(): string {
     process.env.SIGNING_SECRET ||
     process.env.QWIP_SIGNING_SECRET ||
     "dev-secret-change-me";
-  if (!s || s.length < 16) {
-    // Evita builds silenciosos com segredo fraco
-    // (em dev ainda funciona, mas fica explícito)
-    return "dev-secret-change-me";
-  }
-  return s;
+  return s && s.length >= 16 ? s : "dev-secret-change-me";
 }
 
-// ===== Helpers base64/url (Edge-safe) =====
+// ===== Helpers base64/url (Node/Edge-safe) =====
 function enc(s: string): Uint8Array {
   return new TextEncoder().encode(s);
 }
@@ -35,18 +26,26 @@ function dec(u8: Uint8Array): string {
   return new TextDecoder().decode(u8);
 }
 function bytesToB64(u8: Uint8Array): string {
-  let s = "";
-  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
-  // btoa exige string Latin1
-  // eslint-disable-next-line no-undef
-  return btoa(s);
+  // Edge: btoa disponível; Node: usar Buffer
+  if (typeof btoa !== "undefined") {
+    let s = "";
+    for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+    // eslint-disable-next-line no-undef
+    return btoa(s);
+  }
+  // @ts-ignore Node
+  return Buffer.from(u8).toString("base64");
 }
 function b64ToBytes(b64: string): Uint8Array {
-  // eslint-disable-next-line no-undef
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+  if (typeof atob !== "undefined") {
+    // eslint-disable-next-line no-undef
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  // @ts-ignore Node
+  return new Uint8Array(Buffer.from(b64, "base64"));
 }
 function b64ToB64u(b64: string): string {
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
@@ -56,7 +55,7 @@ function b64uToB64(b64u: string): string {
   const pad = s.length % 4;
   return pad ? s + "=".repeat(4 - pad) : s;
 }
-// Converte Uint8Array -> ArrayBuffer “puro” (evita SharedArrayBuffer em alguns ambientes)
+// Converte Uint8Array -> ArrayBuffer “puro” (evita SharedArrayBuffer)
 function u8ToPureArrayBuffer(u8: Uint8Array): ArrayBuffer {
   const buf = new ArrayBuffer(u8.byteLength);
   new Uint8Array(buf).set(u8);
@@ -181,4 +180,42 @@ export async function getSessionFromRequest(
 ): Promise<{ ok: boolean; claims?: SessionClaims; reason?: string }> {
   const raw = req.cookies?.get(COOKIE_NAME)?.value ?? null;
   return verifySessionToken(raw);
+}
+
+// =========================
+// ====== ALIASES =========
+// =========================
+
+// Compat: alguns arquivos importam verifySessionValue(token)
+export async function verifySessionValue(
+  token: string | null
+): Promise<{ ok: boolean; claims?: SessionClaims; reason?: string }> {
+  return verifySessionToken(token);
+}
+
+// Compat: alguns arquivos importam issueSession(...)
+// Suporta assinaturas flexíveis:
+//   issueSession(phone)
+//   issueSession(phone, res)
+//   issueSession({ phone, ttlSeconds?, res? })
+export async function issueSession(
+  arg1: string | { phone: string; ttlSeconds?: number; res?: NextResponse },
+  arg2?: NextResponse
+): Promise<string> {
+  let phone: string;
+  let res: NextResponse | undefined;
+  let ttlSeconds: number | undefined;
+
+  if (typeof arg1 === "string") {
+    phone = arg1;
+    res = arg2;
+  } else {
+    phone = arg1.phone;
+    res = arg1.res;
+    ttlSeconds = arg1.ttlSeconds;
+  }
+
+  const token = await createSessionToken({ phone, ttlSeconds });
+  if (res) setSessionCookie(res, token, { maxAgeSeconds: ttlSeconds ?? DEFAULT_TTL_SECONDS });
+  return token;
 }
