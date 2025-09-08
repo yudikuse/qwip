@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="p-8 text-neutral-400">Carregando…</div>}>
+    <Suspense fallback={null}>
       <VerifyClient />
     </Suspense>
   );
