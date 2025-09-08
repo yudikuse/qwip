@@ -4,7 +4,7 @@ import { toE164BR } from "@/lib/phone";
 import { checkOtpViaVerify } from "@/lib/twilio";
 import { PHONE_COOKIE } from "@/lib/cookies";
 
-type ApiResp =
+type VerifyResp =
   | { ok: true; phoneE164: string }
   | { ok: false; status: number; error?: string };
 
@@ -12,10 +12,9 @@ export async function POST(req: NextRequest) {
   try {
     const { phone, code } = await req.json();
     const e164 = toE164BR(phone);
-
     if (!e164 || !code) {
       return NextResponse.json(
-        { ok: false, status: 400, error: "Dados inválidos." } satisfies ApiResp,
+        { ok: false, status: 400, error: "Dados inválidos." } satisfies VerifyResp,
         { status: 400 }
       );
     }
@@ -23,13 +22,13 @@ export async function POST(req: NextRequest) {
     const result = await checkOtpViaVerify(e164, code);
     if (!result.ok || result.verifyStatus !== "approved") {
       return NextResponse.json(
-        { ok: false, status: 400, error: "Código inválido ou expirado." } satisfies ApiResp,
+        { ok: false, status: 400, error: "Código inválido ou expirado." } satisfies VerifyResp,
         { status: 400 }
       );
     }
 
     const res = NextResponse.json(
-      { ok: true, phoneE164: e164 } satisfies ApiResp,
+      { ok: true, phoneE164: e164 } satisfies VerifyResp,
       { status: 200 }
     );
 
@@ -44,7 +43,7 @@ export async function POST(req: NextRequest) {
     return res;
   } catch {
     return NextResponse.json(
-      { ok: false, status: 500, error: "Erro ao verificar código." } satisfies ApiResp,
+      { ok: false, status: 500, error: "Erro ao verificar código." } satisfies VerifyResp,
       { status: 500 }
     );
   }
