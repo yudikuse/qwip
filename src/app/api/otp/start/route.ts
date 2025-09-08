@@ -1,42 +1,39 @@
 // src/app/api/otp/start/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { toE164BR } from "@/lib/phone";
+import { getClientIP, tooMany } from "@/lib/rate-limit";
 import { sendOtpViaVerify } from "@/lib/twilio";
-
-type StartResp =
-  | { ok: true; phoneE164: string }
-  | { ok: false; status: number; error?: string; cooldown?: number };
 
 export async function POST(req: NextRequest) {
   try {
     const { phone } = await req.json();
-    const e164 = toE164BR(phone);
 
-    if (!e164) {
+    const ip = getClientIP(req);
+    if (await tooMany(ip)) {
       return NextResponse.json(
-        { ok: false, status: 400, error: "Número inválido." } satisfies StartResp,
-        { status: 400 }
+        { ok: false, error: "Muitas tentativas. Tente novamente mais tarde.", status: 429 },
+        { status: 429 }
       );
     }
 
-    const result = await sendOtpViaVerify(e164);
-    if (!result.ok) {
+    const e164 = toE164BR(phone);
+    const sent = await sendOtpViaVerify(e164);
+
+    if (!sent.ok) {
       return NextResponse.json(
-        { ok: false, status: result.status, error: result.error } satisfies StartResp,
-        { status: 400 }
+        { ok: false, error: sent.error ?? "Falha ao enviar código.", status: sent.status ?? 400 },
+        { status: sent.status ?? 400 }
       );
     }
 
     return NextResponse.json(
-      { ok: true, phoneE164: e164 } satisfies StartResp,
+      { ok: true, phoneE164: e164, status: 200 },
       { status: 200 }
     );
-  } catch {
+  } catch (e) {
     return NextResponse.json(
-      { ok: false, status: 500, error: "Erro inesperado ao iniciar o OTP." } satisfies StartResp,
+      { ok: false, error: "Erro ao iniciar verificação.", status: 500 },
       { status: 500 }
     );
   }
 }
-
-// ⚠️ NÃO adicione exports adicionais neste arquivo.
