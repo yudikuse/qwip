@@ -1,63 +1,47 @@
 // src/lib/twilio.ts
-const {
-  TWILIO_ACCOUNT_SID,
-  TWILIO_AUTH_TOKEN,
-  TWILIO_VERIFY_SERVICE_SID,
-} = process.env;
+import twilio from "twilio";
 
-if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_VERIFY_SERVICE_SID) {
-  console.warn("[twilio] Missing TWILIO_* envs");
+const accountSid = process.env.TWILIO_ACCOUNT_SID!;
+const authToken = process.env.TWILIO_AUTH_TOKEN!;
+const verifySid = process.env.TWILIO_VERIFY_SID!;
+
+const client = twilio(accountSid, authToken);
+
+type Ok = { ok: true; status: number };
+type Fail = { ok: false; status: number; error: string };
+
+export async function sendOtpViaVerify(
+  phoneE164: string
+): Promise<Ok | Fail> {
+  try {
+    const resp = await client.verify.v2
+      .services(verifySid)
+      .verifications.create({ to: phoneE164, channel: "sms" });
+
+    // Twilio retorna status "pending" no envio — consideramos ok
+    return { ok: true, status: 200 };
+  } catch (e: any) {
+    return {
+      ok: false,
+      status: e?.status ?? 400,
+      error: e?.message ?? "Erro no envio do SMS",
+    };
+  }
 }
 
-export async function sendOtpViaVerify(e164: string) {
-  const basic = Buffer.from(
-    `${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`
-  ).toString("base64");
+export async function checkOtpViaVerify(
+  phoneE164: string,
+  code: string
+): Promise<{ status: "approved" | "pending" | "denied" | "expired" } | null> {
+  try {
+    const check = await client.verify.v2
+      .services(verifySid)
+      .verificationChecks.create({ to: phoneE164, code });
 
-  const body = new URLSearchParams({ To: e164, Channel: "sms" });
-
-  const resp = await fetch(
-    `https://verify.twilio.com/v2/Services/${TWILIO_VERIFY_SERVICE_SID}/Verifications`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${basic}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body,
-    }
-  );
-
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    return { ok: false as const, status: resp.status, error: text || "Falha no envio." };
+    // status possíveis: approved | pending
+    // Para fins de fluxo, tratamos qualquer diferente de "approved" como falha
+    return { status: (check.status as any) ?? "pending" };
+  } catch (e) {
+    return null;
   }
-  return { ok: true as const, status: 200 };
-}
-
-export async function checkOtpViaVerify(e164: string, code: string) {
-  const basic = Buffer.from(
-    `${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`
-  ).toString("base64");
-
-  const body = new URLSearchParams({ To: e164, Code: code });
-
-  const resp = await fetch(
-    `https://verify.twilio.com/v2/Services/${TWILIO_VERIFY_SERVICE_SID}/VerificationCheck`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${basic}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body,
-    }
-  );
-
-  const json: any = await resp.json().catch(() => ({}));
-
-  if (!resp.ok) {
-    return { ok: false as const, status: resp.status, error: json?.message || "Falha na verificação." };
-  }
-  return { ok: true as const, status: 200, verifyStatus: json?.status as string };
 }
