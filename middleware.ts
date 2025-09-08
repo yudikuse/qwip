@@ -4,7 +4,7 @@
 // - Redireciona UI protegida para /auth/phone quando não logado
 // - Trata CORS básico para /api/*
 //
-// OBS: roda no Edge Runtime (WebCrypto disponível). Nada de libs Node.
+// OBS: Edge Runtime (WebCrypto). Nada de libs Node.
 
 import { NextRequest, NextResponse } from "next/server";
 
@@ -16,24 +16,19 @@ const SIGNING_SECRET =
   "dev-secret-change-me";
 
 // Páginas da UI que exigem sessão
-const UI_PROTECTED = [
-  "/anuncio/novo",
-  "/anunciar",
-];
+const UI_PROTECTED = ["/anuncio/novo", "/anunciar"];
 
 // APIs de OTP/consent sempre liberadas
 const API_PUBLIC_PREFIXES = [
   "/api/otp/",
   "/api/consent",
   "/api/health",
-  "/api/moderation/twilio-webhook", // webhook não exige sessão, validaremos assinatura na rota
+  "/api/moderation/twilio-webhook", // validaremos assinatura na rota
 ];
 
 // APIs que exigem sessão por método
 function isApiProtected(pathname: string, method: string) {
-  // Criar anúncio
   if (pathname === "/api/ads" && method === "POST") return true;
-  // Editar/Excluir anúncio
   if (pathname.startsWith("/api/ads/") && (method === "PATCH" || method === "DELETE")) return true;
   return false;
 }
@@ -59,14 +54,15 @@ function bytesEq(a: Uint8Array, b: Uint8Array) {
   for (let i = 0; i < a.length; i++) v |= a[i] ^ b[i];
   return v === 0;
 }
+// Converte Uint8Array para ArrayBuffer “puro” (sem SharedArrayBuffer) copiando bytes
+function u8ToPureArrayBuffer(u8: Uint8Array): ArrayBuffer {
+  const buf = new ArrayBuffer(u8.byteLength);
+  new Uint8Array(buf).set(u8);
+  return buf;
+}
 
 // ===== Verificação do token de sessão (v1.<payload>.<signature>) =====
 type Claims = { phone: string; iat: number; exp: number };
-
-// Converte um Uint8Array para um ArrayBuffer “exato” (sem depender de byteOffset/byteLength)
-function toArrayBufferExact(u8: Uint8Array): ArrayBuffer {
-  return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
-}
 
 async function verifySession(raw: string | null): Promise<{ ok: boolean; claims?: Claims; reason?: string }> {
   if (!raw) return { ok: false, reason: "missing" };
@@ -91,19 +87,21 @@ async function verifySession(raw: string | null): Promise<{ ok: boolean; claims?
 
   // HMAC-SHA256(SECRET, `v1.${payload}`)
   const toSign = `v1.${payloadB64u}`;
-  // >>> Correção: usar ArrayBuffer "exato" no importKey
-  const secretBytes = enc(SIGNING_SECRET);
-  const keyData = toArrayBufferExact(secretBytes);
 
+  // >>> Correções de tipo: sempre usar ArrayBuffer “puro” nos WebCrypto calls
+  const secretBuf = u8ToPureArrayBuffer(enc(SIGNING_SECRET));
   const key = await crypto.subtle.importKey(
     "raw",
-    keyData, // ArrayBuffer
+    secretBuf, // ArrayBuffer
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign", "verify"]
   );
-  const expectedBuf = await crypto.subtle.sign("HMAC", key, enc(toSign));
+
+  const dataBuf = u8ToPureArrayBuffer(enc(toSign));
+  const expectedBuf = await crypto.subtle.sign("HMAC", key, dataBuf);
   const expected = new Uint8Array(expectedBuf);
+
   const got = b64ToBytes(b64uToB64(sigB64u));
   if (!bytesEq(expected, got)) return { ok: false, reason: "signature" };
 
@@ -115,13 +113,17 @@ function getSiteOrigin(req: NextRequest) {
   const origin = req.headers.get("origin");
   if (origin) return origin;
   const base = process.env.NEXT_PUBLIC_BASE_URL;
-  if (base) try { return new URL(base).origin; } catch {}
+  if (base) {
+    try {
+      return new URL(base).origin;
+    } catch {}
+  }
   return req.nextUrl.origin;
 }
 function corsHeaders(origin: string) {
   return {
     "Access-Control-Allow-Origin": origin,
-    "Vary": "Origin",
+    Vary: "Origin",
     "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
     "Access-Control-Allow-Credentials": "true",
@@ -142,13 +144,11 @@ export async function middleware(req: NextRequest) {
   // Libera APIs públicas
   if (pathname.startsWith("/api/")) {
     const pub = API_PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
-    if (!pub) {
-      if (isApiProtected(pathname, method)) {
-        const token = req.cookies.get(COOKIE_NAME)?.value ?? null;
-        const v = await verifySession(token);
-        if (!v.ok) {
-          return new NextResponse("Forbidden", { status: 403 });
-        }
+    if (!pub && isApiProtected(pathname, method)) {
+      const token = req.cookies.get(COOKIE_NAME)?.value ?? null;
+      const v = await verifySession(token);
+      if (!v.ok) {
+        return new NextResponse("Forbidden", { status: 403 });
       }
     }
     // aplica CORS nas APIs
