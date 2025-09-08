@@ -62,6 +62,12 @@ function bytesEq(a: Uint8Array, b: Uint8Array) {
 
 // ===== Verificação do token de sessão (v1.<payload>.<signature>) =====
 type Claims = { phone: string; iat: number; exp: number };
+
+// Converte um Uint8Array para um ArrayBuffer “exato” (sem depender de byteOffset/byteLength)
+function toArrayBufferExact(u8: Uint8Array): ArrayBuffer {
+  return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+}
+
 async function verifySession(raw: string | null): Promise<{ ok: boolean; claims?: Claims; reason?: string }> {
   if (!raw) return { ok: false, reason: "missing" };
   const parts = raw.split(".");
@@ -85,14 +91,19 @@ async function verifySession(raw: string | null): Promise<{ ok: boolean; claims?
 
   // HMAC-SHA256(SECRET, `v1.${payload}`)
   const toSign = `v1.${payloadB64u}`;
+  // >>> Correção: usar ArrayBuffer "exato" no importKey
+  const secretBytes = enc(SIGNING_SECRET);
+  const keyData = toArrayBufferExact(secretBytes);
+
   const key = await crypto.subtle.importKey(
     "raw",
-    enc(SIGNING_SECRET),
+    keyData, // ArrayBuffer
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign", "verify"]
   );
-  const expected = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc(toSign)));
+  const expectedBuf = await crypto.subtle.sign("HMAC", key, enc(toSign));
+  const expected = new Uint8Array(expectedBuf);
   const got = b64ToBytes(b64uToB64(sigB64u));
   if (!bytesEq(expected, got)) return { ok: false, reason: "signature" };
 
