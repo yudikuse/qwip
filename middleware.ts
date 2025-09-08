@@ -1,133 +1,168 @@
-// middleware.ts
+// middleware.ts — Qwip (Passo 1: blindagem mínima)
+// - Verifica sessão (cookie HttpOnly assinado) para rotas sensíveis
+// - Protege APIs de mutação (ads POST/PATCH/DELETE)
+// - Redireciona UI protegida para /auth/phone quando não logado
+// - Trata CORS básico para /api/*
+//
+// OBS: roda no Edge Runtime (WebCrypto disponível). Nada de libs Node.
+
 import { NextRequest, NextResponse } from "next/server";
 
-// Rotas que exigem login por SMS
-const PROTECTED = ["/anuncio/novo"];
+// ===== Config =====
+const COOKIE_NAME = "qwip_session";
+const SIGNING_SECRET =
+  process.env.SIGNING_SECRET ||
+  process.env.QWIP_SIGNING_SECRET ||
+  "dev-secret-change-me";
 
-// Helpers de base64/url (Edge-safe, sem libs)
+// Páginas da UI que exigem sessão
+const UI_PROTECTED = [
+  "/anuncio/novo",
+  "/anunciar",
+];
+
+// APIs de OTP/consent sempre liberadas
+const API_PUBLIC_PREFIXES = [
+  "/api/otp/",
+  "/api/consent",
+  "/api/health",
+  "/api/moderation/twilio-webhook", // webhook não exige sessão, validaremos assinatura na rota
+];
+
+// APIs que exigem sessão por método
+function isApiProtected(pathname: string, method: string) {
+  // Criar anúncio
+  if (pathname === "/api/ads" && method === "POST") return true;
+  // Editar/Excluir anúncio
+  if (pathname.startsWith("/api/ads/") && (method === "PATCH" || method === "DELETE")) return true;
+  return false;
+}
+
+// ===== Helpers base64/url (Edge-safe) =====
 function b64uToB64(b64u: string): string {
   const s = b64u.replace(/-/g, "+").replace(/_/g, "/");
   const pad = s.length % 4;
   return pad ? s + "=".repeat(4 - pad) : s;
 }
-function strToU8(s: string): Uint8Array {
-  return new TextEncoder().encode(s);
-}
-function b64ToU8(b64: string): Uint8Array {
-  // @ts-ignore
-  if (typeof Buffer !== "undefined") return new Uint8Array(Buffer.from(b64, "base64"));
-  // @ts-ignore
+function b64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
-// Converte Uint8Array em ArrayBuffer "puro" (cópia) para evitar SharedArrayBuffer
-function u8ToArrayBuffer(u8: Uint8Array): ArrayBuffer {
-  const ab = new ArrayBuffer(u8.byteLength);
-  new Uint8Array(ab).set(u8);
-  return ab;
+function enc(s: string): Uint8Array {
+  return new TextEncoder().encode(s);
 }
-function u8eq(a: Uint8Array, b: Uint8Array): boolean {
+function bytesEq(a: Uint8Array, b: Uint8Array) {
   if (a.length !== b.length) return false;
-  let d = 0;
-  for (let i = 0; i < a.length; i++) d |= a[i] ^ b[i];
-  return d === 0;
+  let v = 0;
+  for (let i = 0; i < a.length; i++) v |= a[i] ^ b[i];
+  return v === 0;
 }
 
-// Verifica cookie de sessão qwip_session = v1.<payload>.<signature>
-// payload = { phone, iat, exp }
-async function verifySessionCookie(raw: string | undefined | null): Promise<boolean> {
-  if (!raw) return false;
+// ===== Verificação do token de sessão (v1.<payload>.<signature>) =====
+type Claims = { phone: string; iat: number; exp: number };
+async function verifySession(raw: string | null): Promise<{ ok: boolean; claims?: Claims; reason?: string }> {
+  if (!raw) return { ok: false, reason: "missing" };
   const parts = raw.split(".");
-  if (parts.length !== 3) return false;
-  const [v, p, s] = parts;
-  if (v !== "v1") return false;
+  if (parts.length !== 3) return { ok: false, reason: "format" };
+  const [ver, payloadB64u, sigB64u] = parts;
+  if (ver !== "v1") return { ok: false, reason: "version" };
 
-  // decodifica payload
-  let claims: any;
+  // parse payload
+  let claims: Claims | null = null;
   try {
-    const json = new TextDecoder().decode(b64ToU8(b64uToB64(p)));
+    const json = new TextDecoder().decode(b64ToBytes(b64uToB64(payloadB64u)));
     claims = JSON.parse(json);
   } catch {
-    return false;
+    return { ok: false, reason: "payload" };
   }
-  const now = Math.floor(Date.now() / 1000);
-  if (!Number.isFinite(claims?.exp) || claims.exp <= now) return false;
+  if (!claims) return { ok: false, reason: "payload" };
 
-  // valida HMAC
-  const toSign = `${v}.${p}`;
-  const secret = process.env.SIGNING_SECRET || process.env.QWIP_SIGNING_SECRET || "dev-secret-change-me";
+  // check exp
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(claims.exp) || claims.exp <= now) return { ok: false, reason: "expired" };
+
+  // HMAC-SHA256(SECRET, `v1.${payload}`)
+  const toSign = `v1.${payloadB64u}`;
   const key = await crypto.subtle.importKey(
     "raw",
-    u8ToArrayBuffer(strToU8(secret)), // ArrayBuffer puro
+    enc(SIGNING_SECRET),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign", "verify"]
   );
-  const sig = await crypto.subtle.sign("HMAC", key, u8ToArrayBuffer(strToU8(toSign))); // ArrayBuffer puro
-  const expected = new Uint8Array(sig);
-  const got = b64ToU8(b64uToB64(s));
-  return u8eq(expected, got);
+  const expected = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc(toSign)));
+  const got = b64ToBytes(b64uToB64(sigB64u));
+  if (!bytesEq(expected, got)) return { ok: false, reason: "signature" };
+
+  return { ok: true, claims };
 }
 
+// ===== CORS =====
+function getSiteOrigin(req: NextRequest) {
+  const origin = req.headers.get("origin");
+  if (origin) return origin;
+  const base = process.env.NEXT_PUBLIC_BASE_URL;
+  if (base) try { return new URL(base).origin; } catch {}
+  return req.nextUrl.origin;
+}
+function corsHeaders(origin: string) {
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Vary": "Origin",
+    "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+    "Access-Control-Allow-Credentials": "true",
+  };
+}
+
+// ===== Middleware principal =====
 export async function middleware(req: NextRequest) {
-  const { pathname, search } = req.nextUrl;
-  const res = NextResponse.next();
+  const { pathname } = req.nextUrl;
+  const method = req.method;
 
-  // ---------- Cabeçalhos de segurança ----------
-  res.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
-  res.headers.set("X-Frame-Options", "DENY");
-  res.headers.set("X-Content-Type-Options", "nosniff");
-  res.headers.set("Referrer-Policy", "no-referrer");
-  // permitir geolocalização (para o prompt do navegador)
-  res.headers.set("Permissions-Policy", "geolocation=(self), microphone=(), camera=(), payment=()");
-  res.headers.set("X-Permitted-Cross-Domain-Policies", "none");
-  res.headers.set("X-DNS-Prefetch-Control", "off");
-  res.headers.set("X-QWIP-Security-MW", "1"); // marcador temporário
+  // CORS pré-flight
+  if (pathname.startsWith("/api/") && method === "OPTIONS") {
+    const origin = getSiteOrigin(req);
+    return new NextResponse(null, { status: 204, headers: corsHeaders(origin) });
+  }
 
-  // ---------- Gate de sessão para rotas protegidas ----------
-  if (PROTECTED.some((p) => pathname.startsWith(p))) {
-    const raw = req.cookies.get("qwip_session")?.value || "";
-    const ok = await verifySessionCookie(raw);
-    if (!ok) {
-      const url = new URL("/verificar", req.nextUrl.origin);
-      url.searchParams.set("redirect", pathname + (search || ""));
+  // Libera APIs públicas
+  if (pathname.startsWith("/api/")) {
+    const pub = API_PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
+    if (!pub) {
+      if (isApiProtected(pathname, method)) {
+        const token = req.cookies.get(COOKIE_NAME)?.value ?? null;
+        const v = await verifySession(token);
+        if (!v.ok) {
+          return new NextResponse("Forbidden", { status: 403 });
+        }
+      }
+    }
+    // aplica CORS nas APIs
+    const res = NextResponse.next();
+    const origin = getSiteOrigin(req);
+    Object.entries(corsHeaders(origin)).forEach(([k, v]) => res.headers.set(k, v));
+    return res;
+  }
+
+  // UI protegida → precisa sessão
+  if (UI_PROTECTED.some((p) => pathname.startsWith(p))) {
+    const token = req.cookies.get(COOKIE_NAME)?.value ?? null;
+    const v = await verifySession(token);
+    if (!v.ok) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/auth/phone";
+      url.searchParams.set("next", pathname);
       return NextResponse.redirect(url);
     }
   }
 
-  // ---------- Regras para APIs (/api/*): CORS restritivo + preflight ----------
-  if (pathname.startsWith("/api")) {
-    const requestOrigin = req.headers.get("origin"); // quem está chamando
-    const siteOrigin = req.nextUrl.origin;           // seu domínio
-
-    // Preflight (sempre responder e encerrar)
-    if (req.method === "OPTIONS") {
-      const preflight = new NextResponse(null, { status: 204 });
-      preflight.headers.set("Access-Control-Allow-Origin", siteOrigin);
-      preflight.headers.set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-      preflight.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      preflight.headers.set("Access-Control-Max-Age", "600");
-      return preflight;
-    }
-
-    // Só permite métodos de escrita se for mesma origem
-    const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method);
-    const sameOrigin = !requestOrigin || requestOrigin === siteOrigin;
-    if (isWrite && !sameOrigin) {
-      return new NextResponse("Forbidden", { status: 403 });
-    }
-
-    // Cabeçalho CORS para respostas de API
-    res.headers.set("Access-Control-Allow-Origin", siteOrigin);
-    res.headers.set("Vary", "Origin");
-  }
-
-  return res;
+  return NextResponse.next();
 }
 
-// Aplica globalmente (páginas e APIs)
+// Aplica globalmente
 export const config = {
   matcher: ["/:path*"],
 };
