@@ -1,20 +1,18 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
-// Resposta padrão das rotas /api/otp/start e /api/otp/verify
+// Respostas das rotas /api/otp/start e /api/otp/verify
 type ApiOk = { ok: true; phoneE164?: string };
 type ApiErr = { ok: false; error?: string; retryAfterSec?: number };
 type ApiResp = ApiOk | ApiErr;
 
 export default function VerifyClient() {
-  const router = useRouter();
   const search = useSearchParams();
 
   const redirectTo = useMemo(() => {
     const raw = search.get("redirect");
-    // fallback seguro
     if (!raw || !raw.startsWith("/")) return "/";
     return raw;
   }, [search]);
@@ -25,8 +23,7 @@ export default function VerifyClient() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const normalizePhoneLocal = (v: string) =>
-    v.replace(/\D+/g, "").slice(0, 11); // DD + celular (até 11 dígitos no BR)
+  const normalizePhoneLocal = (v: string) => v.replace(/\D+/g, "").slice(0, 11); // DD+cel (10-11 dígitos)
 
   const onSendCode = useCallback(async () => {
     setMsg(null);
@@ -42,6 +39,8 @@ export default function VerifyClient() {
       const resp = await fetch("/api/otp/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        // importante manter same-origin (default) p/ receber Set-Cookie das rotas
+        credentials: "same-origin",
         body: JSON.stringify({ phone: cleaned }),
       });
 
@@ -56,7 +55,6 @@ export default function VerifyClient() {
         return;
       }
 
-      // Enviado com sucesso
       setStep("code");
       setMsg(null);
     } catch {
@@ -84,6 +82,7 @@ export default function VerifyClient() {
       const resp = await fetch("/api/otp/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ phone: cleaned, code }),
       });
 
@@ -98,17 +97,30 @@ export default function VerifyClient() {
         return;
       }
 
-      // Cookie é gravado no response pelo backend. Pequeno delay garante persistência antes do navigation.
-      await new Promise((r) => setTimeout(r, 60));
+      // --- Fallback de cookie (cinto e suspensório) ---
+      // Se por qualquer motivo o Set-Cookie do response não for observado a tempo,
+      // gravamos o mesmo cookie no client antes de navegar.
+      const e164FromServer = "ok" in data && data.ok && data.phoneE164 ? data.phoneE164 : undefined;
+      const e164Local = e164FromServer ?? `+55${cleaned}`;
+      try {
+        document.cookie = `qwip_phone_e164=${encodeURIComponent(
+          e164Local
+        )}; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`;
+      } catch {
+        // ignore
+      }
 
-      // Vai para o destino (ex.: /anuncio/novo)
-      router.replace(redirectTo);
+      // pequeno delay para garantir persistência antes da navegação
+      await new Promise((r) => setTimeout(r, 120));
+
+      // Navegação full page para garantir que o middleware/SSR veja o cookie
+      window.location.assign(redirectTo);
     } catch {
       setMsg("Erro de rede ao verificar código.");
     } finally {
       setLoading(false);
     }
-  }, [phone, code, redirectTo, router]);
+  }, [phone, code, redirectTo]);
 
   return (
     <div className="w-full min-h-[60vh] flex items-center justify-center">
@@ -137,11 +149,7 @@ export default function VerifyClient() {
               Não inclua +55, já colocamos automaticamente.
             </p>
 
-            {msg && (
-              <div className="mt-3 text-sm text-red-400">
-                {msg}
-              </div>
-            )}
+            {msg && <div className="mt-3 text-sm text-red-400">{msg}</div>}
 
             <button
               onClick={onSendCode}
@@ -168,11 +176,7 @@ export default function VerifyClient() {
               disabled={loading}
             />
 
-            {msg && (
-              <div className="mt-3 text-sm text-red-400">
-                {msg}
-              </div>
-            )}
+            {msg && <div className="mt-3 text-sm text-red-400">{msg}</div>}
 
             <button
               onClick={onVerify}
