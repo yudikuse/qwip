@@ -4,6 +4,12 @@ import { toE164BR } from "@/lib/phone";
 import { checkOtpViaVerify } from "@/lib/twilio";
 import { getClientIP, limitByKey, checkCooldown, tooMany } from "@/lib/rate-limit";
 
+/**
+ * POST /api/otp/verify
+ * Body: { to | phone | phoneE164, code }
+ * - Verifica OTP via Twilio Verify
+ * - Se aprovado, grava cookie legível pelo client (30 dias)
+ */
 export async function POST(req: NextRequest) {
   try {
     // Body
@@ -14,7 +20,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "JSON inválido." }, { status: 400 });
     }
 
-    const phoneRaw: string | undefined = body?.phone ?? body?.phoneE164 ?? body?.to;
+    const phoneRaw: string | undefined = body?.to ?? body?.phone ?? body?.phoneE164;
     const code: string | undefined = body?.code;
     const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
 
@@ -47,7 +53,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Cookie por 30 dias (lido pelo middleware)
+    // Cookie por 30 dias (lido no middleware e/ou client)
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
     res.cookies.set("qwip_phone_e164", e164, {
       path: "/",
@@ -56,6 +62,7 @@ export async function POST(req: NextRequest) {
       httpOnly: false, // precisa ser visível no client
       maxAge: 60 * 60 * 24 * 30,
     });
+
     return res;
   } catch (err) {
     console.error("[api/otp/verify] erro:", err);
