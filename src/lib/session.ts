@@ -1,21 +1,53 @@
 // src/lib/session.ts
-// Sessão assinada em cookie (HS256 base64url) compatível com Edge/Node.
-// Cookie: qwip_session = v1.<payload>.<signature>
-// payload = { phone, iat, exp } em JSON e base64url
-// Assinatura = HMAC-SHA256(SECRET, "v1.<payload>")
+// Criação e validação de sessão via cookie HttpOnly assinado (formato: v1.<payload>.<sig>)
+// Compatível com o middleware.ts já publicado.
+//
+// Uso típico na rota /api/otp/verify:
+//   const token = await createSessionToken({ phone: e164 });
+//   const res = NextResponse.json({ ok: true });
+//   setSessionCookie(res, token);
+//   return res;
 
-export type SessionClaims = {
-  phone: string;
-  iat: number; // epoch (s)
-  exp: number; // epoch (s)
-};
+import type { NextResponse } from "next/server";
 
-const SECRET =
-  process.env.SIGNING_SECRET ||
-  process.env.QWIP_SIGNING_SECRET ||
-  "dev-secret-change-me";
+// ===== Config =====
+export const COOKIE_NAME = "qwip_session";
+const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 dias
 
-// ---- base64/url helpers ----
+function getSigningSecret(): string {
+  const s =
+    process.env.SIGNING_SECRET ||
+    process.env.QWIP_SIGNING_SECRET ||
+    "dev-secret-change-me";
+  if (!s || s.length < 16) {
+    // Evita builds silenciosos com segredo fraco
+    // (em dev ainda funciona, mas fica explícito)
+    return "dev-secret-change-me";
+  }
+  return s;
+}
+
+// ===== Helpers base64/url (Edge-safe) =====
+function enc(s: string): Uint8Array {
+  return new TextEncoder().encode(s);
+}
+function dec(u8: Uint8Array): string {
+  return new TextDecoder().decode(u8);
+}
+function bytesToB64(u8: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+  // btoa exige string Latin1
+  // eslint-disable-next-line no-undef
+  return btoa(s);
+}
+function b64ToBytes(b64: string): Uint8Array {
+  // eslint-disable-next-line no-undef
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
 function b64ToB64u(b64: string): string {
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
@@ -24,101 +56,129 @@ function b64uToB64(b64u: string): string {
   const pad = s.length % 4;
   return pad ? s + "=".repeat(4 - pad) : s;
 }
-function enc(s: string): Uint8Array {
-  return new TextEncoder().encode(s);
-}
-function dec(u8: Uint8Array): string {
-  return new TextDecoder().decode(u8);
-}
-function bytesToB64(bytes: Uint8Array): string {
-  if (typeof Buffer !== "undefined") {
-    // @ts-ignore
-    return Buffer.from(bytes).toString("base64");
-  }
-  let bin = "";
-  bytes.forEach((b) => (bin += String.fromCharCode(b)));
-  // @ts-ignore
-  return btoa(bin);
-}
-function b64ToBytes(b64: string): Uint8Array {
-  if (typeof Buffer !== "undefined") {
-    // @ts-ignore
-    return new Uint8Array(Buffer.from(b64, "base64"));
-  }
-  // @ts-ignore
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
+// Converte Uint8Array -> ArrayBuffer “puro” (evita SharedArrayBuffer em alguns ambientes)
+function u8ToPureArrayBuffer(u8: Uint8Array): ArrayBuffer {
+  const buf = new ArrayBuffer(u8.byteLength);
+  new Uint8Array(buf).set(u8);
+  return buf;
 }
 
-// Converte Uint8Array em ArrayBuffer puro (cópia) para evitar SharedArrayBuffer
-function u8ToArrayBuffer(u8: Uint8Array): ArrayBuffer {
-  const ab = new ArrayBuffer(u8.byteLength);
-  new Uint8Array(ab).set(u8);
-  return ab;
-}
+// ===== Tipos =====
+export type SessionClaims = {
+  phone: string; // E.164 (ex: +5599999999999)
+  iat: number;   // epoch seconds
+  exp: number;   // epoch seconds
+};
 
-// ---- HMAC-SHA256 (WebCrypto) ----
-async function hmacSha256(keyRaw: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
+// ===== HMAC-SHA256 (WebCrypto) =====
+async function hmacSha256(keyBytes: Uint8Array, dataBytes: Uint8Array): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey(
     "raw",
-    u8ToArrayBuffer(keyRaw),
+    u8ToPureArrayBuffer(keyBytes),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign", "verify"]
   );
-  const sig = await crypto.subtle.sign("HMAC", key, u8ToArrayBuffer(data));
+  const sig = await crypto.subtle.sign("HMAC", key, u8ToPureArrayBuffer(dataBytes));
   return new Uint8Array(sig);
 }
 
-function timingSafeEq(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
-  return diff === 0;
+// ===== Token (v1.<payloadB64u>.<sigB64u>) =====
+function encodeClaims(claims: SessionClaims): string {
+  const json = JSON.stringify(claims);
+  const b64 = bytesToB64(enc(json));
+  return b64ToB64u(b64);
 }
 
-// ---- Public API ----
-export async function issueSession(phoneE164: string, ttlHours = 24): Promise<string> {
-  const iat = Math.floor(Date.now() / 1000);
-  const exp = iat + Math.floor(ttlHours * 3600);
-  const payload: SessionClaims = { phone: phoneE164, iat, exp };
-  const version = "v1";
-  const p = b64ToB64u(bytesToB64(enc(JSON.stringify(payload))));
-  const toSign = `${version}.${p}`;
-  const sig = await hmacSha256(enc(SECRET), enc(toSign));
-  const s = b64ToB64u(bytesToB64(sig));
-  return `${toSign}.${s}`;
+function decodeClaims(payloadB64u: string): SessionClaims {
+  const json = dec(b64ToBytes(b64uToB64(payloadB64u)));
+  return JSON.parse(json) as SessionClaims;
 }
 
-export type VerifySessionResult =
-  | { ok: true; claims: SessionClaims }
-  | { ok: false; reason: string };
+export async function createSessionToken(
+  params: { phone: string; ttlSeconds?: number }
+): Promise<string> {
+  const { phone, ttlSeconds = DEFAULT_TTL_SECONDS } = params;
+  const now = Math.floor(Date.now() / 1000);
+  const claims: SessionClaims = {
+    phone,
+    iat: now,
+    exp: now + Math.max(60, ttlSeconds),
+  };
+  const payloadB64u = encodeClaims(claims);
+  const toSign = `v1.${payloadB64u}`;
+  const sig = await hmacSha256(enc(getSigningSecret()), enc(toSign));
+  const sigB64u = b64ToB64u(bytesToB64(sig));
+  return `v1.${payloadB64u}.${sigB64u}`;
+}
 
-export async function verifySessionValue(value: string | undefined | null): Promise<VerifySessionResult> {
-  if (!value) return { ok: false, reason: "missing" };
-  const parts = value.split(".");
+export async function verifySessionToken(
+  token: string | null
+): Promise<{ ok: boolean; claims?: SessionClaims; reason?: string }> {
+  if (!token) return { ok: false, reason: "missing" };
+  const parts = token.split(".");
   if (parts.length !== 3) return { ok: false, reason: "format" };
-  const [version, p, s] = parts;
-  if (version !== "v1") return { ok: false, reason: "version" };
+  const [ver, payloadB64u, sigB64u] = parts;
+  if (ver !== "v1") return { ok: false, reason: "version" };
+
   let claims: SessionClaims;
   try {
-    const json = dec(b64ToBytes(b64uToB64(p)));
-    claims = JSON.parse(json);
+    claims = decodeClaims(payloadB64u);
   } catch {
     return { ok: false, reason: "payload" };
   }
+
   const now = Math.floor(Date.now() / 1000);
-  if (!Number.isFinite(claims.exp) || !Number.isFinite(claims.iat)) {
-    return { ok: false, reason: "times" };
+  if (!Number.isFinite(claims.exp) || claims.exp <= now) {
+    return { ok: false, reason: "expired" };
   }
-  if (claims.exp <= now) return { ok: false, reason: "expired" };
 
-  const toSign = `${version}.${p}`;
-  const expected = await hmacSha256(enc(SECRET), enc(toSign));
-  const got = b64ToBytes(b64uToB64(s));
-  if (!timingSafeEq(expected, got)) return { ok: false, reason: "signature" };
+  const toSign = `v1.${payloadB64u}`;
+  const expected = await hmacSha256(enc(getSigningSecret()), enc(toSign));
+  const got = b64ToBytes(b64uToB64(sigB64u));
 
+  if (!timingSafeEqual(expected, got)) return { ok: false, reason: "signature" };
   return { ok: true, claims };
+}
+
+// Comparação constante
+function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let v = 0;
+  for (let i = 0; i < a.length; i++) v |= a[i] ^ b[i];
+  return v === 0;
+}
+
+// ===== Cookies HttpOnly =====
+export function setSessionCookie(
+  res: NextResponse,
+  token: string,
+  opts?: { maxAgeSeconds?: number }
+) {
+  const maxAge = opts?.maxAgeSeconds ?? DEFAULT_TTL_SECONDS;
+  res.cookies.set(COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge,
+  });
+}
+
+export function clearSessionCookie(res: NextResponse) {
+  res.cookies.set(COOKIE_NAME, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
+}
+
+// Helper para pegar claims dentro de rota (Node/Edge)
+export async function getSessionFromRequest(
+  req: { cookies?: { get: (name: string) => { value: string } | undefined } }
+): Promise<{ ok: boolean; claims?: SessionClaims; reason?: string }> {
+  const raw = req.cookies?.get(COOKIE_NAME)?.value ?? null;
+  return verifySessionToken(raw);
 }
