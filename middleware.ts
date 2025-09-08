@@ -1,25 +1,30 @@
-// src/middleware.ts
 import { NextRequest, NextResponse } from "next/server";
+import { PHONE_COOKIE } from "@/lib/cookies";
+
+const PROTECTED = ["/anuncio/novo"];
 
 export function middleware(req: NextRequest) {
-  const { nextUrl, cookies } = req;
-  const pathname = nextUrl.pathname;
+  const { pathname, search } = req.nextUrl;
+  const cookie = req.cookies.get(PHONE_COOKIE)?.value;
 
-  // Protegemos apenas o que precisa de verificação
-  const needsAuth =
-    pathname.startsWith("/anuncio");
+  // Libera APIs, estáticos e a própria verificação
+  if (
+    pathname.startsWith("/api") ||
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/favicon") ||
+    pathname === "/verificar"
+  ) {
+    return NextResponse.next();
+  }
 
-  if (!needsAuth) return NextResponse.next();
+  if (PROTECTED.some((p) => pathname.startsWith(p)) && !cookie) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/verificar";
+    url.search = `?redirect=${encodeURIComponent(pathname + (search || ""))}`;
+    return NextResponse.redirect(url);
+  }
 
-  const hasCookie = cookies.get("qwip_phone_e164")?.value;
-  if (hasCookie) return NextResponse.next();
-
-  // sem cookie -> manda para /verificar com redirect
-  const url = new URL("/verificar", req.url);
-  url.searchParams.set("redirect", pathname + nextUrl.search);
-  return NextResponse.redirect(url);
+  return NextResponse.next();
 }
 
-export const config = {
-  matcher: ["/anuncio/:path*"], // ajuste se houver outras áreas protegidas
-};
+export const config = { matcher: ["/((?!_next|favicon.ico).*)"] };
