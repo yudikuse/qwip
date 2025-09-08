@@ -7,12 +7,11 @@ import { getClientIP, limitByKey, checkCooldown, tooMany } from "@/lib/rate-limi
 /**
  * POST /api/otp/verify
  * Body: { to | phone | phoneE164, code }
- * - Verifica OTP via Twilio Verify
- * - Se aprovado, grava cookie legível pelo client (30 dias)
+ * - Verifica OTP (Twilio Verify)
+ * - Se aprovado, grava cookie legível no client (30 dias)
  */
 export async function POST(req: NextRequest) {
   try {
-    // Body
     let body: any = {};
     try {
       body = await req.json();
@@ -28,9 +27,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
     }
 
-    // Rate limit / cooldown
     const ip = getClientIP(req);
-
     {
       const c = checkCooldown(`otp:verify:${e164}`, 10);
       if (!c.ok) return tooMany("Aguarde antes de tentar verificar novamente.", c.retryAfterSec);
@@ -44,7 +41,6 @@ export async function POST(req: NextRequest) {
       if (!r.ok) return tooMany("Muitas tentativas para este número.", r.retryAfterSec);
     }
 
-    // Twilio Verify
     const result = await checkOtpViaVerify(e164, code);
     if (result?.status !== "approved") {
       return NextResponse.json(
@@ -53,19 +49,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Cookie por 30 dias (lido no middleware e/ou client)
+    // cookie visível ao client (para middleware e páginas client)
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
     res.cookies.set("qwip_phone_e164", e164, {
       path: "/",
       sameSite: "lax",
       secure: true,
-      httpOnly: false, // precisa ser visível no client
+      httpOnly: false,
       maxAge: 60 * 60 * 24 * 30,
     });
-
     return res;
   } catch (err) {
-    console.error("[api/otp/verify] erro:", err);
+    console.error("[api/otp/verify]", err);
     return NextResponse.json({ ok: false, error: "Falha ao verificar código." }, { status: 500 });
   }
 }
