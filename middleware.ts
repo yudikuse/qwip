@@ -1,37 +1,40 @@
-// middleware.ts
+// src/middleware.ts
 import { NextRequest, NextResponse } from "next/server";
 
-const PROTECTED = ["/anuncio/novo"];
+const COOKIE_NAME = "qwip_phone_e164";
+
+// Rotas que exigem verificação
+const PROTECTED_PREFIXES = [
+  "/anuncio/novo",
+  "/anuncio",
+  "/painel",
+];
 
 export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
-  // Bypass rotas técnicas
+  // Libera APIs e rotas públicas
   if (pathname.startsWith("/api")) return NextResponse.next();
-  if (pathname.startsWith("/_next")) return NextResponse.next();
-  if (pathname === "/verificar") return NextResponse.next();
+  if (pathname.startsWith("/verificar")) return NextResponse.next();
+  if (pathname.startsWith("/_next") || pathname.startsWith("/favicon") || pathname.startsWith("/assets")) {
+    return NextResponse.next();
+  }
 
-  // Cabeçalhos de segurança
-  const res = NextResponse.next();
-  res.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
-  res.headers.set("X-Frame-Options", "DENY");
-  res.headers.set("X-Content-Type-Options", "nosniff");
-  res.headers.set("Referrer-Policy", "no-referrer");
-  res.headers.set("Permissions-Policy", "geolocation=(self), microphone=(), camera=(), payment=()");
-  res.headers.set("X-Permitted-Cross-Domain-Policies", "none");
-  res.headers.set("X-DNS-Prefetch-Control", "off");
+  const hasCookie = Boolean(req.cookies.get(COOKIE_NAME)?.value);
 
-  // Proteção
-  if (PROTECTED.some((p) => pathname.startsWith(p))) {
-    const hasPhone = req.cookies.get("qwip_phone_e164")?.value;
-    if (!hasPhone) {
-      const url = new URL("/verificar", req.nextUrl.origin);
+  // Se a rota é protegida e não tem cookie, manda para /verificar com redirect
+  if (PROTECTED_PREFIXES.some((p) => pathname.startsWith(p))) {
+    if (!hasCookie) {
+      const url = new URL("/verificar", req.url);
       url.searchParams.set("redirect", pathname + (search || ""));
       return NextResponse.redirect(url);
     }
   }
 
-  return res;
+  return NextResponse.next();
 }
 
-export const config = { matcher: ["/:path*"] };
+// Ajuste de matcher para pegar tudo, exceto estáticos
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)"],
+};
