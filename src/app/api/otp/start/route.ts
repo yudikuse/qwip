@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { toE164BR } from "@/lib/phone";
 import { sendOtpViaVerify } from "@/lib/twilio";
 
-type ApiResp =
+type StartResp =
   | { ok: true; phoneE164: string }
   | { ok: false; status: number; error?: string; cooldown?: number };
 
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
 
     if (!e164) {
       return NextResponse.json(
-        { ok: false, status: 400, error: "Número inválido." } satisfies ApiResp,
+        { ok: false, status: 400, error: "Número inválido." } satisfies StartResp,
         { status: 400 }
       );
     }
@@ -22,22 +22,21 @@ export async function POST(req: NextRequest) {
     const result = await sendOtpViaVerify(e164);
     if (!result.ok) {
       return NextResponse.json(
-        { ok: false, status: result.status, error: result.error } satisfies ApiResp,
+        { ok: false, status: result.status, error: result.error } satisfies StartResp,
         { status: 400 }
       );
     }
 
     return NextResponse.json(
-      { ok: true, phoneE164: e164 } satisfies ApiResp,
+      { ok: true, phoneE164: e164 } satisfies StartResp,
       { status: 200 }
     );
   } catch {
     return NextResponse.json(
-      { ok: false, status: 500, error: "Erro inesperado ao iniciar o OTP." } satisfies ApiResp,
+      { ok: false, status: 500, error: "Erro inesperado ao iniciar o OTP." } satisfies StartResp,
       { status: 500 }
     );
   }
 }
 
-// ⚠️ NÃO adicione mais exports neste arquivo.
-// Apenas `POST` (e opcionalmente config como runtime/revalidate/dynamic) são permitidos.
+// ⚠️ NÃO adicione exports adicionais neste arquivo.
