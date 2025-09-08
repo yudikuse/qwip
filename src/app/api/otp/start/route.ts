@@ -1,40 +1,42 @@
-// src/app/api/otp/start/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { toE164BR } from "@/lib/phone";
-import { startOtpViaVerify } from "@/lib/twilio";
-import { getClientIP, limitByKey, checkCooldown, tooMany } from "@/lib/rate-limit";
+const {
+  TWILIO_ACCOUNT_SID,
+  TWILIO_AUTH_TOKEN,
+  TWILIO_VERIFY_SERVICE_SID,
+} = process.env;
 
-export async function POST(req: NextRequest) {
-  try {
-    let body: any = {};
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ ok: false, error: "JSON inválido." }, { status: 400 });
-    }
+if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_VERIFY_SERVICE_SID) {
+  console.warn("[twilio] Missing TWILIO_* envs");
+}
 
-    const phoneRaw: string | undefined = body?.phone ?? body?.phoneE164 ?? body?.to;
-    const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
-    if (!e164) return NextResponse.json({ ok: false, error: "Telefone inválido." }, { status: 400 });
+export async function sendOtpViaVerify(e164: string) {
+  const basic = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
+  const body = new URLSearchParams({ To: e164, Channel: "sms" });
 
-    const ip = getClientIP(req);
-    {
-      const c = checkCooldown(`otp:start:${e164}`, 10);
-      if (!c.ok) return tooMany("Aguarde antes de pedir outro código.", c.retryAfterSec);
-    }
-    {
-      const r = limitByKey(`otp:start:${ip}:1m`, 12, 60);
-      if (!r.ok) return tooMany("Muitas tentativas deste IP.", r.retryAfterSec);
-    }
-    {
-      const r = limitByKey(`otp:start:${e164}:30m`, 5, 1800);
-      if (!r.ok) return tooMany("Muitas tentativas para este número.", r.retryAfterSec);
-    }
+  const resp = await fetch(
+    `https://verify.twilio.com/v2/Services/${TWILIO_VERIFY_SERVICE_SID}/Verifications`,
+    { method: "POST", headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded" }, body }
+  );
 
-    const sent = await startOtpViaVerify(e164);
-    return NextResponse.json({ ok: true, status: sent.status });
-  } catch (err) {
-    console.error("[api/otp/start]", err);
-    return NextResponse.json({ ok: false, error: "Falha ao iniciar OTP." }, { status: 500 });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    return { ok: false as const, status: resp.status, error: text || "Falha no envio." };
   }
+  return { ok: true as const, status: 200 };
+}
+
+export async function checkOtpViaVerify(e164: string, code: string) {
+  const basic = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
+  const body = new URLSearchParams({ To: e164, Code: code });
+
+  const resp = await fetch(
+    `https://verify.twilio.com/v2/Services/${TWILIO_VERIFY_SERVICE_SID}/VerificationCheck`,
+    { method: "POST", headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded" }, body }
+  );
+
+  const json: any = await resp.json().catch(() => ({}));
+
+  if (!resp.ok) {
+    return { ok: false as const, status: resp.status, error: json?.message || "Falha na verificação." };
+  }
+  return { ok: true as const, status: 200, verifyStatus: json?.status as string };
 }
