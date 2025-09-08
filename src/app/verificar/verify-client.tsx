@@ -1,140 +1,152 @@
-// src/app/verificar/verify-client.tsx
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 
-type ApiResp =
-  | { ok: true; phoneE164?: string }
-  | { ok: false; error?: string; status?: number };
+type StartResp =
+  | { ok: true; phoneE164: string }
+  | { ok: false; status: number; error?: string; cooldown?: number };
 
-const maskPhone = (v: string) =>
-  v.replace(/\D/g, "").slice(0, 11);
+type VerifyResp =
+  | { ok: true; phoneE164: string }
+  | { ok: false; status: number; error?: string };
+
+const phoneMask = (v: string) => v.replace(/\D+/g, "").slice(0, 11);
 
 export default function VerifyClient() {
-  const router = useRouter();
-  const params = useSearchParams();
-  const redirect = useMemo(() => params.get("redirect") || "/vitrine", [params]);
+  const search = useSearchParams();
+  const redirect = search.get("redirect") || "/anuncio/novo";
 
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
   const [step, setStep] = useState<"phone" | "code">("phone");
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [rawPhone, setRawPhone] = useState("");
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    // mantém UI que você já tem
-  }, []);
-
-  async function startOtp() {
-    setError(null);
-    const to = maskPhone(phone);
-    if (to.length < 10) {
-      setError("Preencha DD + celular (só números).");
+  async function handleStart() {
+    setMsg(null);
+    const digits = phoneMask(rawPhone);
+    if (digits.length < 10) {
+      setMsg("Número inválido.");
       return;
     }
-
-    const resp = await fetch("/api/otp/start", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: to }),
-      credentials: "same-origin",
-    });
-
-    const data = (await resp.json()) as ApiResp;
-    if (!resp.ok || !("ok" in data) || !data.ok) {
-      setError(data && "error" in data && data.error ? data.error : "Falha ao enviar código.");
-      return;
+    setLoading(true);
+    try {
+      const resp = await fetch("/api/otp/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ phone: digits }),
+      });
+      const data: StartResp = await resp.json();
+      if (!resp.ok || !data.ok) {
+        setMsg(data.error || `Falha ao enviar código (${data.status}).`);
+        return;
+      }
+      setSentTo(data.phoneE164);
+      setStep("code");
+      setMsg("Código enviado por SMS.");
+    } catch {
+      setMsg("Erro ao enviar código.");
+    } finally {
+      setLoading(false);
     }
-    setStep("code");
   }
 
-  async function verifyOtp() {
-    setError(null);
-    if (code.replace(/\D/g, "").length < 4) {
-      setError("Informe o código recebido.");
+  async function handleVerify() {
+    setMsg(null);
+    if (code.replace(/\D+/g, "").length < 4) {
+      setMsg("Digite o código recebido.");
       return;
     }
-
-    const resp = await fetch("/api/otp/verify", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone, code }),
-      credentials: "same-origin",
-    });
-
-    const data = (await resp.json()) as ApiResp;
-    if (!resp.ok || !("ok" in data) || !data.ok) {
-      setError(data && "error" in data && data.error ? data.error : "Código inválido ou expirado.");
+    if (!sentTo) {
+      setMsg("Telefone não confirmado para envio.");
       return;
     }
+    setLoading(true);
+    try {
+      const resp = await fetch("/api/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ phone: rawPhone, code }),
+      });
+      const data: VerifyResp = await resp.json();
 
-    // Cookie já foi gravado no response do /api/otp/verify.
-    // Agora navegamos para o destino (middleware não redireciona mais).
-    startTransition(() => {
-      router.replace(redirect);
-    });
+      if (!resp.ok || !data.ok) {
+        setMsg(data.error || `Código inválido (${data.status}).`);
+        return;
+      }
+
+      // Redireciono com page load completa para garantir o cookie
+      setTimeout(() => {
+        window.location.replace(redirect);
+      }, 120);
+    } catch {
+      setMsg("Falha ao verificar código.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  // ===== UI existente (mantida) =====
   return (
-    <div className="flex min-h-[70vh] items-center justify-center">
-      <div className="w-full max-w-xl rounded-2xl bg-neutral-900 p-8 shadow-2xl">
-        <h1 className="mb-2 text-3xl font-bold">Vamos começar!</h1>
-        <p className="mb-6 text-sm text-neutral-300">
-          Insira seu WhatsApp para receber o código.
-        </p>
+    <div className="min-h-[60vh] w-full flex items-center justify-center">
+      <div className="w-[680px] max-w-[92vw] bg-[#121212] border border-[#1f1f1f] rounded-xl shadow-2xl px-8 py-8">
+        <h1 className="text-2xl font-bold mb-2">Vamos começar!</h1>
+        <p className="text-sm text-neutral-300 mb-6">Insira seu WhatsApp para receber o código.</p>
 
         {step === "phone" && (
           <>
-            <label className="mb-2 block text-sm font-medium">Seu WhatsApp (só números)</label>
+            <label className="text-sm font-semibold">Seu WhatsApp (só números)</label>
             <input
+              className="mt-2 w-full rounded-md bg-[#1a1a1a] border border-[#2a2a2a] px-4 py-3 outline-none"
               inputMode="numeric"
-              className="mb-3 w-full rounded-lg border border-neutral-700 bg-neutral-800 px-4 py-3 outline-none"
               placeholder="DD + celular (ex.: 11999998888)"
-              value={phone}
-              onChange={(e) => setPhone(maskPhone(e.target.value))}
+              value={rawPhone}
+              onChange={(e) => setRawPhone(phoneMask(e.target.value))}
+              disabled={loading}
             />
-            <p className="mb-4 text-xs text-neutral-400">Não inclua +55, já colocamos automaticamente.</p>
-            {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
+            <p className="text-xs text-neutral-400 mt-2">Não inclua +55, já colocamos automaticamente.</p>
             <button
-              onClick={startOtp}
-              disabled={isPending}
-              className="w-full rounded-lg bg-emerald-700 px-4 py-3 font-medium hover:bg-emerald-600 disabled:opacity-60"
+              className="mt-6 w-full bg-green-700 hover:bg-green-800 text-white rounded-md py-3 font-semibold disabled:opacity-60"
+              onClick={handleStart}
+              disabled={loading}
             >
-              Enviar código
+              {loading ? "Enviando..." : "Enviar código"}
             </button>
           </>
         )}
 
         {step === "code" && (
           <>
-            <label className="mb-2 block text-sm font-medium">Código recebido por SMS</label>
+            <label className="text-sm font-semibold">Digite o código recebido</label>
             <input
+              className="mt-2 w-full rounded-md bg-[#1a1a1a] border border-[#2a2a2a] px-4 py-3 outline-none tracking-widest text-center"
               inputMode="numeric"
-              className="mb-3 w-full rounded-lg border border-neutral-700 bg-neutral-800 px-4 py-3 outline-none"
-              placeholder="Ex.: 123456"
+              placeholder="000000"
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onChange={(e) => setCode(e.target.value.replace(/\D+/g, "").slice(0, 6))}
+              disabled={loading}
             />
-            {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
-            <div className="flex gap-3">
-              <button
-                onClick={() => setStep("phone")}
-                className="w-1/3 rounded-lg border border-neutral-700 px-4 py-3"
-              >
-                Voltar
-              </button>
-              <button
-                onClick={verifyOtp}
-                disabled={isPending}
-                className="w-2/3 rounded-lg bg-emerald-700 px-4 py-3 font-medium hover:bg-emerald-600 disabled:opacity-60"
-              >
-                Confirmar código
-              </button>
-            </div>
+            <button
+              className="mt-6 w-full bg-green-700 hover:bg-green-800 text-white rounded-md py-3 font-semibold disabled:opacity-60"
+              onClick={handleVerify}
+              disabled={loading}
+            >
+              {loading ? "Verificando..." : "Confirmar código"}
+            </button>
+            <button
+              className="mt-3 w-full bg-transparent border border-[#2a2a2a] hover:bg-[#1a1a1a] text-white rounded-md py-3 font-medium disabled:opacity-60"
+              onClick={() => setStep("phone")}
+              disabled={loading}
+            >
+              Voltar e alterar número
+            </button>
           </>
         )}
+
+        {msg && <p className="mt-4 text-sm text-neutral-300">{msg}</p>}
       </div>
     </div>
   );
