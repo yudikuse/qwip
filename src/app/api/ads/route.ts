@@ -44,13 +44,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2) sessão (cookie assinado)
-  const rawSession = req.cookies.get("qwip_session")?.value || "";
-  const session = await verifySessionValue(rawSession);
-  if (!session.ok) {
-    return NextResponse.json({ ok: false, error: "Sessão inválida/expirada." }, { status: 401 });
-  }
-  const phoneCookie = session.claims.phone;
+  
+// 2) sessão via cookie (com narrowing de claims para o TS)
+const raw = req.cookies.get("qwip_session")?.value ?? null;
+const session = await verifySessionValue(raw);
+if (!session.ok || !session.claims) {
+  return NextResponse.json({ ok: false, error: "Sessão inválida/expirada." }, { status: 401 });
+}
+const { phone: phoneCookie } = session.claims;
+
 
   // 3) nonce/HMAC (proteção adicional por requisição)
   const nonce = req.headers.get("x-qwip-nonce") || "";
