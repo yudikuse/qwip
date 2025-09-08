@@ -5,7 +5,7 @@ import { checkOtpViaVerify } from "@/lib/twilio";
 import { getClientIP, limitByKey, checkCooldown, tooMany } from "@/lib/rate-limit";
 
 /**
- * Verifica o código OTP e grava o cookie de sessão telefônica.
+ * Valida o código OTP. Se aprovado, grava cookie visível (30 dias).
  * Espera: { phone | phoneE164 | to, code }
  */
 export async function POST(req: NextRequest) {
@@ -20,14 +20,12 @@ export async function POST(req: NextRequest) {
     const phoneRaw: string | undefined = body?.phone ?? body?.phoneE164 ?? body?.to;
     const code: string | undefined = body?.code;
     const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
-
     if (!e164 || !code) {
       return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
     }
 
+    // limites & cooldown
     const ip = getClientIP(req);
-
-    // Cooldown + rate limits
     {
       const c = checkCooldown(`otp:verify:${e164}`, 10);
       if (!c.ok) return tooMany("Aguarde antes de tentar verificar novamente.", c.retryAfterSec);
@@ -42,8 +40,14 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await checkOtpViaVerify(e164, code);
-    const approved = (result as any)?.status === "approved" || (result as any)?.approved === true;
+    if (!result.ok) {
+      return NextResponse.json(
+        { ok: false, error: result.error || "Falha ao verificar código." },
+        { status: 502 }
+      );
+    }
 
+    const approved = result.status === "approved" || result.approved === true;
     if (!approved) {
       return NextResponse.json(
         { ok: false, error: "Código inválido ou expirado." },
@@ -51,17 +55,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // cookie "visível" por 30 dias — sem HttpOnly
     const res = NextResponse.json({ ok: true, phoneE164: e164 });
-
-    // Cookie por 30 dias. HttpOnly (middleware lê; JS não precisa).
-    res.cookies.set("qwip_phone_e164", e164, {
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30,
-      sameSite: "lax",
-      secure: true,
-      httpOnly: true,
-    });
-
+    res.headers.set(
+      "Set-Cookie",
+      `qwip_phone_e164=${encodeURIComponent(e164)}; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax; Secure`
+    );
     return res;
   } catch (err) {
     console.error("[api/otp/verify]", err);
