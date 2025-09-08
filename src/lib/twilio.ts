@@ -1,68 +1,50 @@
 // src/lib/twilio.ts
 import twilio from "twilio";
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID || "";
-const authToken = process.env.TWILIO_AUTH_TOKEN || "";
-const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID || "";
+const {
+  TWILIO_ACCOUNT_SID = "",
+  TWILIO_AUTH_TOKEN = "",
+  TWILIO_VERIFY_SID = "",
+  OTP_CHANNEL = "sms", // "sms" ou "whatsapp"
+} = process.env;
 
-/**
- * Canal padrão:
- * - defina TWILIO_DEFAULT_CHANNEL = 'sms' ou 'whatsapp' no Vercel
- * - se não definir, cai para 'sms'
- */
-const envDefault = (process.env.TWILIO_DEFAULT_CHANNEL || "sms").toLowerCase();
-const defaultChannel: "sms" | "whatsapp" =
-  envDefault === "whatsapp" ? "whatsapp" : "sms";
+const client =
+  TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN
+    ? twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+    : null;
 
-// O client do Twilio só funciona no runtime Node (rotas /api/ com route.ts).
-const client = accountSid && authToken ? twilio(accountSid, authToken) : null;
+type StartResp =
+  | { sid: string; status: string }
+  | { ok: false; error: string };
+type CheckResp =
+  | { sid?: string; status?: string; approved?: boolean }
+  | { ok: false; error: string };
 
-function ensureConfig() {
-  if (!client || !verifyServiceSid) {
-    throw new Error(
-      "Twilio Verify não configurado. Defina TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN e TWILIO_VERIFY_SERVICE_SID."
-    );
+export async function startOtpViaVerify(toE164: string): Promise<StartResp> {
+  if (!client || !TWILIO_VERIFY_SID) {
+    // Modo sem Twilio (dev): finge envio
+    return { sid: "dev_sid", status: "pending" };
   }
+  const r = await client.verify.v2
+    .services(TWILIO_VERIFY_SID)
+    .verifications.create({
+      to: toE164,
+      channel: OTP_CHANNEL as "sms" | "whatsapp",
+    });
+  return { sid: r.sid, status: r.status };
 }
 
-/**
- * Dispara o envio do OTP via Twilio Verify.
- * @param toE164 Ex.: +5511999998888
- * @param channel 'sms' | 'whatsapp' (opcional, padrão vem de env)
- */
-export async function startOtpViaVerify(
-  toE164: string,
-  channel: "sms" | "whatsapp" = defaultChannel
-): Promise<boolean> {
-  try {
-    ensureConfig();
-    const r = await client!
-      .verify.v2.services(verifyServiceSid)
-      .verifications.create({ to: toE164, channel });
-    // status esperado: 'pending'
-    return !!r?.sid;
-  } catch (e) {
-    console.error("[twilio] startOtpViaVerify error:", e);
-    return false;
-  }
-}
-
-/**
- * Checa o código informado.
- * Retorna o objeto do Twilio com 'status' (aprovado = 'approved').
- */
 export async function checkOtpViaVerify(
   toE164: string,
   code: string
-): Promise<{ status?: string }> {
-  try {
-    ensureConfig();
-    const r = await client!
-      .verify.v2.services(verifyServiceSid)
-      .verificationChecks.create({ to: toE164, code });
-    return { status: r?.status };
-  } catch (e) {
-    console.error("[twilio] checkOtpViaVerify error:", e);
-    return { status: undefined };
+): Promise<CheckResp> {
+  if (!client || !TWILIO_VERIFY_SID) {
+    // Modo sem Twilio (dev): qualquer "000000" aprova
+    const approved = code === "000000";
+    return { status: approved ? "approved" : "pending", approved };
   }
+  const r = await client.verify.v2
+    .services(TWILIO_VERIFY_SID)
+    .verificationChecks.create({ to: toE164, code });
+  return { sid: r.sid, status: r.status, approved: r.status === "approved" };
 }
