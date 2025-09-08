@@ -2,48 +2,47 @@
 import { NextRequest, NextResponse } from "next/server";
 import { toE164BR } from "@/lib/phone";
 import { checkOtpViaVerify } from "@/lib/twilio";
-import { PHONE_COOKIE } from "@/lib/cookies";
+import { sign } from "crypto"; // substitua pelo seu JWT util se já tiver
 
-type VerifyResp =
-  | { ok: true; phoneE164: string }
-  | { ok: false; status: number; error?: string };
+// OBS: troque por sua geração de token real
+function makeSessionToken(e164: string) {
+  // Exemplo tosco: NÃO USE em produção. Troque por JWT/HMAC próprio.
+  // Aqui só para manter compatível com o cookie.
+  return Buffer.from(`ok:${e164}:${Date.now()}`).toString("base64url");
+}
 
 export async function POST(req: NextRequest) {
   try {
     const { phone, code } = await req.json();
     const e164 = toE164BR(phone);
-    if (!e164 || !code) {
-      return NextResponse.json(
-        { ok: false, status: 400, error: "Dados inválidos." } satisfies VerifyResp,
-        { status: 400 }
-      );
-    }
 
     const result = await checkOtpViaVerify(e164, code);
-    if (!result.ok || result.verifyStatus !== "approved") {
+    const approved = result?.status === "approved";
+
+    if (!approved) {
       return NextResponse.json(
-        { ok: false, status: 400, error: "Código inválido ou expirado." } satisfies VerifyResp,
+        { ok: false, error: "Código inválido ou expirado.", status: 400 },
         { status: 400 }
       );
     }
 
-    const res = NextResponse.json(
-      { ok: true, phoneE164: e164 } satisfies VerifyResp,
-      { status: 200 }
-    );
+    const token = makeSessionToken(e164);
 
-    res.cookies.set(PHONE_COOKIE, e164, {
+    const res = NextResponse.json({ ok: true, approved: true, status: 200 }, { status: 200 });
+    res.cookies.set({
+      name: "qwip_auth",
+      value: token,
       httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      secure: true,
       path: "/",
-      maxAge: 60 * 60 * 24 * 30,
+      maxAge: 60 * 60 * 24 * 30, // 30 dias
     });
 
     return res;
-  } catch {
+  } catch (e) {
     return NextResponse.json(
-      { ok: false, status: 500, error: "Erro ao verificar código." } satisfies VerifyResp,
+      { ok: false, error: "Erro ao validar código.", status: 500 },
       { status: 500 }
     );
   }
