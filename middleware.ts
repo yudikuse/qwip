@@ -6,7 +6,7 @@ const PROTECTED = ["/anuncio/novo"];
 export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
-  // Bypass para rotas técnicas
+  // Bypass rotas técnicas
   if (pathname.startsWith("/api")) return NextResponse.next();
   if (pathname.startsWith("/_next")) return NextResponse.next();
   if (pathname === "/verificar") return NextResponse.next();
@@ -21,7 +21,7 @@ export function middleware(req: NextRequest) {
   res.headers.set("X-Permitted-Cross-Domain-Policies", "none");
   res.headers.set("X-DNS-Prefetch-Control", "off");
 
-  // Proteção de páginas
+  // Proteção
   if (PROTECTED.some((p) => pathname.startsWith(p))) {
     const hasPhone = req.cookies.get("qwip_phone_e164")?.value;
     if (!hasPhone) {
@@ -34,6 +34,4 @@ export function middleware(req: NextRequest) {
   return res;
 }
 
-export const config = {
-  matcher: ["/:path*"],
-};
+export const config = { matcher: ["/:path*"] };
