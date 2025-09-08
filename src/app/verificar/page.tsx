@@ -1,4 +1,4 @@
-// src/app/verificar/page.tsx
+// Página que carrega o client sem mexer no layout global
 import { Suspense } from "react";
 import VerifyClient from "./verify-client";
 
