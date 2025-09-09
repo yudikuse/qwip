@@ -1,4 +1,7 @@
 // src/lib/ads-client.ts
+// Client para criar anúncio com proteção por NONCE.
+// Exporta tanto createAd quanto createAdSecure (alias para compat com page.tsx).
+
 export type CreatePayload = {
   title: string;
   description: string;
@@ -17,54 +20,44 @@ export type CreateAdResp =
   | { ok: true; status: number; data: { id: string } }
   | { ok: false; status: number; errorText: string; data?: any };
 
+async function fetchNonce(): Promise<string> {
+  const r = await fetch("/api/ads/nonce", {
+    method: "GET",
+    credentials: "include",
+    headers: { "Cache-Control": "no-store" },
+  });
+
+  let j: any = null;
+  try {
+    j = await r.json();
+  } catch {
+    // segue: podemos recuperar do header mesmo sem JSON
+  }
+
+  // aceita { ok:true, nonce } OU { ok:true, token } OU header
+  const ok = j?.ok === true || r.ok;
+  const headerNonce = r.headers.get("X-Qwip-Nonce") || r.headers.get("x-qwip-nonce");
+  const bodyNonce = j?.nonce || j?.token;
+
+  const nonce = bodyNonce || headerNonce || "";
+
+  if (!ok || !nonce) {
+    throw new Error(`nonce error: ${r.status} ${JSON.stringify(j)}`);
+  }
+  return String(nonce);
+}
+
 export async function createAd(payload: CreatePayload): Promise<CreateAdResp> {
   try {
-    // 1) Pega NONCE
-    const n = await fetch("/api/ads/nonce", {
-      method: "GET",
-      credentials: "include",
-      headers: { "Cache-Control": "no-store" },
-    });
+    const nonce = await fetchNonce();
 
-    let nJson: any = null;
-    try {
-      nJson = await n.json();
-    } catch {
-      // segue; podemos pegar do header
-    }
-
-    if (!n.ok || !nJson?.ok) {
-      return {
-        ok: false,
-        status: n.status,
-        data: nJson,
-        errorText: `nonce error: ${n.status} ${JSON.stringify(nJson)}`,
-      };
-    }
-
-    // aceita tanto 'nonce' quanto 'token' quanto o header
-    const nonce =
-      (nJson && (nJson.nonce || nJson.token)) ||
-      n.headers.get("X-Qwip-Nonce") ||
-      n.headers.get("x-qwip-nonce");
-
-    if (!nonce) {
-      return {
-        ok: false,
-        status: n.status,
-        data: nJson,
-        errorText: `nonce error: ${n.status} ${JSON.stringify(nJson)}`,
-      };
-    }
-
-    // 2) POST do anúncio usando o NONCE
     const r = await fetch("/api/ads", {
       method: "POST",
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
-        // Header name é case-insensitive; mantemos como o backend espera:
-        "X-QWIP-NONCE": String(nonce),
+        // Header é case-insensitive; usamos o nome esperado pelo backend
+        "X-QWIP-NONCE": nonce,
       },
       body: JSON.stringify(payload),
     });
@@ -80,8 +73,12 @@ export async function createAd(payload: CreatePayload): Promise<CreateAdResp> {
       };
     }
 
+    // backend deve devolver { ok:true, id: "<id>" }
     return { ok: true, status: r.status, data: { id: j.id } };
   } catch (e: any) {
     return { ok: false, status: 0, errorText: e?.message || "network error" };
   }
 }
+
+// Alias de compatibilidade com a página atual
+export const createAdSecure = createAd;
