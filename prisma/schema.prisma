@@ -17,12 +17,14 @@ datasource db {
 
 model Seller {
   id        String   @id @default(cuid())
-  name      String
-  phone     String
+  // Estes campos ficam OPCIONAIS para não quebrar as 3 linhas já existentes:
+  name      String?
+  phone     String?
   createdAt DateTime @default(now())
 
-  // Relacionamento (3 rows já existem segundo seus logs)
   ads       Ad[]
+
+  @@index([phone])
 }
 
 model Ad {
@@ -33,8 +35,7 @@ model Ad {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  // ===== Campos que JÁ EXISTEM no seu banco (pelos logs) =====
-  // >>> NÃO REMOVER <<<  (se remover, a Vercel vai tentar dropar e dar erro de data loss)
+  // ===== Campos que já existiam no seu banco =====
   city        String
   uf          String
   lat         Float
@@ -45,18 +46,18 @@ model Ad {
   expiresAt   DateTime?
   isActive    Boolean  @default(true)
 
-  // Relacionamento com Seller (já existe sellerId no seu banco)
+  // Relacionamento com Seller (já existia sellerId)
   sellerId   String?
   seller     Seller?  @relation(fields: [sellerId], references: [id])
 
-  // ===== NOVOS CAMPOS DE IMAGEM (opcionais para não quebrar os 25 registros existentes) =====
+  // ===== Novos campos de IMAGEM (opcionais) =====
   imageUrl     String?           // URL pública no storage (ex.: Vercel Blob)
   imageMime    String?           // ex.: "image/jpeg", "image/png"
   imageWidth   Int?
   imageHeight  Int?
   imageSha256  String?           // hash para dedupe/antiabuso
 
-  // Índices (opcionais, não quebram nada)
+  // Índices
   @@index([imageSha256])
   @@index([city, uf])
   @@index([isActive, expiresAt])
