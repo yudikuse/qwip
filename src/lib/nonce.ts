@@ -31,7 +31,18 @@ export type NonceClaims = {
 };
 
 // Define o cookie httpOnly com o token (sem expor dados sensíveis ao client)
-export function setNonceCookie(res: NextResponse, token: string, maxAgeSeconds = 60) {
+export function setNonceCookie(resOrToken: NextResponse | string, tokenMaybe?: string, maxAgeSeconds = 60) {
+  // Suporta ambos formatos:
+  //   setNonceCookie(res, token, maxAge)
+  //   setNonceCookie(token)  -> no-op (compatibilidade legada; o cookie será setado via jsonWithNonce)
+  if (typeof resOrToken === "string") {
+    // Chamadas antigas: não temos acesso ao Response aqui. Evitamos quebrar (no-op).
+    return;
+  }
+  const res = resOrToken as NextResponse;
+  const token = tokenMaybe ?? "";
+  if (!token) return;
+
   res.cookies.set(NONCE_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -97,4 +108,24 @@ export async function extractAndVerifyNonce(
 
   // (Opcional) checar ip/ua aqui; por compatibilidade, mantemos permissivo.
   return { ok: true, claims: v.claims as NonceClaims };
+}
+
+// ====== ALIASES de compatibilidade ======
+// Alguns trechos antigos chamam "generateNonceHex". Mantemos um alias
+// que simplesmente retorna o token atual (base64url).
+export async function generateNonceHex(
+  opts?: { ttlSeconds?: number; claims?: Partial<NonceClaims>; req?: NextRequest }
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const ttl = Math.max(10, Math.floor(opts?.ttlSeconds ?? 60));
+  const claims: NonceClaims = {
+    sub: opts?.claims?.sub ?? "generic",
+    path: opts?.claims?.path,
+    phone: opts?.claims?.phone,
+    ip: opts?.claims?.ip,
+    ua: opts?.claims?.ua,
+    iat: now,
+    exp: now + ttl,
+  };
+  return signToken(claims);
 }
