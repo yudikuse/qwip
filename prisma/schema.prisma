@@ -18,11 +18,9 @@ datasource db {
 model Seller {
   id        String   @id @default(cuid())
 
-  // Compatível com a coluna existente "phoneE164" no banco:
-  // - Mantém o nome "phone" no Prisma Client
-  // - Mapeado para a coluna real "phoneE164"
-  // - ÚNICO para suportar upsert by phone
-  phone     String?  @map("phoneE164") @unique
+  // Mapeado para a coluna existente "phoneE164" no banco
+  // (SEM @unique por enquanto para não travar deploy com dados duplicados)
+  phone     String?  @map("phoneE164")
 
   // Pode não existir no banco ainda — fica opcional para não quebrar linhas antigas
   name      String?
@@ -30,6 +28,9 @@ model Seller {
   createdAt DateTime @default(now())
 
   ads       Ad[]
+
+  // Índice simples ajuda performance sem travar deploy
+  @@index([phone])
 }
 
 model Ad {
