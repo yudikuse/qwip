@@ -1,47 +1,25 @@
-// src/app/api/nonce/route.ts
+// src/app/api/ads/nonce/route.ts
 import { NextResponse } from "next/server";
-import { randomBytes } from "crypto";
+import { generateNonceB64, setNonceCookie } from "@/lib/nonce";
 
 /**
- * Gera um nonce seguro, grava em cookie httpOnly
- * e retorna no corpo tanto em `token` quanto em `nonce`
- * (retrocompatibilidade com clients que esperam um dos nomes).
+ * Gera um nonce e grava em cookie HTTP-only.
+ * Responde com { ok:true, status:200, nonce, token } (ambos iguais)
+ * para compatibilidade com qualquer cliente existente.
  */
-function generateNonce(): string {
-  // 256 bits, URL-safe
-  return randomBytes(32).toString("base64url");
-}
-
-function buildResponse(nonce: string, status = 200) {
+function respondWithNonce(): NextResponse {
+  const nonce = generateNonceB64(); // 43 chars base64url sem padding
   const res = NextResponse.json(
-    {
-      ok: true,
-      status,
-      // retrocompatível: alguns clients consomem `token`,
-      // outros procuram `nonce`. Enviamos os dois.
-      token: nonce,
-      nonce,
-    },
-    { status },
+    { ok: true, status: 200, nonce, token: nonce },
+    { status: 200 },
   );
-
-  // cookie httpOnly com o mesmo valor — usado na validação server-side
-  res.cookies.set("nonce", nonce, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    // 5 minutos
-    maxAge: 60 * 5,
-  });
-
+  setNonceCookie(res, nonce);
   return res;
 }
 
 export async function GET() {
-  const nonce = generateNonce();
-  return buildResponse(nonce);
+  return respondWithNonce();
 }
 
-// alguns clients podem chamar via POST — tratamos igualmente
+// Permite POST também (alguns clientes chamam via POST)
 export const POST = GET;
