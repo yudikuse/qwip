@@ -1,17 +1,16 @@
 // src/app/api/ads/nonce/route.ts
 import { NextResponse } from "next/server";
-import { generateNonceB64, setNonceCookie } from "@/lib/nonce";
+import { generateNonceHex, setNonceCookie } from "@/lib/nonce";
 
 /**
- * Gera um nonce e grava em cookie HTTP-only.
- * Responde com { ok:true, status:200, nonce, token } (ambos iguais)
- * para compatibilidade com qualquer cliente existente.
+ * Gera nonce HEX (64 chars), grava em cookie httpOnly e devolve no payload.
+ * 'nonce' e 'token' vêm iguais por compatibilidade com o cliente.
  */
 function respondWithNonce(): NextResponse {
-  const nonce = generateNonceB64(); // 43 chars base64url sem padding
+  const nonce = generateNonceHex(); // 64 chars em hex
   const res = NextResponse.json(
     { ok: true, status: 200, nonce, token: nonce },
-    { status: 200 },
+    { status: 200 }
   );
   setNonceCookie(res, nonce);
   return res;
@@ -21,5 +20,4 @@ export async function GET() {
   return respondWithNonce();
 }
 
-// Permite POST também (alguns clientes chamam via POST)
 export const POST = GET;
