@@ -1,32 +1,46 @@
 // src/app/api/ads/nonce/route.ts
-import { NextResponse } from "next/server";
-import { generateNonceHex, setNonceCookie } from "@/lib/nonce";
+// Retorna um token curto (nonce) assinado para proteger o POST /api/ads.
+// Exige sessão válida (cookie HttpOnly). O cliente recebe o nonce em:
+//   Header: X-Qwip-Nonce
+//   Cookie: qwip_nonce_sig
 
-export async function GET() {
-  try {
-    const nonce = generateNonceHex();        // 64 chars HEX
-    const sig = cryptoSign(nonce);           // assinatura HMAC do nonce
-    setNonceCookie(sig);                      // guarda assinatura no cookie httpOnly
+import { NextRequest } from "next/server";
+import { verifySessionValue } from "@/lib/session";
+import { jsonWithNonce } from "@/lib/nonce";
 
-    // payload enxuto, sem dados sensíveis
-    return NextResponse.json({ ok: true, token: nonce }, { status: 200 });
-  } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: "Falha ao gerar nonce." },
-      { status: 500 }
+export const dynamic = "force-dynamic";
+
+function ipFrom(req: NextRequest) {
+  const xfwd = req.headers.get("x-forwarded-for");
+  return (xfwd?.split(",")[0] || "").trim() || "0.0.0.0";
+}
+
+export async function GET(req: NextRequest) {
+  // 1) Verifica sessão (cookie)
+  const raw = req.cookies.get("qwip_session")?.value ?? null;
+  const session = await verifySessionValue(raw);
+  if (!session.ok || !session.claims) {
+    return jsonWithNonce(
+      { ok: false, error: "Sessão inválida/expirada." },
+      { status: 401, req, claims: { sub: "ads", path: "/api/ads" } }
     );
   }
+
+  // 2) Emite nonce com claims úteis (phone/ip/ua) e TTL curto
+  const phone = session.claims.phone;
+  return jsonWithNonce(
+    { ok: true },
+    {
+      req,
+      ttlSeconds: 60,
+      claims: {
+        sub: "ads",
+        path: "/api/ads",
+        phone,
+        ip: ipFrom(req),
+        ua: req.headers.get("user-agent") || "",
+      },
+    }
+  );
 }
 
-// pequena ajuda local para não exportar sign direto do módulo
-import crypto from "crypto";
-function cryptoSign(nonce: string): string {
-  const secret =
-    process.env.QWIP_NONCE_SECRET ||
-    process.env.NEXTAUTH_SECRET ||
-    process.env.AUTH_SECRET ||
-    "";
-  const h = crypto.createHmac("sha256", secret);
-  h.update(nonce, "utf8");
-  return h.digest("hex");
-}
