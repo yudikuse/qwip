@@ -1,3 +1,16 @@
+// ===== Prisma Header =====
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"     // se você usa Supabase/Neon/Postgres
+  url      = env("DATABASE_URL")
+  // Se seu banco for MySQL/PlanetScale, troque: provider = "mysql"
+  // Se for SQLite local, troque: provider = "sqlite" e url = "file:./dev.db"
+}
+
+// ===== Models =====
 model Ad {
   id           String   @id @default(cuid())
   title        String
@@ -5,10 +18,6 @@ model Ad {
   priceCents   Int
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-
-  // Se você já tem relacionamento com usuário, mantenha como está:
-  // ownerId String?
-  // owner   User?    @relation(fields: [ownerId], references: [id])
 
   // === IMAGEM (persistida em storage) ===
   imageUrl     String            // URL pública no storage (ex.: Vercel Blob)
