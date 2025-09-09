@@ -9,7 +9,7 @@ import { moderateImageBase64 } from "@/lib/vision";
 
 /** ===== Config ===== */
 const EXPIRES_HOURS = 24;
-// se quiser bloquear quando a moderação falhar, defina SAFE_VISION_STRICT=true no ambiente
+// Para falhas do Vision: se quiser "fail-closed", defina SAFE_VISION_STRICT=true no ambiente
 const STRICT = process.env.SAFE_VISION_STRICT === "true";
 
 /** ===== Rate-limit (memória; troque por Redis/KV depois) ===== */
@@ -44,23 +44,20 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  
-// 2) sessão via cookie (com narrowing de claims para o TS)
-const raw = req.cookies.get("qwip_session")?.value ?? null;
-const session = await verifySessionValue(raw);
-if (!session.ok || !session.claims) {
-  return NextResponse.json({ ok: false, error: "Sessão inválida/expirada." }, { status: 401 });
-}
-const { phone: phoneCookie } = session.claims;
+  // 2) sessão
+  const raw = req.cookies.get("qwip_session")?.value ?? null;
+  const session = await verifySessionValue(raw);
+  if (!session.ok || !session.claims) {
+    return NextResponse.json({ ok: false, error: "Sessão inválida/expirada." }, { status: 401 });
+  }
+  const phoneCookie = session.claims.phone;
 
-
-  // 3) nonce/HMAC (proteção adicional por requisição)
+  // 3) nonce/HMAC (proteção por requisição)
   const nonce = req.headers.get("x-qwip-nonce") || "";
   const ua = req.headers.get("user-agent") || "";
   if (!nonce) {
     return NextResponse.json({ ok: false, error: "Requisição sem nonce." }, { status: 400 });
   }
-
   const ver = await verifyToken(nonce);
   if (!ver.ok) {
     return NextResponse.json({ ok: false, error: `Nonce inválido (${ver.reason}).` }, { status: 401 });
@@ -72,57 +69,52 @@ const { phone: phoneCookie } = session.claims;
 
   // 4) payload
   let json: any = {};
-  try {
-    json = await req.json();
-  } catch {
-    // continua com json vazio para cair nas validações abaixo
-  }
-
+  try { json = await req.json(); } catch {}
   const imageBase64 = String(json?.imageBase64 || "");
 
   const title = String(json?.title ?? "").trim();
   const description = String(json?.description ?? "").trim();
-  const priceCents = Number(json?.priceCents ?? 0) || 0;
+  const priceCents = Number.isFinite(json?.priceCents) ? Number(json.priceCents) : 0;
 
-  const city = String(json?.city ?? "").trim();
-  const uf = String(json?.uf ?? "").trim().toUpperCase();
-  const lat = Number(json?.lat ?? 0) || 0;
-  const lng = Number(json?.lng ?? 0) || 0;
-  const centerLat = Number(json?.centerLat ?? 0) || 0;
-  const centerLng = Number(json?.centerLng ?? 0) || 0;
-  const radiusKm = Number(json?.radiusKm ?? 0) || 0;
+  const city = json?.city ? String(json.city).trim() : null;
+  const uf = json?.uf ? String(json.uf).trim() : null;
+  const lat = json?.lat == null ? null : Number(json.lat);
+  const lng = json?.lng == null ? null : Number(json.lng);
+  const centerLat = json?.centerLat == null ? null : Number(json.centerLat);
+  const centerLng = json?.centerLng == null ? null : Number(json.centerLng);
+  const radiusKm = json?.radiusKm == null ? 5 : Math.max(1, Math.min(50, Number(json.radiusKm)));
 
-  // 5) validações simples
-  if (!title || title.length < 3 || title.length > 120) {
-    return NextResponse.json({ ok: false, error: "Título inválido." }, { status: 400 });
+  // 5) validações básicas
+  if (!title || !description || !priceCents || priceCents < 0) {
+    return NextResponse.json({ ok: false, error: "Dados obrigatórios inválidos." }, { status: 400 });
   }
-  if (description.length > 1000) {
-    return NextResponse.json({ ok: false, error: "Descrição muito longa." }, { status: 400 });
+  if (lat !== null && (lat < -90 || lat > 90)) {
+    return NextResponse.json({ ok: false, error: "Coordenadas inválidas." }, { status: 400 });
   }
-  if (!Number.isFinite(priceCents) || priceCents < 0 || priceCents > 99_999_99) {
-    return NextResponse.json({ ok: false, error: "Preço inválido." }, { status: 400 });
-  }
-  if (!city || uf.length !== 2) {
-    return NextResponse.json({ ok: false, error: "Localidade inválida." }, { status: 400 });
-  }
-  if (![lat, lng, centerLat, centerLng, radiusKm].every(Number.isFinite)) {
+  if (lng !== null && (lng < -180 || lng > 180)) {
     return NextResponse.json({ ok: false, error: "Coordenadas inválidas." }, { status: 400 });
   }
 
   // 6) moderação da imagem (quando enviada)
   if (imageBase64) {
     try {
-      const safe = await moderateImageBase64(imageBase64);
-      if (!safe && STRICT) {
-        return NextResponse.json({ ok: false, error: "Imagem reprovada pela moderação." }, { status: 400 });
+      const mod = await moderateImageBase64(imageBase64);
+      if (mod.blocked) {
+        // Retorno padronizado para o client
+        return NextResponse.json(
+          { ok: false, code: "image_blocked", reason: mod.reason ?? "blocked" },
+          { status: 422, headers: { "Cache-Control": "no-store" } }
+        );
       }
-      // se não for estrito, apenas logamos e seguimos
-      if (!safe) console.warn("[ads/moderation] imagem sinalizada, seguindo por não estrito");
     } catch (err) {
       console.error("[ads/moderation]", err);
       if (STRICT) {
-        return NextResponse.json({ ok: false, error: "Falha na moderação da imagem." }, { status: 400 });
+        return NextResponse.json(
+          { ok: false, code: "moderation_failed", error: "Falha na moderação da imagem." },
+          { status: 400, headers: { "Cache-Control": "no-store" } }
+        );
       }
+      // modo não-estrito: segue mesmo com falha de moderação
     }
   }
 
