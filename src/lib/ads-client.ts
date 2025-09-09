@@ -15,19 +15,25 @@ export type CreatePayload = {
 
 export type CreateAdResp =
   | { ok: true; status: number; data: { id: string } }
-  | { ok: false; status: number; data?: any; errorText?: string };
+  | { ok: false; status: number; errorText: string; data?: any };
 
-export async function createAdSecure(body: CreatePayload): Promise<CreateAdResp> {
+export async function createAd(payload: CreatePayload): Promise<CreateAdResp> {
   try {
-    // 1) Nonce
+    // 1) Pega NONCE
     const n = await fetch("/api/ads/nonce", {
       method: "GET",
       credentials: "include",
+      headers: { "Cache-Control": "no-store" },
     });
-    let nJson: any = null;
-    try { nJson = await n.json(); } catch {}
 
-    if (!n.ok || !nJson?.nonce) {
+    let nJson: any = null;
+    try {
+      nJson = await n.json();
+    } catch {
+      // segue; podemos pegar do header
+    }
+
+    if (!n.ok || !nJson?.ok) {
       return {
         ok: false,
         status: n.status,
@@ -36,19 +42,34 @@ export async function createAdSecure(body: CreatePayload): Promise<CreateAdResp>
       };
     }
 
-    // 2) POST do anúncio
+    // aceita tanto 'nonce' quanto 'token' quanto o header
+    const nonce =
+      (nJson && (nJson.nonce || nJson.token)) ||
+      n.headers.get("X-Qwip-Nonce") ||
+      n.headers.get("x-qwip-nonce");
+
+    if (!nonce) {
+      return {
+        ok: false,
+        status: n.status,
+        data: nJson,
+        errorText: `nonce error: ${n.status} ${JSON.stringify(nJson)}`,
+      };
+    }
+
+    // 2) POST do anúncio usando o NONCE
     const r = await fetch("/api/ads", {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
-        "X-QWIP-NONCE": String(nJson.nonce),
+        // Header name é case-insensitive; mantemos como o backend espera:
+        "X-QWIP-NONCE": String(nonce),
       },
-      credentials: "include",
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     });
 
-    let j: any = null;
-    try { j = await r.json(); } catch {}
+    const j = await r.json().catch(() => null);
 
     if (!r.ok || !j?.ok) {
       return {
