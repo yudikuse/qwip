@@ -9,10 +9,10 @@ import { moderateImageBase64 } from "@/lib/vision";
 
 /** ===== Config ===== */
 const EXPIRES_HOURS = 24;
-// Para falhas do Vision: se quiser "fail-closed", defina SAFE_VISION_STRICT=true no ambiente
+// Para falhas do Vision: se quiser "fail-closed", defina SAFE_VISION_STRICT=true
 const STRICT = process.env.SAFE_VISION_STRICT === "true";
 
-/** ===== Rate-limit (memória; troque por Redis/KV depois) ===== */
+/** ===== Rate-limit (em memória; substitua por Redis/KV depois) ===== */
 const buckets = new Map<string, { c: number; reset: number }>();
 function rateByKey(key: string, limit: number, windowSec: number) {
   const now = Date.now();
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   }
   const phoneCookie = session.claims.phone;
 
-  // 3) nonce/HMAC (proteção por requisição)
+  // 3) nonce/HMAC da requisição
   const nonce = req.headers.get("x-qwip-nonce") || "";
   const ua = req.headers.get("user-agent") || "";
   if (!nonce) {
@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
   // 4) payload
   let json: any = {};
   try { json = await req.json(); } catch {}
+
   const imageBase64 = String(json?.imageBase64 || "");
 
   const title = String(json?.title ?? "").trim();
@@ -78,21 +79,36 @@ export async function POST(req: NextRequest) {
 
   const city = json?.city ? String(json.city).trim() : null;
   const uf = json?.uf ? String(json.uf).trim() : null;
-  const lat = json?.lat == null ? null : Number(json.lat);
-  const lng = json?.lng == null ? null : Number(json.lng);
-  const centerLat = json?.centerLat == null ? null : Number(json.centerLat);
-  const centerLng = json?.centerLng == null ? null : Number(json.centerLng);
+
+  // >>> Campos de localização: obrigatórios (o seu Prisma exige number, não aceita null)
+  if (json?.lat == null || json?.lng == null || json?.centerLat == null || json?.centerLng == null) {
+    return NextResponse.json(
+      { ok: false, error: "Localização obrigatória (lat/lng/centerLat/centerLng)." },
+      { status: 400 }
+    );
+  }
+
+  const lat = Number(json.lat);
+  const lng = Number(json.lng);
+  const centerLat = Number(json.centerLat);
+  const centerLng = Number(json.centerLng);
   const radiusKm = json?.radiusKm == null ? 5 : Math.max(1, Math.min(50, Number(json.radiusKm)));
 
   // 5) validações básicas
   if (!title || !description || !priceCents || priceCents < 0) {
     return NextResponse.json({ ok: false, error: "Dados obrigatórios inválidos." }, { status: 400 });
   }
-  if (lat !== null && (lat < -90 || lat > 90)) {
-    return NextResponse.json({ ok: false, error: "Coordenadas inválidas." }, { status: 400 });
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+    return NextResponse.json({ ok: false, error: "Latitude inválida." }, { status: 400 });
   }
-  if (lng !== null && (lng < -180 || lng > 180)) {
-    return NextResponse.json({ ok: false, error: "Coordenadas inválidas." }, { status: 400 });
+  if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+    return NextResponse.json({ ok: false, error: "Longitude inválida." }, { status: 400 });
+  }
+  if (!Number.isFinite(centerLat) || centerLat < -90 || centerLat > 90) {
+    return NextResponse.json({ ok: false, error: "centerLat inválido." }, { status: 400 });
+  }
+  if (!Number.isFinite(centerLng) || centerLng < -180 || centerLng > 180) {
+    return NextResponse.json({ ok: false, error: "centerLng inválido." }, { status: 400 });
   }
 
   // 6) moderação da imagem (quando enviada)
@@ -100,7 +116,6 @@ export async function POST(req: NextRequest) {
     try {
       const mod = await moderateImageBase64(imageBase64);
       if (mod.blocked) {
-        // Retorno padronizado para o client
         return NextResponse.json(
           { ok: false, code: "image_blocked", reason: mod.reason ?? "blocked" },
           { status: 422, headers: { "Cache-Control": "no-store" } }
@@ -133,7 +148,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Falha ao registrar vendedor." }, { status: 500 });
   }
 
-  // 8) cria o anúncio
+  // 8) cria o anúncio (tudo como number — sem null)
   const expiresAt = new Date(Date.now() + EXPIRES_HOURS * 60 * 60 * 1000);
   try {
     const ad = await prisma.ad.create({
