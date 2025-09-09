@@ -18,18 +18,18 @@ datasource db {
 model Seller {
   id        String   @id @default(cuid())
 
-  // Mantemos compatibilidade com o banco:
-  // "phone" mapeado para a coluna já existente "phoneE164"
-  phone     String?  @map("phoneE164")
+  // Compatível com a coluna existente "phoneE164" no banco:
+  // - Mantém o nome "phone" no Prisma Client
+  // - Mapeado para a coluna real "phoneE164"
+  // - ÚNICO para suportar upsert by phone
+  phone     String?  @map("phoneE164") @unique
 
-  // "name" opcional (será coluna nova, sem quebrar dados existentes)
+  // Pode não existir no banco ainda — fica opcional para não quebrar linhas antigas
   name      String?
 
   createdAt DateTime @default(now())
 
   ads       Ad[]
-
-  @@index([phone])
 }
 
 model Ad {
@@ -40,7 +40,7 @@ model Ad {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  // ===== Campos que já EXISTEM no seu banco (não remover) =====
+  // ===== Campos existentes (não remover) =====
   city        String
   uf          String
   lat         Float
@@ -55,12 +55,12 @@ model Ad {
   sellerId   String?
   seller     Seller?  @relation(fields: [sellerId], references: [id])
 
-  // ===== NOVOS CAMPOS DE IMAGEM (opcionais p/ não quebrar) =====
+  // ===== Novos campos de IMAGEM (opcionais para não quebrar dados existentes) =====
   imageUrl     String?           // URL pública no storage (ex.: Vercel Blob)
   imageMime    String?           // ex.: "image/jpeg", "image/png"
   imageWidth   Int?
   imageHeight  Int?
-  imageSha256  String?           // hash p/ dedupe/antiabuso
+  imageSha256  String?           // hash para dedupe/antiabuso
 
   // Índices
   @@index([imageSha256])
