@@ -17,9 +17,14 @@ datasource db {
 
 model Seller {
   id        String   @id @default(cuid())
-  // Estes campos ficam OPCIONAIS para não quebrar as 3 linhas já existentes:
+
+  // Mantemos compatibilidade com o banco:
+  // "phone" mapeado para a coluna já existente "phoneE164"
+  phone     String?  @map("phoneE164")
+
+  // "name" opcional (será coluna nova, sem quebrar dados existentes)
   name      String?
-  phone     String?
+
   createdAt DateTime @default(now())
 
   ads       Ad[]
@@ -35,7 +40,7 @@ model Ad {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  // ===== Campos que já existiam no seu banco =====
+  // ===== Campos que já EXISTEM no seu banco (não remover) =====
   city        String
   uf          String
   lat         Float
@@ -46,16 +51,16 @@ model Ad {
   expiresAt   DateTime?
   isActive    Boolean  @default(true)
 
-  // Relacionamento com Seller (já existia sellerId)
+  // Relacionamento existente
   sellerId   String?
   seller     Seller?  @relation(fields: [sellerId], references: [id])
 
-  // ===== Novos campos de IMAGEM (opcionais) =====
+  // ===== NOVOS CAMPOS DE IMAGEM (opcionais p/ não quebrar) =====
   imageUrl     String?           // URL pública no storage (ex.: Vercel Blob)
   imageMime    String?           // ex.: "image/jpeg", "image/png"
   imageWidth   Int?
   imageHeight  Int?
-  imageSha256  String?           // hash para dedupe/antiabuso
+  imageSha256  String?           // hash p/ dedupe/antiabuso
 
   // Índices
   @@index([imageSha256])
