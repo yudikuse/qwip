@@ -3,7 +3,11 @@
 // Next.js 15 compatível: usa NextResponse.cookies.set (nada de cookies().set).
 
 import { NextRequest, NextResponse } from "next/server";
-import { signToken, verifyToken } from "@/lib/signing";
+import {
+  signToken,
+  verifyToken,
+  type Claims as SigningClaims,
+} from "@/lib/signing";
 
 export const NONCE_HEADER = "x-qwip-nonce";
 export const NONCE_COOKIE = "qwip_nonce_sig";
@@ -20,25 +24,20 @@ function uaFrom(req?: NextRequest): string {
 }
 
 // ===== Tipos =====
-export type NonceClaims = {
-  sub: string;    // ex.: "ads"
-  path?: string;  // ex.: "/api/ads"
-  phone?: string;
-  ip?: string;
-  ua?: string;
-  iat: number;    // epoch s
-  exp: number;    // epoch s
-};
+// Mantemos um alias local para facilitar reuso nos retornos
+export type NonceClaims = SigningClaims;
 
 // Define o cookie httpOnly com o token (sem expor dados sensíveis ao client)
-export function setNonceCookie(resOrToken: NextResponse | string, tokenMaybe?: string, maxAgeSeconds = 60) {
+export function setNonceCookie(
+  resOrToken: NextResponse | string,
+  tokenMaybe?: string,
+  maxAgeSeconds = 60
+) {
   // Suporta ambos formatos:
   //   setNonceCookie(res, token, maxAge)
-  //   setNonceCookie(token)  -> no-op (compatibilidade legada; o cookie será setado via jsonWithNonce)
-  if (typeof resOrToken === "string") {
-    // Chamadas antigas: não temos acesso ao Response aqui. Evitamos quebrar (no-op).
-    return;
-  }
+  //   setNonceCookie(token)  -> no-op (compat de chamadas antigas sem acesso ao Response)
+  if (typeof resOrToken === "string") return;
+
   const res = resOrToken as NextResponse;
   const token = tokenMaybe ?? "";
   if (!token) return;
@@ -58,17 +57,18 @@ export async function jsonWithNonce(
   opts?: {
     status?: number;
     headers?: Record<string, string>;
-    ttlSeconds?: number;            // padrão 60s
-    claims?: Partial<NonceClaims>;  // sub/path/phone
-    req?: NextRequest;              // para ip/ua
+    ttlSeconds?: number; // padrão 60s
+    claims?: Partial<SigningClaims>; // sub/path/phone/ip/ua/iat/exp
+    req?: NextRequest; // para ip/ua
   }
 ): Promise<NextResponse> {
   const now = Math.floor(Date.now() / 1000);
   const ttl = Math.max(10, Math.floor(opts?.ttlSeconds ?? 60));
 
-  const claims: NonceClaims = {
-    sub: opts?.claims?.sub ?? "generic",
-    path: opts?.claims?.path,
+  // >>> IMPORTANT: Claims compatíveis com lib/signing (sub literalmente "ads")
+  const claims: SigningClaims = {
+    sub: "ads",
+    path: opts?.claims?.path ?? "/api/ads",
     phone: opts?.claims?.phone,
     ip: opts?.claims?.ip ?? ipFrom(opts?.req),
     ua: opts?.claims?.ua ?? uaFrom(opts?.req),
@@ -111,21 +111,23 @@ export async function extractAndVerifyNonce(
 }
 
 // ====== ALIASES de compatibilidade ======
-// Alguns trechos antigos chamam "generateNonceHex". Mantemos um alias
-// que simplesmente retorna o token atual (base64url).
+// Algumas partes antigas chamam "generateNonceHex". Mantemos o alias
+// devolvendo o mesmo token (base64url) emitido por signToken/Claims "ads".
 export async function generateNonceHex(
-  opts?: { ttlSeconds?: number; claims?: Partial<NonceClaims>; req?: NextRequest }
+  opts?: { ttlSeconds?: number; claims?: Partial<SigningClaims>; req?: NextRequest }
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const ttl = Math.max(10, Math.floor(opts?.ttlSeconds ?? 60));
-  const claims: NonceClaims = {
-    sub: opts?.claims?.sub ?? "generic",
-    path: opts?.claims?.path,
+
+  const claims: SigningClaims = {
+    sub: "ads",
+    path: opts?.claims?.path ?? "/api/ads",
     phone: opts?.claims?.phone,
-    ip: opts?.claims?.ip,
-    ua: opts?.claims?.ua,
+    ip: opts?.claims?.ip ?? ipFrom(opts?.req),
+    ua: opts?.claims?.ua ?? uaFrom(opts?.req),
     iat: now,
     exp: now + ttl,
   };
+
   return signToken(claims);
 }
