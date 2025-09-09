@@ -1,51 +1,68 @@
 // src/lib/nonce.ts
-
+import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-/** Nome único do cookie usado no fluxo de publicação de anúncio */
-export const NONCE_COOKIE = "ad_nonce";
+export const NONCE_COOKIE = "qwip_n";
 
-/** Gera um nonce HEX de 64 caracteres (256 bits). */
+/** 32 bytes aleatórios -> HEX (64 chars) */
 export function generateNonceHex(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+  // Node (Vercel) tem 'crypto' nativo
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { randomBytes } = require("crypto") as { randomBytes: (n: number) => Buffer };
+  return randomBytes(32).toString("hex"); // 64 chars
 }
 
-/** Valida se a string está no formato de nonce HEX de 64 chars. */
-export function isValidHexNonce(nonce: string | undefined | null): boolean {
-  if (!nonce || typeof nonce !== "string") return false;
-  return /^[a-f0-9]{64}$/i.test(nonce);
+/** Regex de formato HEX (64 chars) */
+export function isValidNonceFormat(n: string): boolean {
+  return /^[a-f0-9]{64}$/i.test(n);
 }
 
-/**
- * Grava o nonce no cookie httpOnly/sameSite=lax.
- * `maxAge` padrão de 10 minutos.
- */
-export function setNonceCookie(
-  res: NextResponse,
-  nonce: string,
-  maxAgeSeconds = 60 * 10
-): void {
-  res.cookies.set({
-    name: NONCE_COOKIE,
-    value: nonce,
+/** Seta/atualiza o cookie httpOnly com o nonce (10 min de vida) */
+export function setNonceCookie(res: NextResponse, nonce: string) {
+  res.cookies.set(NONCE_COOKIE, nonce, {
     httpOnly: true,
-    secure: true,
     sameSite: "lax",
+    secure: true,
     path: "/",
-    maxAge: maxAgeSeconds,
+    maxAge: 60 * 10,
   });
 }
 
-/** Lê o nonce do cookie da requisição. */
-export function readNonceFromRequest(req: Request): string | undefined {
-  // Em Route Handler do Next, os cookies vêm via header "cookie".
-  const cookieHeader = req.headers.get("cookie") ?? "";
-  const parts = cookieHeader.split(/;\s*/);
-  for (const p of parts) {
-    const [k, ...rest] = p.split("=");
-    if (k === NONCE_COOKIE) return rest.join("=");
+/** Remove o cookie do nonce (consumo) */
+export function deleteNonceCookie(res: NextResponse) {
+  res.cookies.delete(NONCE_COOKIE);
+}
+
+/**
+ * Verifica o nonce *somente* pelo header 'x-qwip-nonce' e
+ * compara com o cookie httpOnly 'qwip_n'.
+ *
+ * Retorna:
+ *  - { ok: true }    -> válido (consuma o cookie com deleteNonceCookie(res))
+ *  - { ok: false, error, status }
+ */
+export function checkRequestNonce(req: NextRequest): { ok: true } | { ok: false; error: string; status: number } {
+  const supplied = (req.headers.get("x-qwip-nonce") || "").trim();
+  if (!isValidNonceFormat(supplied)) {
+    return { ok: false, error: "Nonce inválido (format).", status: 400 };
   }
-  return undefined;
+
+  const cookie = req.cookies.get(NONCE_COOKIE)?.value || "";
+  if (!cookie) {
+    return { ok: false, error: "Nonce ausente no cookie.", status: 400 };
+  }
+
+  if (supplied !== cookie) {
+    return { ok: false, error: "Nonce inválido (mismatch).", status: 400 };
+  }
+
+  return { ok: true };
+}
+
+/** Cria uma resposta JSON já setando o cookie do nonce */
+export function jsonWithNonce(payload: Record<string, unknown>) {
+  const nonce = generateNonceHex();
+  const res = NextResponse.json({ ...payload, token: nonce });
+  setNonceCookie(res, nonce);
+  return res;
 }
