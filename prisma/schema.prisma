@@ -4,10 +4,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"     // se você usa Supabase/Neon/Postgres
+  provider = "postgresql"
   url      = env("DATABASE_URL")
-  // Se seu banco for MySQL/PlanetScale, troque: provider = "mysql"
-  // Se for SQLite local, troque: provider = "sqlite" e url = "file:./dev.db"
 }
 
 // ===== Models =====
@@ -20,11 +18,11 @@ model Ad {
   updatedAt    DateTime @updatedAt
 
   // === IMAGEM (persistida em storage) ===
-  imageUrl     String            // URL pública no storage (ex.: Vercel Blob)
-  imageMime    String?           // ex.: "image/jpeg", "image/png"
-  imageWidth   Int?              // px (opcional)
-  imageHeight  Int?              // px (opcional)
-  imageSha256  String?           // hash para deduplicação/antiabuso
+  imageUrl     String?           // <- AGORA OPCIONAL
+  imageMime    String?
+  imageWidth   Int?
+  imageHeight  Int?
+  imageSha256  String?
 
   @@index([imageSha256])
 }
