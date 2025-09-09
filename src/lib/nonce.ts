@@ -1,12 +1,12 @@
 // src/lib/nonce.ts
 // Utilitários de NONCE (token curto assinado) para proteger mutações.
-// Next.js 15 compatível: usa NextResponse.cookies.set (nada de cookies().set).
+// Compatível com Next.js 15 e com src/lib/signing.ts (Claims estritos).
 
 import { NextRequest, NextResponse } from "next/server";
 import {
   signToken,
   verifyToken,
-  type Claims as SigningClaims,
+  type Claims as SigningClaims, // { sub: "ads"; path: "/api/ads"; phone: string; ip: string; ua: string; iat: number; exp: number }
 } from "@/lib/signing";
 
 export const NONCE_HEADER = "x-qwip-nonce";
@@ -24,10 +24,10 @@ function uaFrom(req?: NextRequest): string {
   return req.headers.get("user-agent") || "";
 }
 
-// ===== Tipos =====
+// Alias local (só para nome mais expressivo)
 export type NonceClaims = SigningClaims;
 
-// Define o cookie httpOnly com o token (sem expor dados sensíveis ao client)
+// Define o cookie httpOnly com o token
 export function setNonceCookie(
   resOrToken: NextResponse | string,
   tokenMaybe?: string,
@@ -35,7 +35,7 @@ export function setNonceCookie(
 ) {
   // Suporta ambos formatos:
   //   setNonceCookie(res, token, maxAge)
-  //   setNonceCookie(token)  -> no-op (compat de chamadas antigas sem acesso ao Response)
+  //   setNonceCookie(token) -> no-op (compat para chamadas antigas sem Response)
   if (typeof resOrToken === "string") return;
 
   const res = resOrToken as NextResponse;
@@ -51,21 +51,21 @@ export function setNonceCookie(
   });
 }
 
-// Retorna um JSON já com um novo nonce (em Header + Cookie).
+// Gera um NextResponse.json(body) com NONCE novo (Header + Cookie)
 export async function jsonWithNonce(
   body: unknown,
   opts?: {
     status?: number;
     headers?: Record<string, string>;
-    ttlSeconds?: number; // padrão 60s
-    claims?: Partial<SigningClaims>; // path/phone/ip/ua
-    req?: NextRequest; // para ip/ua
+    ttlSeconds?: number;           // padrão 60s
+    claims?: Partial<SigningClaims>; // path/phone/ip/ua (sub é sempre "ads")
+    req?: NextRequest;             // para ip/ua
   }
 ): Promise<NextResponse> {
   const now = Math.floor(Date.now() / 1000);
   const ttl = Math.max(10, Math.floor(opts?.ttlSeconds ?? 60));
 
-  // >>> IMPORTANT: Preenche todos os campos obrigatórios de Claims
+  // Preenche TODOS os campos exigidos por Claims
   const phone = opts?.claims?.phone ?? "";
   const path = opts?.claims?.path ?? DEFAULT_PATH;
   const ip = (opts?.claims?.ip ?? ipFrom(opts?.req)) || "0.0.0.0";
@@ -97,7 +97,7 @@ export async function jsonWithNonce(
   return res;
 }
 
-// Extrai e valida o nonce de Header OU Cookie (fallback)
+// Extrai e valida o NONCE de Header OU Cookie
 export async function extractAndVerifyNonce(
   req: NextRequest
 ): Promise<{ ok: boolean; claims?: NonceClaims; reason?: string }> {
@@ -109,13 +109,17 @@ export async function extractAndVerifyNonce(
   if (!token) return { ok: false, reason: "missing" };
 
   const v = await verifyToken(token);
-  if (!v.ok || !v.claims) return { ok: false, reason: v.reason || "invalid" };
 
-  // (Opcional) checar ip/ua aqui; por compatibilidade, mantemos permissivo.
-  return { ok: true, claims: v.claims as NonceClaims };
+  // Narrowing correto para o union de verifyToken:
+  if (v.ok) {
+    return { ok: true, claims: v.claims as NonceClaims };
+  } else {
+    return { ok: false, reason: v.reason };
+  }
 }
 
-// ====== ALIASES de compatibilidade ======
+// ====== ALIAS de compatibilidade ======
+// Alguns trechos antigos chamam "generateNonceHex".
 export async function generateNonceHex(
   opts?: { ttlSeconds?: number; claims?: Partial<SigningClaims>; req?: NextRequest }
 ): Promise<string> {
