@@ -1,107 +1,87 @@
 // src/lib/nonce.ts
-// Geração e validação de NONCE com assinatura HMAC guardada em cookie HTTP-only.
+// Utilitários de NONCE (token curto assinado) para proteger mutações.
+// Compatível com Next.js 15 (usa NextResponse.cookies.set, nada de cookies().set).
 
-import { cookies } from "next/headers";
-import crypto from "crypto";
+import { NextRequest, NextResponse } from "next/server";
+import { signToken, verifyToken } from "@/lib/signing";
 
-// Nome do cookie que guarda a assinatura do nonce (não o nonce em si)
-const COOKIE_NAME = "ad_sig";
-// Tempo de vida do nonce (segundos)
-const MAX_AGE = 10 * 60; // 10 min
+export const NONCE_HEADER = "x-qwip-nonce";
+export const NONCE_COOKIE = "qwip_nonce_sig";
 
-// Segredo para assinar o nonce (defina em Vercel env)
-function getSecret(): string {
-  const s =
-    process.env.QWIP_NONCE_SECRET ||
-    process.env.NEXTAUTH_SECRET ||
-    process.env.AUTH_SECRET;
-  if (!s) {
-    throw new Error(
-      "Falta definir QWIP_NONCE_SECRET (ou NEXTAUTH_SECRET) no ambiente."
-    );
-  }
-  return s;
+// ===== Helpers =====
+function ipFrom(req?: NextRequest): string {
+  if (!req) return "0.0.0.0";
+  const xfwd = req.headers.get("x-forwarded-for");
+  return (xfwd?.split(",")[0] || "").trim() || "0.0.0.0";
+}
+function uaFrom(req?: NextRequest): string {
+  if (!req) return "";
+  return req.headers.get("user-agent") || "";
 }
 
-// Gera 32 bytes aleatórios => hex (64 chars)
-export function generateNonceHex(): string {
-  return crypto.randomBytes(32).toString("hex");
-}
+// ===== Tipos =====
+export type NonceClaims = {
+  sub: string;    // ex.: "ads"
+  path?: string;  // ex.: "/api/ads"
+  phone?: string;
+  ip?: string;
+  ua?: string;
+  iat: number;    // epoch s
+  exp: number;    // epoch s
+};
 
-// Assina o nonce com HMAC-SHA256 => hex
-function signNonceHex(nonceHex: string): string {
-  const h = crypto.createHmac("sha256", getSecret());
-  h.update(nonceHex, "utf8");
-  return h.digest("hex");
-}
-
-// Seta o cookie httpOnly com a assinatura (não expomos a assinatura ao cliente)
-export function setNonceCookie(signatureHex: string) {
-  cookies().set({
-    name: COOKIE_NAME,
-    value: signatureHex,
+// Define o cookie httpOnly com a assinatura (sem expor ao client)
+export function setNonceCookie(res: NextResponse, signature: string, maxAgeSeconds = 60) {
+  res.cookies.set(NONCE_COOKIE, signature, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    secure: true,
     path: "/",
-    maxAge: MAX_AGE,
+    maxAge: maxAgeSeconds,
   });
 }
 
-// Limpa o cookie (após uso ou se inválido)
-export function clearNonceCookie() {
-  cookies().set({
-    name: COOKIE_NAME,
-    value: "",
-    httpOnly: true,
-    sameSite: "lax",
-    secure: true,
-    path: "/",
-    maxAge: 0,
+// Retorna um NextResponse.json(body) já com um novo nonce no Header + Cookie.
+// Uso típico em rotas que devolvem um payload e já querem o nonce para a próxima mutação.
+export async function jsonWithNonce(
+  body: unknown,
+  opts?: {
+    status?: number;
+    headers?: Record<string, string>;
+    ttlSeconds?: number;            // padrão: 60s
+    claims?: Partial<NonceClaims>;  // sub/path/phone, etc.
+    req?: NextRequest;              // opcional: para ip/ua
+  }
+): Promise<NextResponse> {
+  const now = Math.floor(Date.now() / 1000);
+  const ttl = Math.max(10, Math.floor(opts?.ttlSeconds ?? 60));
+
+  const claims: NonceClaims = {
+    sub: opts?.claims?.sub ?? "generic",
+    path: opts?.claims?.path,
+    phone: opts?.claims?.phone,
+    ip: opts?.claims?.ip ?? ipFrom(opts?.req),
+    ua: opts?.claims?.ua ?? uaFrom(opts?.req),
+    iat: now,
+    exp: now + ttl,
+  };
+
+  const token = await signToken(claims);
+
+  const res = NextResponse.json(body, {
+    status: opts?.status ?? 200,
+    headers: {
+      "Cache-Control": "no-store",
+      ...(opts?.headers ?? {}),
+    },
   });
+
+  // Anexa tanto em header quanto em cookie (compatibilidade com chamadas existentes)
+  res.headers.set("X-Qwip-Nonce", token);
+  setNonceCookie(res, token, ttl);
+
+  return res;
 }
 
-// Valida formato do nonce (64 hex)
-function isValidFormat(nonceHex: string): boolean {
-  return /^[a-f0-9]{64}$/.test(nonceHex);
-}
-
-// Valida o nonce recebido no header "X-AD-Nonce" contra a assinatura do cookie.
-// Retorna { ok: true } quando válido; caso contrário retorna um objeto com erro padronizado.
-export function validateNonceFromHeaders(
-  headerValue: string | null | undefined
-):
-  | { ok: true }
-  | { ok: false; status: number; error: string } {
-  const nonce = (headerValue || "").trim();
-
-  if (!nonce) {
-    return { ok: false, status: 400, error: "Nonce ausente." };
-  }
-  if (!isValidFormat(nonce)) {
-    return { ok: false, status: 400, error: "Nonce inválido (format)." };
-  }
-
-  const sigCookie = cookies().get(COOKIE_NAME)?.value || "";
-  if (!sigCookie) {
-    return { ok: false, status: 419, error: "Nonce ausente/expirado." };
-  }
-
-  const expectedSig = signNonceHex(nonce);
-
-  // comparação com constante de tempo
-  const a = Buffer.from(expectedSig, "hex");
-  const b = Buffer.from(sigCookie, "hex");
-  const valid =
-    a.length === b.length && crypto.timingSafeEqual ? crypto.timingSafeEqual(a, b) : expectedSig === sigCookie;
-
-  if (!valid) {
-    // invalida imediatamente
-    clearNonceCookie();
-    return { ok: false, status: 401, error: "Nonce inválido (signature)." };
-  }
-
-  // single-use: invalida após validar
-  clearNonceCookie();
-  return { ok: true };
-}
+// Extrai e valida o nonce de Header OU Cookie (fallback)
+export async fu
