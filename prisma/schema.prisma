@@ -1,50 +1,21 @@
-// prisma/schema.prisma
-generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-model Seller {
-  id         String   @id @default(cuid())
-  phoneE164  String   @unique
-  createdAt  DateTime @default(now())
-  ads        Ad[]
-}
-
 model Ad {
-  id         String   @id @default(cuid())
-  title      String
-  description String
+  id           String   @id @default(cuid())
+  title        String
+  description  String
+  priceCents   Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  // preço em centavos (ex.: 1999 = R$ 19,99)
-  priceCents Int
+  // Se você já tem relacionamento com usuário, mantenha como está:
+  // ownerId String?
+  // owner   User?    @relation(fields: [ownerId], references: [id])
 
-  city       String?
-  uf         String?
+  // === IMAGEM (persistida em storage) ===
+  imageUrl     String            // URL pública no storage (ex.: Vercel Blob)
+  imageMime    String?           // ex.: "image/jpeg", "image/png"
+  imageWidth   Int?              // px (opcional)
+  imageHeight  Int?              // px (opcional)
+  imageSha256  String?           // hash para deduplicação/antiabuso
 
-  // ponto escolhido pelo usuário
-  lat        Float
-  lng        Float
-
-  // redundante para filtros/índices futuros
-  centerLat  Float
-  centerLng  Float
-
-  radiusKm   Int
-
-  expiresAt  DateTime
-  isActive   Boolean  @default(true)
-
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  sellerId   String
-  seller     Seller   @relation(fields: [sellerId], references: [id])
-
-  @@index([sellerId])
-  @@index([expiresAt])
+  @@index([imageSha256])
 }
