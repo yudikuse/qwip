@@ -2,9 +2,16 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request) {
   try {
-    const { id } = params;
+    // Extrai o id do path: /api/ads/<id>
+    const url = new URL(req.url);
+    const segments = url.pathname.split('/').filter(Boolean);
+    const id = segments[segments.length - 1];
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID ausente na URL.' }, { status: 400 });
+    }
 
     const ad = await prisma.ad.findUnique({
       where: { id },
