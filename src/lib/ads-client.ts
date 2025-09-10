@@ -1,64 +1,56 @@
-'use client';
+// src/lib/ads-client.ts
 
-/**
- * Payload que a página /anuncio/novo envia para a API.
- * Ajuste os campos se no seu formulário tiverem nomes diferentes.
- */
 export type CreatePayload = {
+  // dados obrigatórios do anúncio
   title: string;
   description: string;
   priceCents: number;
+
+  // localização mínima
   city: string;
   uf: string;
   lat: number;
   lng: number;
-  radiusKm: number;
-  imageBase64: string; // data sem prefixo; apenas base64 da imagem
-  nonce: string;       // nonce anti-CSRF que você já gera no cliente
+
+  // alcance / área - opcionais (o server pode derivar/validar)
+  radiusKm?: number;
+  centerLat?: number;
+  centerLng?: number;
+
+  // imagem vai em base64 para moderação no server
+  imageBase64: string;
+
+  // metadados de imagem opcionais (o server pode preencher/validar)
+  imageMime?: string;
+  imageWidth?: number;
+  imageHeight?: number;
 };
 
 /**
- * Resultado padronizado (estilo Response) para a UI não quebrar.
+ * Envia o anúncio para a API. O server:
+ *  - modera a imagem
+ *  - salva a imagem no storage
+ *  - grava o Ad no banco
+ * Retorna: { id: string }
  */
-export type CreateResult = {
-  ok: boolean;
-  status: number;
-  data?: { id: string };
-  errorText?: string;
-};
+export async function createAdSecure(payload: CreatePayload): Promise<{ id: string }> {
+  const res = await fetch("/api/ads", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 
-/**
- * Chama a API /api/ads e devolve um objeto padronizado.
- * A UI pode checar res.ok, res.status, res.data?.id, res.errorText.
- */
-export async function createAdSecure(payload: CreatePayload): Promise<CreateResult> {
-  try {
-    const res = await fetch('/api/ads', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    // tenta ler JSON; se não for JSON, tenta texto
-    const isJson = (res.headers.get('content-type') || '').includes('application/json');
-    let body: any = null;
+  if (!res.ok) {
+    // tenta extrair um texto de erro útil; se não der, retorna status
+    let detail = "";
     try {
-      body = isJson ? await res.json() : await res.text();
+      detail = await res.text();
     } catch {
-      body = null;
+      /* ignore */
     }
-
-    if (!res.ok) {
-      const msg =
-        (body && (body.error || body.message)) ||
-        res.statusText ||
-        'Erro desconhecido';
-      return { ok: false, status: res.status, errorText: msg };
-    }
-
-    const id: string | undefined = body && body.id ? String(body.id) : undefined;
-    return { ok: true, status: res.status, data: id ? { id } : undefined };
-  } catch (err: any) {
-    return { ok: false, status: 0, errorText: err?.message || 'network-error' };
+    throw new Error(`Falha ao criar anúncio (status ${res.status})${detail ? `: ${detail}` : ""}`);
   }
+
+  // A rota retorna { id: string }
+  return res.json() as Promise<{ id: string }>;
 }
