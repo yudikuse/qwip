@@ -4,13 +4,12 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { createAdSecureForm, type CreateFields } from "@/lib/ads-client";
+import { createAdSecureForm } from "@/lib/ads-client"; // <- troca aqui
 
 type LatLng = { lat: number; lng: number };
 const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
 
 const LIMITS = { minRadius: 1, maxRadius: 50 } as const;
-const MAX_UPLOAD_BYTES = 3 * 1024 * 1024; // 3MB (folga para o limite da função)
 
 const STATE_TO_UF: Record<string, string> = {
   Acre: "AC", Alagoas: "AL", Amapá: "AP", Amazonas: "AM",
@@ -22,6 +21,7 @@ const STATE_TO_UF: Record<string, string> = {
   "São Paulo": "SP", Sergipe: "SE", Tocantins: "TO",
 };
 
+// ===== Máscara de preço (R$) =====
 const MAX_INT_DIGITS = 12;
 function formatIntWithDots(intDigits: string) {
   const clean = intDigits.replace(/\D/g, "") || "0";
@@ -32,6 +32,7 @@ function clampDigits(s: string, max: number) {
 }
 
 export default function NovaPaginaAnuncio() {
+  // Guard: precisa do cookie de telefone verificado
   useEffect(() => {
     try {
       const has = document.cookie.split("; ").some((c) => c.startsWith("qwip_phone_e164="));
@@ -42,10 +43,12 @@ export default function NovaPaginaAnuncio() {
     } catch {}
   }, []);
 
+  // Form
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
 
+  // Máscara
   const [intDigits, setIntDigits] = useState<string>("");
   const [centDigits, setCentDigits] = useState<string>("");
   const [editingCents, setEditingCents] = useState<boolean>(false);
@@ -62,6 +65,7 @@ export default function NovaPaginaAnuncio() {
     return reais * 100 + cents;
   }, [intDigits, centDigits]);
 
+  // Localização
   const [coords, setCoords] = useState<LatLng | null>(null);
   const [cep, setCep] = useState("");
   const [geoDenied, setGeoDenied] = useState(false);
@@ -72,6 +76,7 @@ export default function NovaPaginaAnuncio() {
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
 
+  // GPS
   const askGeolocation = () => {
     if (!("geolocation" in navigator)) return;
     setTriedGeo(true);
@@ -80,11 +85,14 @@ export default function NovaPaginaAnuncio() {
         setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setGeoDenied(false);
       },
-      (err) => { if (err?.code === 1) setGeoDenied(true); },
+      (err) => {
+        if (err?.code === 1) setGeoDenied(true);
+      },
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
 
+  // Reverse geocode
   useEffect(() => {
     let cancel = false;
     (async () => {
@@ -98,14 +106,21 @@ export default function NovaPaginaAnuncio() {
         if (cancel) return;
 
         const nomeCidade =
-          data?.address?.city || data?.address?.town || data?.address?.village || data?.address?.suburb || "Atual";
+          data?.address?.city ||
+          data?.address?.town ||
+          data?.address?.village ||
+          data?.address?.suburb ||
+          "Atual";
 
         const iso: string | undefined =
-          data?.address?.["ISO3166-2-lvl4"] || data?.address?.["ISO3166-2-lvl3"] || data?.address?.["ISO3166-2-lvl2"];
+          data?.address?.["ISO3166-2-lvl4"] ||
+          data?.address?.["ISO3166-2-lvl3"] ||
+          data?.address?.["ISO3166-2-lvl2"];
 
         let ufGuess = "";
         if (typeof iso === "string" && iso.startsWith("BR-")) ufGuess = iso.slice(3);
-        else if (data?.address?.state && STATE_TO_UF[data.address.state]) ufGuess = STATE_TO_UF[data.address.state];
+        else if (data?.address?.state && STATE_TO_UF[data.address.state])
+          ufGuess = STATE_TO_UF[data.address.state];
 
         setCity(nomeCidade);
         setUF(ufGuess || "");
@@ -117,9 +132,14 @@ export default function NovaPaginaAnuncio() {
     return () => { cancel = true; };
   }, [coords]);
 
-  async function locateByCEP() {
+  // CEP → coords
+  const locateByCEP = async () => {
     const digits = (cep || "").replace(/\D/g, "");
-    if (digits.length !== 8) { alert("Informe um CEP válido (8 dígitos)."); return; }
+    if (digits.length !== 8) {
+      alert("Informe um CEP válido (8 dígitos).");
+      return;
+    }
+
     try {
       const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${digits}`, { cache: "no-store" });
       if (r.ok) {
@@ -132,6 +152,7 @@ export default function NovaPaginaAnuncio() {
         }
       }
     } catch {}
+
     try {
       const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`, { cache: "no-store" });
       if (r.ok) {
@@ -158,6 +179,7 @@ export default function NovaPaginaAnuncio() {
         }
       }
     } catch {}
+
     try {
       const n2 = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&country=BR&postalcode=${encodeURIComponent(digits)}&limit=1`,
@@ -183,11 +205,13 @@ export default function NovaPaginaAnuncio() {
         }
       }
     } catch {}
+
     alert("CEP não encontrado. Tente outro CEP ou use “Usar minha localização”.");
-  }
+  };
 
   const showCEP = geoDenied || (triedGeo && !coords);
 
+  // Máscara handlers
   function handlePriceKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     const k = e.key;
     if (k === "Tab") return;
@@ -205,6 +229,7 @@ export default function NovaPaginaAnuncio() {
     }
     e.preventDefault();
   }
+
   function handlePricePaste(e: React.ClipboardEvent<HTMLInputElement>) {
     const raw = e.clipboardData.getData("text") || "";
     const normalized = raw.replace(/\s+/g, "").replace(/\./g, "").replace(",", ".");
@@ -215,39 +240,48 @@ export default function NovaPaginaAnuncio() {
     e.preventDefault();
   }
 
+  // Só habilita publicar com localização válida
   const canPublish = Boolean(file && title.trim() && priceCents > 0 && desc.trim() && coords);
 
+  // Publicar (via FormData para evitar 413 e alinhar com ads-client)
   const publish = async () => {
     try {
       if (!file) { alert("Selecione uma imagem."); return; }
       if (!file.type.startsWith("image/")) { alert("Arquivo inválido. Envie uma imagem."); return; }
-      if (file.size > MAX_UPLOAD_BYTES) { alert("Imagem muito grande (máx. 3MB)."); return; }
       if (!coords) { alert("Defina a localização (GPS ou CEP)."); return; }
 
-      const fields: CreateFields = {
-        title: title.trim(),
-        description: desc.trim(),
-        priceCents,
-        city,
-        uf,
-        lat: coords.lat,
-        lng: coords.lng,
-        centerLat: coords.lat,
-        centerLng: coords.lng,
-        radiusKm: radius,
-      };
+      // 4MB está coerente com o limite configurado no backend
+      const MAX_BYTES = 4 * 1024 * 1024;
+      if (file.size > MAX_BYTES) { alert("Imagem muito grande (máx. 4MB)."); return; }
 
-      const res = await createAdSecureForm(fields, file);
+      const form = new FormData();
+      form.append("title", title.trim());
+      form.append("description", desc.trim());
+      form.append("priceCents", String(priceCents));
+      form.append("city", city);
+      form.append("uf", uf);
+      form.append("lat", String(coords.lat));
+      form.append("lng", String(coords.lng));
+      form.append("radiusKm", String(radius));
+      form.append("image", file, file.name); // <- envia o arquivo binário
+
+      const res = await createAdSecureForm(form);
 
       if (!res.ok) {
         const status = res.status;
+        const data = (res as any).data;
+        const errorText = (res as any).errorText as string | undefined;
+
         const msg =
-          res.errorText ||
+          (data && (data.error || data.message)) ||
+          errorText ||
           (status === 400 && "Dados inválidos.") ||
           (status === 401 && "Sessão expirada. Verifique seu telefone.") ||
-          (status === 413 && "Imagem muito grande para envio.") ||
+          (status === 413 && "Arquivo muito grande para envio.") ||
           "Falha ao criar anúncio.";
-        alert(`Falha (${status}) ao criar anúncio${msg ? `: ${msg}` : ""}`);
+
+        alert(msg);
+
         if (status === 401) {
           const current = window.location.pathname + window.location.search;
           window.location.replace(`/verificar?redirect=${encodeURIComponent(current)}`);
@@ -273,6 +307,7 @@ export default function NovaPaginaAnuncio() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+          {/* FORM */}
           <div className="rounded-2xl border border-white/10 bg-card p-5">
             <label className="block text-sm font-medium">
               Foto do produto <span className="text-emerald-400">*</span>
