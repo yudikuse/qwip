@@ -99,34 +99,43 @@ export async function POST(req: Request) {
       image.type === "image/png"  ? "png" :
       image.type === "image/webp" ? "webp" : "bin";
 
-    // 6) Upload para Vercel Blob (precisa BLOB_READ_WRITE_TOKEN configurado)
-    const blobPath = `ads/${sha}.${ext}`;
-    const uploaded = await put(blobPath, buf, {
-      access: "public",
-      contentType: image.type,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-    });
+// 6) Upload no Vercel Blob (com proteção)
+let putRes;
+try {
+  const blobPath = `ads/${sha}.${ext}`;
+  putRes = await put(blobPath, buf, {
+    access: "public",
+    contentType: image.type,
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+  });
+} catch (err: any) {
+  console.error("Falha no upload para o Blob:", err);
+  return NextResponse.json(
+    { error: "Imagem rejeitada ou inválida (não foi salva)." },
+    { status: 400 }
+  );
+}
 
-    // 7) Persistência no banco
-    const ad = await prisma.ad.create({
-      data: {
-        title,
-        description,
-        priceCents,
-        city,
-        uf,
-        lat,
-        lng,
-        centerLat: lat, // por enquanto, mesmo ponto
-        centerLng: lng,
-        radiusKm,
-        imageUrl: uploaded.url,
-        imageMime: image.type,
-        imageSha256: sha,
-        // sellerId: null (a definir no futuro)
-      },
-      select: { id: true },
-    });
+// 7) Só chega aqui se upload foi OK
+const ad = await prisma.ad.create({
+  data: {
+    title,
+    description,
+    priceCents,
+    city,
+    uf,
+    lat,
+    lng,
+    centerLat: lat,
+    centerLng: lng,
+    radiusKm,
+    imageUrl: putRes.url,
+    imageMime: image.type,
+    imageSha256: sha,
+  },
+  select: { id: true },
+});
+
 
     // 8) Resposta
     return NextResponse.json({ id: ad.id }, { status: 201 });
