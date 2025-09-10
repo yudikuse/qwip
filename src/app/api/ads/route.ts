@@ -6,7 +6,7 @@ import { putImage } from '@/lib/storage';
 // =======================
 // Moderação (Google Vision)
 // =======================
-import vision from '@google-cloud/vision';
+import * as vision from '@google-cloud/vision';
 
 // Map de likelihood para número
 const likelihoodScore: Record<string, number> = {
@@ -31,7 +31,7 @@ async function moderateWithVisionOrThrow(imageBase64: string) {
   let client: vision.ImageAnnotatorClient;
   try {
     client = new vision.ImageAnnotatorClient();
-  } catch (e) {
+  } catch {
     // Se faltar configuração do Vision, falamos claramente
     throw new Error('Configuração do Google Vision ausente ou inválida.');
   }
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
       priceCents,
       imageBase64,
 
-      // obrigatórios no seu Ad
+      // obrigatórios no seu Ad (schema)
       city,
       uf,
       lat,
