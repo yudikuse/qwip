@@ -1,5 +1,5 @@
 // src/lib/ads-client.ts
-export type CreatePayload = {
+export type CreateFields = {
   title: string;
   description: string;
   priceCents: number;
@@ -7,71 +7,48 @@ export type CreatePayload = {
   uf: string;
   lat: number;
   lng: number;
-
-  // Campos que o seu form já envia e que também aparecem no registro do anúncio:
   centerLat: number;
   centerLng: number;
   radiusKm: number;
-
-  // imagem inline (Base64 sem prefixo data:)
-  imageBase64: string;
-
-  // opcional: mime, se quiser forçar
-  imageMime?: string;
 };
 
-// Resposta “padrão” para o app todo
-export type ClientResult<T> =
-  | { ok: true; status: number; data: T }
+export type CreateResponse =
+  | { ok: true; status: number; data: { id: string } }
   | { ok: false; status: number; errorText?: string; data?: any };
 
-export async function createAdSecure(
-  payload: CreatePayload
-): Promise<ClientResult<{ id: string }>> {
-  try {
-    const res = await fetch("/api/ads", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      // IMPORTANTÍSSIMO: mantenha os cookies (telefone verificado etc.)
-      credentials: "include",
-      body: JSON.stringify(payload),
-    });
+function toQuery(base: string) {
+  // útil quando precisarmos adicionar query no futuro
+  return base;
+}
 
-    // Tenta decodificar JSON (pode vir erro estruturado do route handler)
-    let data: any = null;
-    try {
-      data = await res.json();
-    } catch {
-      // pode ser vazio
-      data = null;
-    }
+export async function createAdSecureForm(
+  fields: CreateFields,
+  file: File
+): Promise<CreateResponse> {
+  const fd = new FormData();
+  fd.append("title", fields.title);
+  fd.append("description", fields.description);
+  fd.append("priceCents", String(fields.priceCents));
+  fd.append("city", fields.city);
+  fd.append("uf", fields.uf);
+  fd.append("lat", String(fields.lat));
+  fd.append("lng", String(fields.lng));
+  fd.append("centerLat", String(fields.centerLat));
+  fd.append("centerLng", String(fields.centerLng));
+  fd.append("radiusKm", String(fields.radiusKm));
+  fd.append("image", file, file.name);
 
-    if (!res.ok) {
-      const msg =
-        (data && (data.error || data.message)) ||
-        `Falha (${res.status}) ao criar anúncio`;
-      return { ok: false, status: res.status, errorText: msg, data };
-    }
+  const res = await fetch(toQuery("/api/ads"), {
+    method: "POST",
+    body: fd,
+  });
 
-    // esperamos { id } quando ok
-    const id: string | undefined = data?.id;
-    if (!id) {
-      return {
-        ok: false,
-        status: res.status,
-        errorText: "Resposta sem ID do anúncio.",
-        data,
-      };
-    }
-
-    return { ok: true, status: res.status, data: { id } };
-  } catch (err: any) {
-    return {
-      ok: false,
-      status: 0,
-      errorText: err?.message || "Erro de rede ao criar anúncio.",
-    };
+  if (!res.ok) {
+    let data: any;
+    try { data = await res.json(); } catch {}
+    return { ok: false, status: res.status, errorText: data?.error || data?.message, data };
   }
+
+  const data = (await res.json()) as { id: string };
+  return { ok: true, status: res.status, data };
 }
