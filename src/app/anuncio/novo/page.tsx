@@ -4,7 +4,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { createAdSecureForm } from "@/lib/ads-client"; // <- troca aqui
+// ⬇️ usamos o client em formato multipart
+import { createAdSecureForm } from "@/lib/ads-client";
 
 type LatLng = { lat: number; lng: number };
 const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
@@ -243,17 +244,17 @@ export default function NovaPaginaAnuncio() {
   // Só habilita publicar com localização válida
   const canPublish = Boolean(file && title.trim() && priceCents > 0 && desc.trim() && coords);
 
-  // Publicar (via FormData para evitar 413 e alinhar com ads-client)
+  // Publicar
   const publish = async () => {
     try {
       if (!file) { alert("Selecione uma imagem."); return; }
       if (!file.type.startsWith("image/")) { alert("Arquivo inválido. Envie uma imagem."); return; }
       if (!coords) { alert("Defina a localização (GPS ou CEP)."); return; }
 
-      // 4MB está coerente com o limite configurado no backend
       const MAX_BYTES = 4 * 1024 * 1024;
       if (file.size > MAX_BYTES) { alert("Imagem muito grande (máx. 4MB)."); return; }
 
+      // 👇 multipart form — evita 413 por base64 grande
       const form = new FormData();
       form.append("title", title.trim());
       form.append("description", desc.trim());
@@ -263,20 +264,21 @@ export default function NovaPaginaAnuncio() {
       form.append("lat", String(coords.lat));
       form.append("lng", String(coords.lng));
       form.append("radiusKm", String(radius));
-      form.append("image", file, file.name); // <- envia o arquivo binário
+      form.append("image", file, file.name); // arquivo binário
 
-      const res = await createAdSecureForm(form);
+      // ⬇️ createAdSecureForm requer 2º argumento; passamos objeto vazio
+      const res: any = await createAdSecureForm(form, {});
 
-      if (!res.ok) {
-        const status = res.status;
-        const data = (res as any).data;
-        const errorText = (res as any).errorText as string | undefined;
+      if (!res?.ok) {
+        const status = res?.status;
+        const data = res?.data;
+        const errorText: string | undefined = res?.errorText;
 
         const msg =
           (data && (data.error || data.message)) ||
           errorText ||
           (status === 400 && "Dados inválidos.") ||
-          (status === 401 && "Sessão expirada. Verifique seu telefone.") ||
+          (status === 401 && "Autenticação necessária.") ||
           (status === 413 && "Arquivo muito grande para envio.") ||
           "Falha ao criar anúncio.";
 
