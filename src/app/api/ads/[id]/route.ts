@@ -33,3 +33,4 @@ export async function GET(_req: Request, ctx: any) {
     return NextResponse.json({ error: "Falha ao carregar anúncio." }, { status: 500 });
   }
 }
+
