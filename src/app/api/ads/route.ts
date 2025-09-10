@@ -27,14 +27,36 @@ function parseBase64ImageToBuffer(b64: string): Buffer {
   return Buffer.from(payload, 'base64');
 }
 
-async function moderateWithVisionOrThrow(imageBase64: string) {
-  let client: vision.ImageAnnotatorClient;
-  try {
-    client = new vision.ImageAnnotatorClient();
-  } catch {
-    // Se faltar configuração do Vision, falamos claramente
-    throw new Error('Configuração do Google Vision ausente ou inválida.');
+function getVisionClient(): vision.ImageAnnotatorClient {
+  const projectId = process.env.GCP_PROJECT_ID;
+  const clientEmail = process.env.GCP_CLIENT_EMAIL;
+  const rawPrivateKey = process.env.GCP_PRIVATE_KEY;
+
+  // Em envs (Vercel) a private key costuma vir com \n escapado
+  const privateKey = rawPrivateKey?.replace(/\\n/g, '\n');
+
+  if (!projectId || !clientEmail || !privateKey) {
+    throw new Error(
+      'Configuração do Google Vision ausente. Defina GCP_PROJECT_ID, GCP_CLIENT_EMAIL e GCP_PRIVATE_KEY no Vercel.'
+    );
   }
+
+  return new vision.ImageAnnotatorClient({
+    projectId,
+    credentials: {
+      client_email: clientEmail,
+      private_key: privateKey,
+    },
+  });
+}
+
+async function moderateWithVisionOrThrow(imageBase64: string) {
+  // Toggle opcional para desativar moderação (apenas se você quiser liberar em dev):
+  if (process.env.VISION_DISABLE === 'true') {
+    return;
+  }
+
+  const client = getVisionClient();
 
   const buffer = parseBase64ImageToBuffer(imageBase64);
   const [result] = await client.safeSearchDetection({ image: { content: buffer } });
@@ -49,12 +71,11 @@ async function moderateWithVisionOrThrow(imageBase64: string) {
   const violence = likelihoodScore[safe.violence ?? 'UNKNOWN'];
   const medical = likelihoodScore[safe.medical ?? 'UNKNOWN'];
 
-  // Bloqueia conteúdos indevidos
   if (adult >= BLOCK_THRESHOLD || racy >= BLOCK_THRESHOLD || violence >= BLOCK_THRESHOLD) {
     throw new Error('Imagem reprovada pela moderação automática.');
   }
 
-  // (Opcional) bloquear medical em casos mais sensíveis:
+  // Opcional: bloquear medical muito alto
   if (medical >= 5) {
     throw new Error('Imagem reprovada pela moderação (conteúdo médico sensível).');
   }
