@@ -4,7 +4,6 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET(req: Request) {
   try {
-    // Extrai o id do path: /api/ads/<id>
     const url = new URL(req.url);
     const segments = url.pathname.split('/').filter(Boolean);
     const id = segments[segments.length - 1];
@@ -16,24 +15,12 @@ export async function GET(req: Request) {
     const ad = await prisma.ad.findUnique({
       where: { id },
       select: {
-        id: true,
-        title: true,
-        description: true,
-        priceCents: true,
-        city: true,
-        uf: true,
-        lat: true,
-        lng: true,
-        centerLat: true,
-        centerLng: true,
-        radiusKm: true,
+        id: true, title: true, description: true, priceCents: true,
+        city: true, uf: true, lat: true, lng: true,
+        centerLat: true, centerLng: true, radiusKm: true,
         expiresAt: true,
-        imageUrl: true,
-        imageMime: true,
-        imageSha256: true,
-        createdAt: true,
-        updatedAt: true,
-        sellerId: true,
+        imageUrl: true, imageMime: true, imageSha256: true,
+        createdAt: true, updatedAt: true, sellerId: true,
       },
     });
 
