@@ -11,7 +11,7 @@ const prisma = new PrismaClient();
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4 MB
 const ACCEPTED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-// Util: parse número seguro
+// Utils: parse número seguro
 function toInt(v: unknown, def = 0) {
   const n = typeof v === "string" ? parseInt(v, 10) : Number(v);
   return Number.isFinite(n) ? n : def;
@@ -22,13 +22,16 @@ function toFloat(v: unknown, def = 0) {
 }
 
 export async function GET() {
-  // opcional: simples ping para saber se a rota está viva
-  return NextResponse.json({ ok: true, hint: "POST multipart/form-data para criar anúncio" });
+  // simples ping
+  return NextResponse.json({
+    ok: true,
+    hint: "Use POST multipart/form-data para criar anúncio",
+  });
 }
 
 export async function POST(req: Request) {
   try {
-    // 1) Autorização básica por cookie (mesma verificação usada no front)
+    // 1) Autorização básica por cookie (telefone verificado)
     const jar = cookies();
     const phoneCookie = jar.get("qwip_phone_e164")?.value;
     if (!phoneCookie) {
@@ -38,13 +41,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2) Precisa ser multipart/form-data
+    // 2) Content-Type deve ser multipart/form-data
     const ct = req.headers.get("content-type") || "";
     if (!ct.toLowerCase().includes("multipart/form-data")) {
-      return NextResponse.json(
-        { error: "Use multipart/form-data." },
-        { status: 415 }
-      );
+      return NextResponse.json({ error: "Use multipart/form-data." }, { status: 415 });
     }
 
     // 3) Lê form
@@ -60,30 +60,18 @@ export async function POST(req: Request) {
     const radiusKm = toFloat(form.get("radiusKm"));
     const image = form.get("image");
 
-    // 4) Validação básica
+    // 4) Validações
     if (!title || !description || !priceCents || !city || !uf) {
-      return NextResponse.json(
-        { error: "Campos obrigatórios ausentes." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Campos obrigatórios ausentes." }, { status: 400 });
     }
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return NextResponse.json(
-        { error: "Coordenadas inválidas." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Coordenadas inválidas." }, { status: 400 });
     }
     if (!Number.isFinite(radiusKm) || radiusKm <= 0) {
-      return NextResponse.json(
-        { error: "Raio inválido." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Raio inválido." }, { status: 400 });
     }
     if (!(image instanceof File)) {
-      return NextResponse.json(
-        { error: "Imagem é obrigatória." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Imagem é obrigatória." }, { status: 400 });
     }
     if (!ACCEPTED_IMAGE_TYPES.has(image.type)) {
       return NextResponse.json(
@@ -98,23 +86,26 @@ export async function POST(req: Request) {
       );
     }
 
-    // 5) Buffer da imagem (CORREÇÃO: usar Buffer, não ArrayBuffer direto no hash)
+    // 5) Buffer da imagem + hash (usa Buffer, não ArrayBuffer direto)
     const arr = new Uint8Array(await image.arrayBuffer());
     const buf = Buffer.from(arr);
 
     const sha = createHash("sha256").update(buf).digest("hex");
     const ext =
-      image.type === "image/jpeg" ? "jpg" :
-      image.type === "image/png"  ? "png" :
-      image.type === "image/webp" ? "webp" : "bin";
+      image.type === "image/jpeg"
+        ? "jpg"
+        : image.type === "image/png"
+        ? "png"
+        : image.type === "image/webp"
+        ? "webp"
+        : "bin";
 
-    // 6) Upload no Vercel Blob
-    //    Requer BLOB_READ_WRITE_TOKEN no ambiente.
+    // 6) Upload no Vercel Blob (requer BLOB_READ_WRITE_TOKEN)
     const blobPath = `ads/${sha}.${ext}`;
     const putRes = await put(blobPath, buf, {
       access: "public",
       contentType: image.type,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
+      token: process.env.BLOB_READ_WRITE_TOKEN, // defina no Vercel
     });
 
     // 7) Persistir no banco
@@ -127,23 +118,21 @@ export async function POST(req: Request) {
         uf,
         lat,
         lng,
-        // center = a própria posição, por enquanto
-        centerLat: lat,
+        centerLat: lat, // por enquanto centro = posição
         centerLng: lng,
         radiusKm,
         imageUrl: putRes.url,
         imageMime: image.type,
         imageSha256: sha,
-        // sellerId: pode vir do user mais tarde; hoje fica null
+        // sellerId: null por enquanto
       },
       select: { id: true },
     });
 
-    // 8) Retorno
+    // 8) OK
     return NextResponse.json({ id: ad.id }, { status: 201 });
   } catch (err: any) {
     console.error("[/api/ads] ERRO:", err);
-    // Alguns erros comuns
     const msg =
       typeof err?.message === "string" && err.message.toLowerCase().includes("token")
         ? "Falha no upload da imagem (verifique BLOB_READ_WRITE_TOKEN)."
