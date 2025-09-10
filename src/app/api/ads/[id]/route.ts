@@ -2,12 +2,12 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-type Params = { params: { id: string } };
-
-export async function GET(_req: Request, { params }: Params) {
+export async function GET(_req: Request, { params }: { params: { id: string } }) {
   try {
+    const { id } = params;
+
     const ad = await prisma.ad.findUnique({
-      where: { id: params.id },
+      where: { id },
       select: {
         id: true,
         title: true,
@@ -15,11 +15,17 @@ export async function GET(_req: Request, { params }: Params) {
         priceCents: true,
         city: true,
         uf: true,
-        lat: true, lng: true,
-        centerLat: true, centerLng: true, radiusKm: true,
+        lat: true,
+        lng: true,
+        centerLat: true,
+        centerLng: true,
+        radiusKm: true,
         expiresAt: true,
-        imageUrl: true, imageMime: true, imageSha256: true,
-        createdAt: true, updatedAt: true,
+        imageUrl: true,
+        imageMime: true,
+        imageSha256: true,
+        createdAt: true,
+        updatedAt: true,
         sellerId: true,
       },
     });
