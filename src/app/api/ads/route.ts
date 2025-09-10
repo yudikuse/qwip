@@ -5,16 +5,17 @@ import { put } from "@vercel/blob";
 import { cookies } from "next/headers";
 import { createHash } from "node:crypto";
 
-// 🔧 Garante ambiente Node (necessário para Buffer/crypto)
-export const runtime = "nodejs";
-
 const prisma = new PrismaClient();
 
-// Limites / tipos de imagem aceitos
+// Limites/tipos aceitos para imagem
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4 MB
-const ACCEPTED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ACCEPTED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
-// Helpers numéricos
+// Utils numéricos
 function toInt(v: unknown, def = 0) {
   const n = typeof v === "string" ? parseInt(v, 10) : Number(v);
   return Number.isFinite(n) ? n : def;
@@ -27,15 +28,14 @@ function toFloat(v: unknown, def = 0) {
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    hint: "Envie POST multipart/form-data para criar anúncio",
+    hint: "Envie POST multipart/form-data para criar anúncio.",
   });
 }
 
 export async function POST(req: Request) {
   try {
-    // 1) Autorização básica (telefone verificado via cookie)
-    //    Next 15 => cookies() é assíncrono nos route handlers.
-    const jar = await cookies();
+    // 1) Autorização por cookie (telefone verificado)
+    const jar = await cookies(); // <- necessário em versões recentes do Next
     const phoneCookie = jar.get("qwip_phone_e164")?.value;
     if (!phoneCookie) {
       return NextResponse.json(
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2) Conteúdo deve ser multipart/form-data
+    // 2) Verifica Content-Type (multipart)
     const ct = req.headers.get("content-type") || "";
     if (!ct.toLowerCase().includes("multipart/form-data")) {
       return NextResponse.json({ error: "Use multipart/form-data." }, { status: 415 });
@@ -63,9 +63,12 @@ export async function POST(req: Request) {
     const radiusKm = toFloat(form.get("radiusKm"));
     const image = form.get("image");
 
-    // 4) Validações
+    // 4) Validações básicas
     if (!title || !description || !priceCents || !city || !uf) {
-      return NextResponse.json({ error: "Campos obrigatórios ausentes." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Campos obrigatórios ausentes." },
+        { status: 400 }
+      );
     }
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return NextResponse.json({ error: "Coordenadas inválidas." }, { status: 400 });
@@ -89,62 +92,64 @@ export async function POST(req: Request) {
       );
     }
 
-    // 5) Buffer da imagem (usa Buffer/crypto no runtime Node)
-    const uint = new Uint8Array(await image.arrayBuffer());
-    const buf = Buffer.from(uint);
-
+    // 5) Converte para Buffer e calcula SHA-256
+    const buf = Buffer.from(await image.arrayBuffer());
     const sha = createHash("sha256").update(buf).digest("hex");
     const ext =
-      image.type === "image/jpeg" ? "jpg" :
-      image.type === "image/png"  ? "png" :
-      image.type === "image/webp" ? "webp" : "bin";
+      image.type === "image/jpeg"
+        ? "jpg"
+        : image.type === "image/png"
+        ? "png"
+        : image.type === "image/webp"
+        ? "webp"
+        : "bin";
 
-// 6) Upload no Vercel Blob (com proteção)
-let putRes;
-try {
-  const blobPath = `ads/${sha}.${ext}`;
-  putRes = await put(blobPath, buf, {
-    access: "public",
-    contentType: image.type,
-    token: process.env.BLOB_READ_WRITE_TOKEN,
-  });
-} catch (err: any) {
-  console.error("Falha no upload para o Blob:", err);
-  return NextResponse.json(
-    { error: "Imagem rejeitada ou inválida (não foi salva)." },
-    { status: 400 }
-  );
-}
+    // 6) Tenta subir ao Vercel Blob
+    //    Se falhar (token inválido, imagem rejeitada, etc.), NÃO cria anúncio.
+    let putRes: { url: string };
+    try {
+      const blobPath = `ads/${sha}.${ext}`;
+      putRes = await put(blobPath, buf, {
+        access: "public",
+        contentType: image.type,
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+      });
+    } catch (err) {
+      console.error("Falha no upload para o Blob:", err);
+      return NextResponse.json(
+        { error: "Imagem rejeitada ou não pôde ser salva." },
+        { status: 400 }
+      );
+    }
 
-// 7) Só chega aqui se upload foi OK
-const ad = await prisma.ad.create({
-  data: {
-    title,
-    description,
-    priceCents,
-    city,
-    uf,
-    lat,
-    lng,
-    centerLat: lat,
-    centerLng: lng,
-    radiusKm,
-    imageUrl: putRes.url,
-    imageMime: image.type,
-    imageSha256: sha,
-  },
-  select: { id: true },
-});
+    // 7) Só cria o anúncio se o upload deu certo
+    const ad = await prisma.ad.create({
+      data: {
+        title,
+        description,
+        priceCents,
+        city,
+        uf,
+        lat,
+        lng,
+        centerLat: lat, // por ora, centro = posição informada
+        centerLng: lng,
+        radiusKm,
+        imageUrl: putRes.url,
+        imageMime: image.type,
+        imageSha256: sha,
+        // sellerId: null por enquanto
+      },
+      select: { id: true },
+    });
 
-
-    // 8) Resposta
+    // 8) Retorna sucesso
     return NextResponse.json({ id: ad.id }, { status: 201 });
   } catch (err: any) {
     console.error("[/api/ads] ERRO:", err);
-    const msg =
-      typeof err?.message === "string" && err.message.toLowerCase().includes("token")
-        ? "Falha no upload da imagem (verifique BLOB_READ_WRITE_TOKEN)."
-        : "Erro ao criar anúncio.";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json(
+      { error: "Erro ao criar anúncio." },
+      { status: 500 }
+    );
   }
 }
