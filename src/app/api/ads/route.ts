@@ -3,14 +3,66 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma'; // ajuste se seu client estiver em outro caminho
 import { putImage } from '@/lib/storage';
 
-// --------- Substitua este stub pela sua integração real (Vision/GCP etc.) ----------
-async function moderateOrThrow(params: { imageBase64: string; title?: string; description?: string }) {
-  // TODO: chame aqui sua função real de moderação usando o base64 (sem salvar em lugar nenhum).
-  // Se reprovado, lance erro com mensagem amigável (em PT-BR).
-  // Exemplo (stub aprovando sempre):
-  return { approved: true as const };
+// =======================
+// Moderação (Google Vision)
+// =======================
+import vision from '@google-cloud/vision';
+
+// Map de likelihood para número
+const likelihoodScore: Record<string, number> = {
+  UNKNOWN: 0,
+  VERY_UNLIKELY: 1,
+  UNLIKELY: 2,
+  POSSIBLE: 3,
+  LIKELY: 4,
+  VERY_LIKELY: 5,
+};
+
+// Thresholds conservadores
+const BLOCK_THRESHOLD = 4; // LIKELY (4) ou VERY_LIKELY (5) → reprova
+
+function parseBase64ImageToBuffer(b64: string): Buffer {
+  const m = b64.match(/^data:(.+?);base64,(.*)$/);
+  const payload = m ? m[2] : b64;
+  return Buffer.from(payload, 'base64');
 }
-// -----------------------------------------------------------------------------------
+
+async function moderateWithVisionOrThrow(imageBase64: string) {
+  let client: vision.ImageAnnotatorClient;
+  try {
+    client = new vision.ImageAnnotatorClient();
+  } catch (e) {
+    // Se faltar configuração do Vision, falamos claramente
+    throw new Error('Configuração do Google Vision ausente ou inválida.');
+  }
+
+  const buffer = parseBase64ImageToBuffer(imageBase64);
+  const [result] = await client.safeSearchDetection({ image: { content: buffer } });
+  const safe = result?.safeSearchAnnotation;
+
+  if (!safe) {
+    throw new Error('Falha na moderação automática da imagem.');
+  }
+
+  const adult = likelihoodScore[safe.adult ?? 'UNKNOWN'];
+  const racy = likelihoodScore[safe.racy ?? 'UNKNOWN'];
+  const violence = likelihoodScore[safe.violence ?? 'UNKNOWN'];
+  const medical = likelihoodScore[safe.medical ?? 'UNKNOWN'];
+
+  // Bloqueia conteúdos indevidos
+  if (adult >= BLOCK_THRESHOLD || racy >= BLOCK_THRESHOLD || violence >= BLOCK_THRESHOLD) {
+    throw new Error('Imagem reprovada pela moderação automática.');
+  }
+
+  // (Opcional) bloquear medical em casos mais sensíveis:
+  if (medical >= 5) {
+    throw new Error('Imagem reprovada pela moderação (conteúdo médico sensível).');
+  }
+}
+
+// =======================
+// Handler
+// =======================
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,36 +72,53 @@ export async function POST(req: NextRequest) {
       title,
       description,
       priceCents,
-      imageBase64,     // continua vindo do client como hoje (mantém UX)
+      imageBase64,
+
+      // obrigatórios no seu Ad
+      city,
+      uf,
+      lat,
+      lng,
+
+      // opcionais
+      centerLat = null,
+      centerLng = null,
+      radiusKm = null,
+      expiresAt = null, // ISO string ou null
     } = body ?? {};
 
-    if (!title || !description || typeof priceCents !== 'number' || !imageBase64) {
-      return NextResponse.json(
-        { error: 'Campos obrigatórios ausentes.' },
-        { status: 400 }
-      );
+    // Validações mínimas
+    if (
+      !title ||
+      !description ||
+      typeof priceCents !== 'number' ||
+      !imageBase64 ||
+      !city ||
+      !uf ||
+      typeof lat !== 'number' ||
+      typeof lng !== 'number'
+    ) {
+      return NextResponse.json({ error: 'Campos obrigatórios ausentes.' }, { status: 400 });
     }
 
-    // (Opcional) Identidade do vendedor pelo cookie — ajuste o nome se necessário
+    // Telefone do vendedor via cookie (opcional)
     const phoneCookie = req.cookies.get('seller_phone')?.value ?? null;
 
     // 1) Moderação (fail-closed)
-    await moderateOrThrow({ imageBase64, title, description });
+    await moderateWithVisionOrThrow(imageBase64);
 
     // 2) Persistir imagem no storage
     const stored = await putImage({ base64: imageBase64 });
 
-    // 3) Seller: find-or-create S/ UNIQUE (robusto p/ dados legados)
+    // 3) Seller: find-or-create sem UNIQUE (compatível com dados legados)
     let sellerId: string | undefined = undefined;
     if (phoneCookie) {
       const seller = await prisma.$transaction(async (tx) => {
-        // procura o primeiro Seller com esse telefone
         const found = await tx.seller.findFirst({
-          where: { phone: phoneCookie },
+          where: { phone: phoneCookie }, // mapeado p/ phoneE164 no schema
           select: { id: true },
         });
         if (found) return found;
-        // se não existe, cria
         const created = await tx.seller.create({
           data: { phone: phoneCookie },
           select: { id: true },
@@ -59,16 +128,26 @@ export async function POST(req: NextRequest) {
       sellerId = seller.id;
     }
 
-    // 4) Criar o anúncio com URL da imagem + metadados
+    // 4) Criar o anúncio com todos os campos requeridos + imagem
     const ad = await prisma.ad.create({
       data: {
         title,
         description,
         priceCents,
+        city,
+        uf,
+        lat,
+        lng,
+        centerLat: centerLat ?? undefined,
+        centerLng: centerLng ?? undefined,
+        radiusKm: radiusKm ?? undefined,
+        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+
         imageUrl: stored.url,
         imageMime: stored.mime,
         imageSha256: stored.sha256,
-        sellerId, // pode ser undefined (campo é opcional)
+
+        sellerId, // pode ser undefined (campo opcional)
       },
       select: { id: true },
     });
