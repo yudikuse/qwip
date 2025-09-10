@@ -1,5 +1,4 @@
 // src/lib/ads-client.ts
-
 export type CreatePayload = {
   title: string;
   description: string;
@@ -8,92 +7,71 @@ export type CreatePayload = {
   uf: string;
   lat: number;
   lng: number;
+
+  // Campos que o seu form já envia e que também aparecem no registro do anúncio:
+  centerLat: number;
+  centerLng: number;
   radiusKm: number;
-  imageBase64: string; // data URL (base64) da imagem
+
+  // imagem inline (Base64 sem prefixo data:)
+  imageBase64: string;
+
+  // opcional: mime, se quiser forçar
+  imageMime?: string;
 };
 
-/**
- * Resultado “Response-like” para ser compatível com page.tsx
- * (evita quebrar a checagem res.ok / res.status).
- */
-export type CreateAdResult =
-  | { ok: true; status: number; data: { id: string } }
-  | { ok: false; status: number; errorText?: string; data?: unknown };
+// Resposta “padrão” para o app todo
+export type ClientResult<T> =
+  | { ok: true; status: number; data: T }
+  | { ok: false; status: number; errorText?: string; data?: any };
 
-/**
- * Cria um anúncio chamando a rota /api/ads.
- * Sempre retorna um objeto do tipo CreateAdResult.
- */
 export async function createAdSecure(
-  body: CreatePayload
-): Promise<CreateAdResult> {
+  payload: CreatePayload
+): Promise<ClientResult<{ id: string }>> {
   try {
     const res = await fetch("/api/ads", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      // Importante: nunca envie centerLat/centerLng aqui.
-      body: JSON.stringify(body),
-      cache: "no-store",
+      // IMPORTANTÍSSIMO: mantenha os cookies (telefone verificado etc.)
+      credentials: "include",
+      body: JSON.stringify(payload),
     });
 
-    // Tenta decodificar JSON (pode falhar em erros 500 sem body)
-    let json: any = undefined;
+    // Tenta decodificar JSON (pode vir erro estruturado do route handler)
+    let data: any = null;
     try {
-      json = await res.clone().json();
-    } catch (_) {
-      /* ignore */
+      data = await res.json();
+    } catch {
+      // pode ser vazio
+      data = null;
     }
 
     if (!res.ok) {
-      const errorText =
-        (json && (json.error || json.message || json.errorText)) ??
-        `HTTP ${res.status}`;
-      return { ok: false, status: res.status, errorText, data: json };
+      const msg =
+        (data && (data.error || data.message)) ||
+        `Falha (${res.status}) ao criar anúncio`;
+      return { ok: false, status: res.status, errorText: msg, data };
     }
 
-    // Espera { id: string } no sucesso
-    const id = json?.id as string | undefined;
+    // esperamos { id } quando ok
+    const id: string | undefined = data?.id;
     if (!id) {
       return {
         ok: false,
         status: res.status,
-        errorText: "Resposta sem id do anúncio.",
-        data: json,
+        errorText: "Resposta sem ID do anúncio.",
+        data,
       };
     }
 
     return { ok: true, status: res.status, data: { id } };
-  } catch (e: any) {
+  } catch (err: any) {
     return {
       ok: false,
       status: 0,
-      errorText: e?.message ?? "Falha de rede inesperada",
+      errorText: err?.message || "Erro de rede ao criar anúncio.",
     };
   }
-}
-
-/* Utilidades opcionais */
-
-export async function getAd(id: string) {
-  const res = await fetch(`/api/ads/${encodeURIComponent(id)}`, {
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`Falha ao buscar anúncio: ${res.status}`);
-  return (await res.json()) as unknown;
-}
-
-export async function listAds(params?: Record<string, string | number>) {
-  const qs = params
-    ? "?" +
-      Object.entries(params)
-        .map(
-          ([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`
-        )
-        .join("&")
-    : "";
-  const res = await fetch(`/api/ads${qs}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`Falha ao listar anúncios: ${res.status}`);
-  return (await res.json()) as unknown;
 }
