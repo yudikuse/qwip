@@ -1,14 +1,11 @@
 // src/app/api/ads/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma'; // ajuste se seu client estiver em outro caminho
+import { prisma } from '@/lib/prisma';
 import { putImage } from '@/lib/storage';
 
 // =======================
-// Moderação (Google Vision) - suporta SDK (Service Account) ou REST (API KEY)
+// Config de moderação (por env)
 // =======================
-import * as vision from '@google-cloud/vision';
-
-// Likelihood map do Vision
 const LIKE_MAP = {
   UNKNOWN: 0,
   VERY_UNLIKELY: 1,
@@ -17,10 +14,8 @@ const LIKE_MAP = {
   LIKELY: 4,
   VERY_LIKELY: 5,
 } as const;
-
 type LikelihoodKey = keyof typeof LIKE_MAP;
 
-// Converte "LIKELY" -> 4, etc. (com fallback)
 function parseMin(envValue: string | undefined, def: LikelihoodKey): number {
   const key = (envValue ?? def).toUpperCase().trim() as LikelihoodKey;
   return LIKE_MAP[key] ?? LIKE_MAP[def];
@@ -28,97 +23,19 @@ function parseMin(envValue: string | undefined, def: LikelihoodKey): number {
 
 const STRICT = String(process.env.SAFE_VISION_STRICT).toLowerCase() === 'true';
 const DEBUG  = String(process.env.SAFE_VISION_DEBUG).toLowerCase() === 'true';
+const PROVIDER = (process.env.SAFE_VISION_PROVIDER || 'rest').toLowerCase(); // 'google' | 'rest' | ''
 
-const MIN_ADULT    = parseMin(process.env.SAFE_VISION_ADULT_MIN, 'LIKELY');      // default: LIKELY
-const MIN_VIOLENCE = parseMin(process.env.SAFE_VISION_VIOLENCE_MIN, 'LIKELY');   // default: LIKELY
-const MIN_RACY     = parseMin(process.env.SAFE_VISION_RACY_MIN, 'VERY_LIKELY');  // default: VERY_LIKELY
+const MIN_ADULT    = parseMin(process.env.SAFE_VISION_ADULT_MIN, 'LIKELY');
+const MIN_VIOLENCE = parseMin(process.env.SAFE_VISION_VIOLENCE_MIN, 'LIKELY');
+const MIN_RACY     = parseMin(process.env.SAFE_VISION_RACY_MIN, 'VERY_LIKELY');
 
+// =======================
+// Utils
+// =======================
 function parseBase64ImageToBuffer(b64: string): Buffer {
   const m = b64.match(/^data:(.+?);base64,(.*)$/);
   const payload = m ? m[2] : b64;
   return Buffer.from(payload, 'base64');
-}
-
-// ----- SDK (Service Account) -----
-function getVisionClientViaSDK(): vision.ImageAnnotatorClient | null {
-  const projectId   = process.env.GCP_PROJECT_ID;
-  const clientEmail = process.env.GCP_CLIENT_EMAIL;
-  const rawKey      = process.env.GCP_PRIVATE_KEY;
-  if (!projectId || !clientEmail || !rawKey) return null;
-
-  const privateKey = rawKey.replace(/\\n/g, '\n');
-  return new vision.ImageAnnotatorClient({
-    projectId,
-    credentials: { client_email: clientEmail, private_key: privateKey },
-  });
-}
-
-// ----- REST (API KEY) -----
-async function safeSearchViaRest(imageBase64: string) {
-  const apiKey = process.env.GOOGLE_VISION_API_KEY;
-  if (!apiKey) return null;
-
-  const body = {
-    requests: [
-      {
-        image: { content: parseBase64ImageToBuffer(imageBase64).toString('base64') },
-        features: [{ type: 'SAFE_SEARCH_DETECTION' as const }],
-      },
-    ],
-  };
-
-  const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`Vision REST falhou (${res.status}): ${txt || res.statusText}`);
-  }
-
-  const json = await res.json();
-  const ann = json?.responses?.[0]?.safeSearchAnnotation;
-  return ann ?? null;
-}
-
-async function moderateOrThrow(imageBase64: string) {
-  // 1) Primeiro tenta SDK (se Service Account estiver configurado)
-  const sdk = getVisionClientViaSDK();
-  if (sdk) {
-    const [result] = await sdk.safeSearchDetection({ image: { content: parseBase64ImageToBuffer(imageBase64) } });
-    const safe = result?.safeSearchAnnotation;
-    if (!safe) {
-      if (STRICT) throw new Error('Falha na moderação automática (SDK).');
-      if (DEBUG)  console.warn('SAFE_VISION_DEBUG: SDK retornou vazio. Permitindo por STRICT=false.');
-      return;
-    }
-    if (DEBUG) console.log('SAFE_VISION_DEBUG: SDK annotation', safe);
-    applyPolicyOrThrow(safe);
-    return;
-  }
-
-  // 2) Fallback para REST com API KEY
-  const ann = await safeSearchOrFailSoft(imageBase64);
-  if (ann) applyPolicyOrThrow(ann);
-}
-
-async function safeSearchOrFailSoft(imageBase64: string) {
-  try {
-    const ann = await safeSearchViaRest(imageBase64);
-    if (!ann) {
-      if (STRICT) throw new Error('Falha na moderação automática (REST).');
-      if (DEBUG)  console.warn('SAFE_VISION_DEBUG: REST retornou vazio. Permitindo por STRICT=false.');
-      return null;
-    }
-    if (DEBUG) console.log('SAFE_VISION_DEBUG: REST annotation', ann);
-    return ann;
-  } catch (e: any) {
-    if (STRICT) throw e;
-    if (DEBUG)  console.warn('SAFE_VISION_DEBUG: erro na REST', e?.message || e);
-    return null;
-  }
 }
 
 function score(x?: string): number {
@@ -140,10 +57,67 @@ function applyPolicyOrThrow(safe: any) {
     throw new Error('Imagem reprovada (conteúdo impróprio).');
   }
 }
-// =======================
-// Fim moderação
-// =======================
 
+// =======================
+// Google Vision (REST via API KEY)
+// =======================
+async function safeSearchViaRest(imageBase64: string) {
+  const apiKey = process.env.GOOGLE_VISION_API_KEY;
+  if (!apiKey) {
+    const msg = 'Falta GOOGLE_VISION_API_KEY nas variáveis do Vercel.';
+    if (STRICT) throw new Error(msg);
+    if (DEBUG) console.warn('SAFE_VISION_DEBUG:', msg, 'Permitindo por STRICT=false.');
+    return null;
+  }
+
+  const body = {
+    requests: [
+      {
+        image: { content: parseBase64ImageToBuffer(imageBase64).toString('base64') },
+        features: [{ type: 'SAFE_SEARCH_DETECTION' as const }],
+      },
+    ],
+  };
+
+  const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    const errMsg = `Vision REST falhou (${res.status}): ${txt || res.statusText}`;
+    if (STRICT) throw new Error(errMsg);
+    if (DEBUG) console.warn('SAFE_VISION_DEBUG:', errMsg, 'Permitindo por STRICT=false.');
+    return null;
+  }
+
+  const json = await res.json();
+  const ann = json?.responses?.[0]?.safeSearchAnnotation;
+  if (DEBUG) console.log('SAFE_VISION_DEBUG: REST annotation', ann);
+  return ann ?? null;
+}
+
+async function moderateOrThrow(imageBase64: string) {
+  // Só REST/API Key. Aceita 'google' como alias de 'rest'
+  const forceRest = PROVIDER === 'rest' || PROVIDER === 'google' || PROVIDER === '';
+  if (forceRest) {
+    const ann = await safeSearchViaRest(imageBase64);
+    if (!ann) return; // já tratamos STRICT/DEBUG dentro da função
+    applyPolicyOrThrow(ann);
+    return;
+  }
+
+  // Qualquer outro valor inesperado → use REST
+  const ann = await safeSearchViaRest(imageBase64);
+  if (!ann) return;
+  applyPolicyOrThrow(ann);
+}
+
+// =======================
+// Handler
+// =======================
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -184,7 +158,7 @@ export async function POST(req: NextRequest) {
     // Telefone do vendedor via cookie (opcional)
     const phoneCookie = req.cookies.get('seller_phone')?.value ?? null;
 
-    // 1) Moderação (fail-closed) – usa SDK ou REST conforme env
+    // 1) Moderação (fail-closed)
     await moderateOrThrow(imageBase64);
 
     // 2) Persistir imagem no storage
@@ -195,7 +169,7 @@ export async function POST(req: NextRequest) {
     if (phoneCookie) {
       const seller = await prisma.$transaction(async (tx) => {
         const found = await tx.seller.findFirst({
-          where: { phone: phoneCookie }, // mapeado p/ phoneE164 no schema
+          where: { phone: phoneCookie }, // mapeado para a coluna phone/phoneE164 do seu schema
           select: { id: true },
         });
         if (found) return found;
@@ -208,7 +182,7 @@ export async function POST(req: NextRequest) {
       sellerId = seller.id;
     }
 
-    // 4) Criar o anúncio com todos os campos requeridos + imagem
+    // 4) Criar o anúncio com todos os campos + imagem
     const ad = await prisma.ad.create({
       data: {
         title,
