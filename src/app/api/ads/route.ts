@@ -5,14 +5,13 @@ import { put } from "@vercel/blob";
 import { cookies } from "next/headers";
 import { createHash } from "node:crypto";
 
-// ---------- Prisma ----------
 const prisma = new PrismaClient();
 
-// ---------- Limites / formatos ----------
+// Limites e tipos aceitos
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4MB
 const ACCEPTED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-// ---------- Utils numéricos ----------
+// Helper numérico seguro
 function toInt(v: unknown, def = 0) {
   const n = typeof v === "string" ? parseInt(v, 10) : Number(v);
   return Number.isFinite(n) ? n : def;
@@ -22,116 +21,70 @@ function toFloat(v: unknown, def = 0) {
   return Number.isFinite(n) ? n : def;
 }
 
-// ---------- SafeVision (Google Vision SafeSearch) ----------
-type SafeSearchResult =
-  | { allowed: true; raw?: any }
-  | { allowed: false; reason: string; raw?: any };
-
-const SAFE_VISION_PROVIDER = (process.env.SAFE_VISION_PROVIDER || "google").toLowerCase();
-const SAFE_VISION_DEBUG = (process.env.SAFE_VISION_DEBUG || "false").toLowerCase() === "true";
-const SAFE_VISION_STRICT = (process.env.SAFE_VISION_STRICT || "false").toLowerCase() === "true";
-
-// helper: decide reprovação pela escala do Google
-function isBlockedByLevel(level: string, strict: boolean) {
-  // níveis do Google: VERY_UNLIKELY | UNLIKELY | POSSIBLE | LIKELY | VERY_LIKELY
-  if (strict) return level === "POSSIBLE" || level === "LIKELY" || level === "VERY_LIKELY";
-  return level === "LIKELY" || level === "VERY_LIKELY";
-}
-
-async function safeCheckWithGoogleVision(imgBase64: string): Promise<SafeSearchResult> {
-  const key = process.env.GOOGLE_VISION_API_KEY;
-  if (!key) {
-    // Sem chave => por segurança, reprova se STRICT, caso contrário permite
-    if (SAFE_VISION_DEBUG) console.warn("[SAFE] GOOGLE_VISION_API_KEY ausente");
-    return SAFE_VISION_STRICT
-      ? { allowed: false, reason: "Configuração de moderação ausente." }
-      : { allowed: true };
+// --- Moderação via Google Vision SafeSearch (REST) ---------------------------
+/**
+ * Retorna true se a imagem for considerada imprópria (adult/racy “likely+”).
+ * Requer GOOGLE_VISION_API_KEY no ambiente.
+ */
+async function isImageInappropriate(buf: Buffer): Promise<boolean> {
+  const apiKey = process.env.GOOGLE_VISION_API_KEY;
+  if (!apiKey) {
+    // Se não houver chave, por segurança não bloqueia (ou troque para "true" se quiser travar sem chave)
+    return false;
   }
+  const b64 = buf.toString("base64");
 
-  try {
-    const body = {
-      requests: [
-        {
-          features: [{ type: "SAFE_SEARCH_DETECTION" }],
-          image: { content: imgBase64 },
-        },
-      ],
-    };
-
-    const res = await fetch(
-      `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(key)}`,
+  const payload = {
+    requests: [
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }
-    );
+        image: { content: b64 },
+        features: [{ type: "SAFE_SEARCH_DETECTION" }],
+      },
+    ],
+  };
 
-    if (!res.ok) {
-      if (SAFE_VISION_DEBUG) {
-        console.warn("[SAFE] Vision HTTP", res.status, await res.text());
-      }
-      return SAFE_VISION_STRICT
-        ? { allowed: false, reason: "Falha ao validar imagem (Vision API)." }
-        : { allowed: true };
+  const res = await fetch(
+    `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      // nada de cache
+      cache: "no-store",
     }
+  );
 
-    const data = await res.json();
-    const annotation = data?.responses?.[0]?.safeSearchAnnotation;
-
-    if (!annotation) {
-      if (SAFE_VISION_DEBUG) console.warn("[SAFE] Sem safeSearchAnnotation no retorno");
-      return SAFE_VISION_STRICT
-        ? { allowed: false, reason: "Falha ao validar imagem (retorno inválido)." }
-        : { allowed: true };
-    }
-
-    const { adult, violence, racy } = annotation;
-
-    // Regras:
-    // - Sempre bloquear adult ou violence de nível bloqueante
-    // - racy bloqueia só se STRICT
-    if (isBlockedByLevel(adult, SAFE_VISION_STRICT)) {
-      return { allowed: false, reason: "Imagem com conteúdo adulto (adult)." , raw: annotation};
-    }
-    if (isBlockedByLevel(violence, SAFE_VISION_STRICT)) {
-      return { allowed: false, reason: "Imagem com conteúdo violento.", raw: annotation };
-    }
-    if (SAFE_VISION_STRICT && isBlockedByLevel(racy, true)) {
-      return { allowed: false, reason: "Imagem sexualmente sugestiva (racy).", raw: annotation };
-    }
-
-    if (SAFE_VISION_DEBUG) console.log("[SAFE] OK", annotation);
-    return { allowed: true, raw: annotation };
-  } catch (err) {
-    if (SAFE_VISION_DEBUG) console.warn("[SAFE] Erro Vision:", err);
-    return SAFE_VISION_STRICT
-      ? { allowed: false, reason: "Erro ao validar imagem." }
-      : { allowed: true };
-  }
-}
-
-async function moderateImage(buf: Buffer): Promise<SafeSearchResult> {
-  if (SAFE_VISION_PROVIDER !== "google") {
-    // Sem provedor configurado — default permissivo (ou bloqueia se STRICT)
-    return SAFE_VISION_STRICT
-      ? { allowed: false, reason: "Moderação desativada na configuração." }
-      : { allowed: true };
+  if (!res.ok) {
+    // Em caso de erro no provedor, não quebra o fluxo do usuário
+    // (se quiser, mude para `return true` para bloquear quando falhar)
+    return false;
   }
 
-  const base64 = buf.toString("base64");
-  return safeCheckWithGoogleVision(base64);
+  const data = await res.json();
+  const ann = data?.responses?.[0]?.safeSearchAnnotation;
+
+  // Valores possíveis: VERY_UNLIKELY, UNLIKELY, POSSIBLE, LIKELY, VERY_LIKELY
+  const adult = String(ann?.adult || "");
+  const racy = String(ann?.racy || "");
+
+  const isLikely = (v: string) => v === "LIKELY" || v === "VERY_LIKELY";
+
+  return isLikely(adult) || isLikely(racy);
 }
 
-// ---------- Handlers ----------
+// -----------------------------------------------------------------------------
+
 export async function GET() {
-  return NextResponse.json({ ok: true, hint: "POST multipart/form-data para criar anúncio" });
+  return NextResponse.json({
+    ok: true,
+    hint: "Envie POST multipart/form-data para criar anúncio.",
+  });
 }
 
 export async function POST(req: Request) {
   try {
-    // 1) Autorização pelo cookie (telefone verificado no frontend)
-    const jar = cookies();
+    // 1) Autorização (cookie setado pelo fluxo de verificação)
+    const jar = await cookies(); // <<<<<<<<<< CORREÇÃO: Next 15 exige await
     const phoneCookie = jar.get("qwip_phone_e164")?.value;
     if (!phoneCookie) {
       return NextResponse.json(
@@ -140,13 +93,13 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2) Tem que ser multipart/form-data
+    // 2) Content-Type precisa ser multipart/form-data
     const ct = req.headers.get("content-type") || "";
     if (!ct.toLowerCase().includes("multipart/form-data")) {
       return NextResponse.json({ error: "Use multipart/form-data." }, { status: 415 });
     }
 
-    // 3) Ler form
+    // 3) Lê o formulário
     const form = await req.formData();
 
     const title = String(form.get("title") || "").trim();
@@ -159,7 +112,7 @@ export async function POST(req: Request) {
     const radiusKm = toFloat(form.get("radiusKm"));
     const image = form.get("image");
 
-    // 4) Validações
+    // 4) Validações simples
     if (!title || !description || !priceCents || !city || !uf) {
       return NextResponse.json({ error: "Campos obrigatórios ausentes." }, { status: 400 });
     }
@@ -174,7 +127,7 @@ export async function POST(req: Request) {
     }
     if (!ACCEPTED_IMAGE_TYPES.has(image.type)) {
       return NextResponse.json(
-        { error: "Formato de imagem não suportado. Use JPEG, PNG ou WEBP." },
+        { error: "Formato não suportado. Use JPEG, PNG ou WEBP." },
         { status: 400 }
       );
     }
@@ -185,34 +138,42 @@ export async function POST(req: Request) {
       );
     }
 
-    // 5) Buffer da imagem
+    // 5) Lê bytes e calcula hash
     const uint = new Uint8Array(await image.arrayBuffer());
     const buf = Buffer.from(uint);
-
-    // 6) *** MODERAÇÃO ***
-    const mod = await moderateImage(buf);
-    if (!mod.allowed) {
-      if (SAFE_VISION_DEBUG) console.warn("[SAFE] BLOQUEADA:", mod.reason, mod.raw);
-      // EARLY RETURN: NÃO FAZ UPLOAD NEM CRIA NO BANCO
-      return NextResponse.json({ error: mod.reason }, { status: 415 });
-    }
-
-    // 7) Hash + extensão
     const sha = createHash("sha256").update(buf).digest("hex");
     const ext =
       image.type === "image/jpeg" ? "jpg" :
       image.type === "image/png"  ? "png" :
       image.type === "image/webp" ? "webp" : "bin";
 
-    // 8) Upload para Vercel Blob
+    // 6) *** MODERAÇÃO ANTES DE TUDO ***
+    const blocked = await isImageInappropriate(buf);
+    if (blocked) {
+      // Não faz upload e não cria anúncio
+      return NextResponse.json(
+        { error: "Imagem reprovada pela moderação (conteúdo adulto/sexual)." },
+        { status: 422 }
+      );
+    }
+
+    // 7) Upload para Vercel Blob
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) {
+      return NextResponse.json(
+        { error: "Configuração de blob ausente. Defina BLOB_READ_WRITE_TOKEN." },
+        { status: 500 }
+      );
+    }
+
     const blobPath = `ads/${sha}.${ext}`;
     const putRes = await put(blobPath, buf, {
       access: "public",
       contentType: image.type,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
+      token,
     });
 
-    // 9) Persistir no banco (somente após upload OK)
+    // 8) Persistência no banco (só aqui, após upload e moderação)
     const ad = await prisma.ad.create({
       data: {
         title,
@@ -222,18 +183,17 @@ export async function POST(req: Request) {
         uf,
         lat,
         lng,
-        centerLat: lat,
+        centerLat: lat, // por enquanto centro = ponto do autor
         centerLng: lng,
         radiusKm,
         imageUrl: putRes.url,
         imageMime: image.type,
         imageSha256: sha,
-        // sellerId: null (ainda)
       },
       select: { id: true },
     });
 
-    // 10) Resposta OK
+    // 9) Done
     return NextResponse.json({ id: ad.id }, { status: 201 });
   } catch (err: any) {
     console.error("[/api/ads] ERRO:", err);
