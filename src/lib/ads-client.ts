@@ -1,4 +1,12 @@
 // src/lib/ads-client.ts
+
+export type ApiResult<T> = {
+  ok: boolean;
+  status: number;
+  data?: T;
+  errorText?: string;
+};
+
 export type CreatePayload = {
   title: string;
   description: string;
@@ -8,50 +16,88 @@ export type CreatePayload = {
   lat: number;
   lng: number;
   radiusKm: number;
-  image?: File; // opcional: envio direto
+  // quando usar JSON, a imagem vai em base64
+  imageBase64?: string;
 };
 
-/**
- * Cria anúncio via FormData (binário seguro).
- * Usado na página de criar anúncio para enviar imagem e dados.
- */
-export async function createAdSecureForm(form: FormData) {
-  const res = await fetch("/api/ads", {
-    method: "POST",
-    body: form,
-  });
+// Utilitário: resolve a base (permite rodar em dev e prod)
+function getBaseUrl() {
+  // Se houver base pública configurada, usa; senão, caminho relativo
+  if (typeof window === "undefined") {
+    // ambiente server — use a env pública se existir
+    return process.env.NEXT_PUBLIC_BASE_URL || "";
+  }
+  return "";
+}
 
+// Normaliza Response -> ApiResult<T>
+async function toApiResult<T>(res: Response): Promise<ApiResult<T>> {
+  const contentType = res.headers.get("content-type") || "";
   let data: any = undefined;
+
   try {
-    data = await res.json();
+    if (contentType.includes("application/json")) {
+      data = await res.json();
+    } else if (contentType.includes("text/")) {
+      const txt = await res.text();
+      data = { message: txt };
+    }
   } catch {
-    /* ignora se não for JSON */
+    // ignora parse error, seguimos com data = undefined
   }
 
-  return {
-    ok: res.ok,
-    status: res.status,
-    data,
-    errorText: !res.ok ? (data?.error || data?.message || res.statusText) : undefined,
-  };
+  if (res.ok) {
+    return { ok: true, status: res.status, data };
+  } else {
+    const errorText =
+      (data && (data.error || data.message)) ||
+      `HTTP ${res.status}`;
+    return { ok: false, status: res.status, data, errorText };
+  }
 }
 
 /**
- * Helper para montar um FormData a partir do payload tipado.
+ * Cria anúncio usando JSON (imagem em base64).
+ * Útil para imagens pequenas; para evitar 413, prefira multipart abaixo.
  */
-export async function createAdFromPayload(payload: CreatePayload) {
-  const form = new FormData();
-  form.append("title", payload.title);
-  form.append("description", payload.description);
-  form.append("priceCents", String(payload.priceCents));
-  form.append("city", payload.city);
-  form.append("uf", payload.uf);
-  form.append("lat", String(payload.lat));
-  form.append("lng", String(payload.lng));
-  form.append("radiusKm", String(payload.radiusKm));
-  if (payload.image) {
-    form.append("image", payload.image, payload.image.name);
-  }
+export async function createAdSecure(
+  payload: CreatePayload,
+  opts: Partial<RequestInit> = {}
+): Promise<ApiResult<{ id: string }>> {
+  const url = `${getBaseUrl()}/api/ads`;
 
-  return createAdSecureForm(form);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(opts.headers || {}),
+    },
+    credentials: "include", // precisa do cookie do telefone verificado
+    body: JSON.stringify(payload),
+    ...opts,
+  });
+
+  return toApiResult<{ id: string }>(res);
+}
+
+/**
+ * Cria anúncio usando multipart/form-data (arquivo binário).
+ * Aceita segundo parâmetro opcional (para compatibilidade com seu page.tsx).
+ * Ex.: createAdSecureForm(form, {})
+ */
+export async function createAdSecureForm(
+  form: FormData,
+  opts: Partial<RequestInit> = {}
+): Promise<ApiResult<{ id: string }>> {
+  const url = `${getBaseUrl()}/api/ads`;
+
+  // NÃO definir manualmente Content-Type; o browser define boundary do multipart
+  const res = await fetch(url, {
+    method: "POST",
+    body: form,
+    credentials: "include", // precisa do cookie do telefone verificado
+    ...opts,
+  });
+
+  return toApiResult<{ id: string }>(res);
 }
