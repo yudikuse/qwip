@@ -4,22 +4,34 @@ import { prisma } from '@/lib/prisma'; // ajuste se seu client estiver em outro 
 import { putImage } from '@/lib/storage';
 
 // =======================
-// Moderação (Google Vision)
+// Moderação (Google Vision) - suporta SDK (Service Account) ou REST (API KEY)
 // =======================
 import * as vision from '@google-cloud/vision';
 
-// Map de likelihood para número
-const likelihoodScore: Record<string, number> = {
+// Likelihood map do Vision
+const LIKE_MAP = {
   UNKNOWN: 0,
   VERY_UNLIKELY: 1,
   UNLIKELY: 2,
   POSSIBLE: 3,
   LIKELY: 4,
   VERY_LIKELY: 5,
-};
+} as const;
 
-// Thresholds conservadores
-const BLOCK_THRESHOLD = 4; // LIKELY (4) ou VERY_LIKELY (5) → reprova
+type LikelihoodKey = keyof typeof LIKE_MAP;
+
+// Converte "LIKELY" -> 4, etc. (com fallback)
+function parseMin(envValue: string | undefined, def: LikelihoodKey): number {
+  const key = (envValue ?? def).toUpperCase().trim() as LikelihoodKey;
+  return LIKE_MAP[key] ?? LIKE_MAP[def];
+}
+
+const STRICT = String(process.env.SAFE_VISION_STRICT).toLowerCase() === 'true';
+const DEBUG  = String(process.env.SAFE_VISION_DEBUG).toLowerCase() === 'true';
+
+const MIN_ADULT    = parseMin(process.env.SAFE_VISION_ADULT_MIN, 'LIKELY');      // default: LIKELY
+const MIN_VIOLENCE = parseMin(process.env.SAFE_VISION_VIOLENCE_MIN, 'LIKELY');   // default: LIKELY
+const MIN_RACY     = parseMin(process.env.SAFE_VISION_RACY_MIN, 'VERY_LIKELY');  // default: VERY_LIKELY
 
 function parseBase64ImageToBuffer(b64: string): Buffer {
   const m = b64.match(/^data:(.+?);base64,(.*)$/);
@@ -27,62 +39,109 @@ function parseBase64ImageToBuffer(b64: string): Buffer {
   return Buffer.from(payload, 'base64');
 }
 
-function getVisionClient(): vision.ImageAnnotatorClient {
-  const projectId = process.env.GCP_PROJECT_ID;
+// ----- SDK (Service Account) -----
+function getVisionClientViaSDK(): vision.ImageAnnotatorClient | null {
+  const projectId   = process.env.GCP_PROJECT_ID;
   const clientEmail = process.env.GCP_CLIENT_EMAIL;
-  const rawPrivateKey = process.env.GCP_PRIVATE_KEY;
+  const rawKey      = process.env.GCP_PRIVATE_KEY;
+  if (!projectId || !clientEmail || !rawKey) return null;
 
-  // Em envs (Vercel) a private key costuma vir com \n escapado
-  const privateKey = rawPrivateKey?.replace(/\\n/g, '\n');
-
-  if (!projectId || !clientEmail || !privateKey) {
-    throw new Error(
-      'Configuração do Google Vision ausente. Defina GCP_PROJECT_ID, GCP_CLIENT_EMAIL e GCP_PRIVATE_KEY no Vercel.'
-    );
-  }
-
+  const privateKey = rawKey.replace(/\\n/g, '\n');
   return new vision.ImageAnnotatorClient({
     projectId,
-    credentials: {
-      client_email: clientEmail,
-      private_key: privateKey,
-    },
+    credentials: { client_email: clientEmail, private_key: privateKey },
   });
 }
 
-async function moderateWithVisionOrThrow(imageBase64: string) {
-  // Toggle opcional para desativar moderação (apenas se você quiser liberar em dev):
-  if (process.env.VISION_DISABLE === 'true') {
+// ----- REST (API KEY) -----
+async function safeSearchViaRest(imageBase64: string) {
+  const apiKey = process.env.GOOGLE_VISION_API_KEY;
+  if (!apiKey) return null;
+
+  const body = {
+    requests: [
+      {
+        image: { content: parseBase64ImageToBuffer(imageBase64).toString('base64') },
+        features: [{ type: 'SAFE_SEARCH_DETECTION' as const }],
+      },
+    ],
+  };
+
+  const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`Vision REST falhou (${res.status}): ${txt || res.statusText}`);
+  }
+
+  const json = await res.json();
+  const ann = json?.responses?.[0]?.safeSearchAnnotation;
+  return ann ?? null;
+}
+
+async function moderateOrThrow(imageBase64: string) {
+  // 1) Primeiro tenta SDK (se Service Account estiver configurado)
+  const sdk = getVisionClientViaSDK();
+  if (sdk) {
+    const [result] = await sdk.safeSearchDetection({ image: { content: parseBase64ImageToBuffer(imageBase64) } });
+    const safe = result?.safeSearchAnnotation;
+    if (!safe) {
+      if (STRICT) throw new Error('Falha na moderação automática (SDK).');
+      if (DEBUG)  console.warn('SAFE_VISION_DEBUG: SDK retornou vazio. Permitindo por STRICT=false.');
+      return;
+    }
+    if (DEBUG) console.log('SAFE_VISION_DEBUG: SDK annotation', safe);
+    applyPolicyOrThrow(safe);
     return;
   }
 
-  const client = getVisionClient();
+  // 2) Fallback para REST com API KEY
+  const ann = await safeSearchOrFailSoft(imageBase64);
+  if (ann) applyPolicyOrThrow(ann);
+}
 
-  const buffer = parseBase64ImageToBuffer(imageBase64);
-  const [result] = await client.safeSearchDetection({ image: { content: buffer } });
-  const safe = result?.safeSearchAnnotation;
-
-  if (!safe) {
-    throw new Error('Falha na moderação automática da imagem.');
-  }
-
-  const adult = likelihoodScore[safe.adult ?? 'UNKNOWN'];
-  const racy = likelihoodScore[safe.racy ?? 'UNKNOWN'];
-  const violence = likelihoodScore[safe.violence ?? 'UNKNOWN'];
-  const medical = likelihoodScore[safe.medical ?? 'UNKNOWN'];
-
-  if (adult >= BLOCK_THRESHOLD || racy >= BLOCK_THRESHOLD || violence >= BLOCK_THRESHOLD) {
-    throw new Error('Imagem reprovada pela moderação automática.');
-  }
-
-  // Opcional: bloquear medical muito alto
-  if (medical >= 5) {
-    throw new Error('Imagem reprovada pela moderação (conteúdo médico sensível).');
+async function safeSearchOrFailSoft(imageBase64: string) {
+  try {
+    const ann = await safeSearchViaRest(imageBase64);
+    if (!ann) {
+      if (STRICT) throw new Error('Falha na moderação automática (REST).');
+      if (DEBUG)  console.warn('SAFE_VISION_DEBUG: REST retornou vazio. Permitindo por STRICT=false.');
+      return null;
+    }
+    if (DEBUG) console.log('SAFE_VISION_DEBUG: REST annotation', ann);
+    return ann;
+  } catch (e: any) {
+    if (STRICT) throw e;
+    if (DEBUG)  console.warn('SAFE_VISION_DEBUG: erro na REST', e?.message || e);
+    return null;
   }
 }
 
+function score(x?: string): number {
+  return LIKE_MAP[(x ?? 'UNKNOWN') as LikelihoodKey] ?? 0;
+}
+
+function applyPolicyOrThrow(safe: any) {
+  const adult    = score(safe.adult);
+  const racy     = score(safe.racy);
+  const violence = score(safe.violence);
+
+  if (adult >= MIN_ADULT) {
+    throw new Error('Imagem reprovada (conteúdo adulto detectado).');
+  }
+  if (violence >= MIN_VIOLENCE) {
+    throw new Error('Imagem reprovada (violência detectada).');
+  }
+  if (racy >= MIN_RACY) {
+    throw new Error('Imagem reprovada (conteúdo impróprio).');
+  }
+}
 // =======================
-// Handler
+// Fim moderação
 // =======================
 
 export async function POST(req: NextRequest) {
@@ -125,8 +184,8 @@ export async function POST(req: NextRequest) {
     // Telefone do vendedor via cookie (opcional)
     const phoneCookie = req.cookies.get('seller_phone')?.value ?? null;
 
-    // 1) Moderação (fail-closed)
-    await moderateWithVisionOrThrow(imageBase64);
+    // 1) Moderação (fail-closed) – usa SDK ou REST conforme env
+    await moderateOrThrow(imageBase64);
 
     // 2) Persistir imagem no storage
     const stored = await putImage({ base64: imageBase64 });
