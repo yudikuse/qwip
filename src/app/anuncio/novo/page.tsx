@@ -266,8 +266,8 @@ export default function NovaPaginaAnuncio() {
       form.append("radiusKm", String(radius));
       form.append("image", file, file.name); // arquivo binário
 
-      // ⬇️ createAdSecureForm requer 2º argumento; passamos objeto vazio
-      const res: any = await createAdSecureForm(form, {});
+      // <<< CHAMADA CORRETA: APENAS 1 ARGUMENTO >>>
+      const res: any = await createAdSecureForm(form);
 
       if (!res?.ok) {
         const status = res?.status;
