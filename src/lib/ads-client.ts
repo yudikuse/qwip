@@ -1,37 +1,37 @@
-// src/lib/ads-client.ts
+'use client';
 
+/**
+ * Payload que a página /anuncio/novo envia para a API.
+ * Ajuste os campos se no seu formulário tiverem nomes diferentes.
+ */
 export type CreatePayload = {
   title: string;
   description: string;
   priceCents: number;
-
-  // imagem (base64 já comprimido no client)
-  imageBase64: string;
-
-  // localização (obrigatórios no schema Ad)
   city: string;
   uf: string;
   lat: number;
   lng: number;
-
-  // opcionais (existem no schema, mas não são required)
-  centerLat?: number | null;
-  centerLng?: number | null;
-  radiusKm?: number | null;
-
-  // se você usa expiração no anúncio
-  expiresAt?: string | null; // ISO (ex.: "2025-12-31T23:59:59.000Z")
+  radiusKm: number;
+  imageBase64: string; // data sem prefixo; apenas base64 da imagem
+  nonce: string;       // nonce anti-CSRF que você já gera no cliente
 };
 
-// Resposta compatível com o que a page.tsx espera (estilo fetch Response-like)
-export type CreateAdResponse = {
+/**
+ * Resultado padronizado (estilo Response) para a UI não quebrar.
+ */
+export type CreateResult = {
   ok: boolean;
   status: number;
   data?: { id: string };
   errorText?: string;
 };
 
-export async function createAdSecure(payload: CreatePayload): Promise<CreateAdResponse> {
+/**
+ * Chama a API /api/ads e devolve um objeto padronizado.
+ * A UI pode checar res.ok, res.status, res.data?.id, res.errorText.
+ */
+export async function createAdSecure(payload: CreatePayload): Promise<CreateResult> {
   try {
     const res = await fetch('/api/ads', {
       method: 'POST',
@@ -39,44 +39,26 @@ export async function createAdSecure(payload: CreatePayload): Promise<CreateAdRe
       body: JSON.stringify(payload),
     });
 
-    // tenta parsear JSON (sucesso ou erro)
-    let parsed: any = undefined;
+    // tenta ler JSON; se não for JSON, tenta texto
+    const isJson = (res.headers.get('content-type') || '').includes('application/json');
+    let body: any = null;
     try {
-      parsed = await res.json();
+      body = isJson ? await res.json() : await res.text();
     } catch {
-      parsed = undefined;
+      body = null;
     }
 
-    if (res.ok) {
-      // esperamos { id } no sucesso
-      const id: string | undefined = parsed?.id;
-      if (!id) {
-        return {
-          ok: false,
-          status: res.status,
-          errorText: 'Resposta inesperada do servidor (id ausente).',
-        };
-      }
-      return {
-        ok: true,
-        status: res.status,
-        data: { id },
-      };
-    } else {
-      // no erro, servidor costuma retornar { error: "mensagem" }
-      const errorText =
-        typeof parsed?.error === 'string' ? parsed.error : res.statusText || 'Erro ao criar anúncio';
-      return {
-        ok: false,
-        status: res.status,
-        errorText,
-      };
+    if (!res.ok) {
+      const msg =
+        (body && (body.error || body.message)) ||
+        res.statusText ||
+        'Erro desconhecido';
+      return { ok: false, status: res.status, errorText: msg };
     }
-  } catch (e: any) {
-    return {
-      ok: false,
-      status: 0,
-      errorText: typeof e?.message === 'string' ? e.message : 'Falha de rede ao criar anúncio',
-    };
+
+    const id: string | undefined = body && body.id ? String(body.id) : undefined;
+    return { ok: true, status: res.status, data: id ? { id } : undefined };
+  } catch (err: any) {
+    return { ok: false, status: 0, errorText: err?.message || 'network-error' };
   }
 }
