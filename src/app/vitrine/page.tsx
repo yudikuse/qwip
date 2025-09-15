@@ -1,20 +1,25 @@
-// src/app/vitrine/page.tsx
-import Image from "next/image";
-import Link from "next/link";
+"use client";
 
-// ====== Tipos ======
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import Image from "next/image";
+
+// ⚠️ IMPORTS — atenção à capitalização dos nomes dos arquivos:
+import UfSelect from "@/components/UfSelect";
+import CitySelect from "@/components/CitySelect";
+
 type Ad = {
   id: string;
   title: string;
-  description: string;
+  description: string | null;
   priceCents: number;
   city: string;
-  uf: string | null;
+  uf: string;
   imageUrl: string | null;
-  createdAt: string; // ISO
+  createdAt: string;
 };
 
-// ====== Utils ======
+// helpers
 function formatPrice(cents: number) {
   const v = Math.max(0, Math.trunc(cents || 0));
   const reais = Math.floor(v / 100);
@@ -22,189 +27,140 @@ function formatPrice(cents: number) {
   return `R$ ${reais.toLocaleString("pt-BR")},${cent}`;
 }
 
-function humanSince(since: string | undefined) {
-  switch (since) {
-    case "24h":
-      return "Últimas 24h";
-    case "7d":
-      return "Últimos 7 dias";
-    case "30d":
-      return "Últimos 30 dias";
-    default:
-      return "Qualquer data";
+const ADV_FILTERS = (process.env.NEXT_PUBLIC_ADV_FILTERS ?? "0") === "1";
+
+export default function VitrinePage() {
+  const [loading, setLoading] = useState(false);
+  const [ads, setAds] = useState<Ad[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  // filtros
+  const [hours, setHours] = useState<number>(24);
+  const [uf, setUf] = useState<string>("");
+  const [city, setCity] = useState<string>("");
+
+  // quando o gating estiver desligado, ignoramos UF/Cidade
+  const effectiveUf = useMemo(() => (ADV_FILTERS ? uf : ""), [uf]);
+  const effectiveCity = useMemo(() => (ADV_FILTERS ? city : ""), [city]);
+
+  async function fetchAds() {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("hours", String(hours));
+      if (effectiveUf) params.set("uf", effectiveUf);
+      if (effectiveCity) params.set("city", effectiveCity);
+
+      const res = await fetch(`/api/ads/search?${params.toString()}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setAds(Array.isArray(data?.items) ? data.items : []);
+    } catch (e: any) {
+      setError(e?.message || "Falha ao buscar anúncios");
+      setAds([]);
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
-// ====== Filtro (client) ======
-function AdvancedEnabled() {
-  // Substituído em build pelo Next (não roda no server apenas)
-  return process.env.NEXT_PUBLIC_ADV_FILTERS === "1";
-}
-
-// Componente client isolado para poder usar onChange etc.
-function FilterBar({
-  initialUf,
-  initialCity,
-  initialSince,
-}: {
-  initialUf?: string;
-  initialCity?: string;
-  initialSince?: string;
-}) {
-  "use client";
-
-  // Importa **minúsculo** para bater com nome do arquivo (ufselect.tsx)
-  // Se você renomear o arquivo para UFSelect.tsx, troque o import aqui também.
-  const UFSelect =
-    AdvancedEnabled() ? require("@/components/ufselect").default : null;
-
-  // Fallback leve para cidade. Quando criar `cityselect.tsx`,
-  // basta trocar por: const CitySelect = require("@/components/cityselect").default
-  const CityInput = ({
-    uf,
-    defaultValue,
-  }: {
-    uf?: string;
-    defaultValue?: string;
-  }) => (
-    <input
-      name="city"
-      autoComplete="off"
-      defaultValue={defaultValue ?? ""}
-      placeholder={uf ? "Cidade (filtra dentro da UF)" : "Cidade"}
-      className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-sm outline-none placeholder:text-zinc-500 focus:ring-2 focus:ring-emerald-600/60"
-    />
-  );
-
-  return (
-    <form
-      method="GET"
-      className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[160px_1fr_160px_120px]"
-    >
-      {AdvancedEnabled() ? (
-        <>
-          {/* UF */}
-          <div className="w-full">
-            {UFSelect ? (
-              <UFSelect name="uf" defaultValue={initialUf ?? ""} />
-            ) : (
-              <input
-                name="uf"
-                defaultValue={initialUf ?? ""}
-                placeholder="UF (ex: SP)"
-                className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-sm outline-none placeholder:text-zinc-500 focus:ring-2 focus:ring-emerald-600/60"
-              />
-            )}
-          </div>
-
-          {/* Cidade (dependente da UF – por enquanto input leve) */}
-          <CityInput uf={initialUf} defaultValue={initialCity} />
-
-          {/* Período */}
-          <select
-            name="since"
-            defaultValue={initialSince ?? "24h"}
-            className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-600/60"
-          >
-            <option value="24h">Últimas 24h</option>
-            <option value="7d">Últimos 7 dias</option>
-            <option value="30d">Últimos 30 dias</option>
-            <option value="all">Qualquer data</option>
-          </select>
-
-          <button
-            type="submit"
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
-          >
-            Filtrar
-          </button>
-        </>
-      ) : (
-        // Modo básico (sem filtros avançados)
-        <>
-          <div className="col-span-full text-sm text-zinc-400">
-            Filtros avançados indisponíveis no seu plano.
-          </div>
-        </>
-      )}
-    </form>
-  );
-}
-
-// ====== Server Component (página) ======
-export default async function Page({
-  searchParams,
-}: {
-  searchParams?: {
-    uf?: string;
-    city?: string;
-    since?: "24h" | "7d" | "30d" | "all";
-  };
-}) {
-  const uf = searchParams?.uf?.toUpperCase() || "";
-  const city = searchParams?.city?.trim() || "";
-  const since = searchParams?.since || "24h";
-
-  // Monta query string para a API de busca
-  const qs = new URLSearchParams();
-  if (uf) qs.set("uf", uf);
-  if (city) qs.set("city", city);
-  if (since) qs.set("since", since);
-
-  // Busca na API interna (sem cache para refletir rápido)
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/ads/search?${qs}`, {
-    cache: "no-store",
-  }).catch(() => null);
-
-  const data = (await res?.json().catch(() => null)) as
-    | { items: Ad[] }
-    | null;
-
-  const items: Ad[] = data?.items ?? [];
+  // primeira carga
+  useEffect(() => {
+    fetchAds();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="container mx-auto max-w-5xl px-4 py-6">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-5 flex items-center justify-between">
           <h1 className="text-2xl font-bold">Vitrine</h1>
           <Link
             href="/criar"
-            className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
           >
             Criar anúncio
           </Link>
         </div>
 
-        {/* Barra de filtros (client) */}
-        <FilterBar
-          initialUf={uf}
-          initialCity={city}
-          initialSince={since}
-        />
+        {/* Filtros */}
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {/* UF + Cidade aparecem somente se ADV_FILTERS=1 */}
+          {ADV_FILTERS ? (
+            <>
+              <UfSelect
+                value={uf}
+                onChange={(v) => {
+                  setUf(v);
+                  setCity(""); // reset cidade ao mudar UF
+                }}
+              />
+              <CitySelect uf={uf} value={city} onChange={setCity} disabled={!uf} />
+            </>
+          ) : (
+            // placeholders “leves” quando filtros avançados estiverem off
+            <>
+              <input
+                className="h-11 rounded-lg border border-white/10 bg-card px-3 text-sm text-zinc-200 placeholder:text-zinc-500"
+                placeholder="UF (recurso avançado)"
+                disabled
+              />
+              <input
+                className="h-11 rounded-lg border border-white/10 bg-card px-3 text-sm text-zinc-200 placeholder:text-zinc-500"
+                placeholder="Cidade (recurso avançado)"
+                disabled
+              />
+            </>
+          )}
 
-        {/* Resumo do filtro */}
-        {AdvancedEnabled() && (
-          <div className="mb-3 text-xs text-zinc-400">
-            Filtro:{" "}
-            {uf ? `UF ${uf}` : "qualquer UF"}
-            {city ? `, cidade ${city}` : ""}
-            {", " + humanSince(since)}
+          {/* Janela de tempo */}
+          <div className="flex items-center gap-2">
+            <select
+              value={hours}
+              onChange={(e) => setHours(Number(e.target.value))}
+              className="h-11 w-full rounded-lg border border-white/10 bg-card px-3 text-sm text-zinc-200"
+            >
+              <option value={24}>Últimas 24h</option>
+              <option value={48}>Últimas 48h</option>
+              <option value={72}>Últimas 72h</option>
+              <option value={168}>Últimos 7 dias</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <button
+            onClick={fetchAds}
+            className="h-11 w-full rounded-lg border border-white/10 bg-white/5 text-sm font-semibold hover:bg-white/10 sm:w-auto sm:px-6"
+            disabled={loading}
+          >
+            {loading ? "Filtrando..." : "Filtrar"}
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+            {error}
           </div>
         )}
 
         {/* Lista */}
         <div className="grid gap-4">
-          {items.length === 0 && (
+          {ads.length === 0 && !loading && (
             <div className="rounded-xl border border-white/10 p-6 text-sm text-zinc-400">
               Nenhum anúncio encontrado.
             </div>
           )}
 
-          {items.map((ad) => (
+          {ads.map((ad) => (
             <Link
               key={ad.id}
               href={`/anuncio/${ad.id}`}
-              className="group overflow-hidden rounded-2xl border border-white/10 bg-card"
+              className="block overflow-hidden rounded-2xl border border-white/10 bg-card transition hover:border-white/20"
             >
               <div className="relative aspect-[16/9] w-full bg-zinc-900">
                 {ad.imageUrl ? (
@@ -212,8 +168,10 @@ export default async function Page({
                     src={ad.imageUrl}
                     alt={ad.title}
                     fill
-                    className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-                    sizes="(min-width:1024px) 900px, 100vw"
+                    className="object-cover"
+                    sizes="(min-width: 1024px) 768px, 100vw"
+                    // prioridade baixa na lista
+                    priority={false}
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-xs text-zinc-500">
@@ -221,15 +179,14 @@ export default async function Page({
                   </div>
                 )}
               </div>
+
               <div className="p-4">
-                <div className="text-sm text-zinc-400">
+                <div className="text-xs text-zinc-400">
                   {ad.city}
                   {ad.uf ? `, ${ad.uf}` : ""}
                 </div>
                 <div className="mt-1 text-lg font-semibold">{ad.title}</div>
-                <div className="mt-1 text-emerald-400">
-                  {formatPrice(ad.priceCents)}
-                </div>
+                <div className="mt-1 text-emerald-400">{formatPrice(ad.priceCents)}</div>
               </div>
             </Link>
           ))}
