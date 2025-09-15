@@ -1,9 +1,8 @@
-// src/app/anuncio/[id]/page.tsx
 import Image from "next/image";
 import Link from "next/link";
 import { headers } from "next/headers";
 import AdMap from "@/components/AdMap";
-import ShareButtons from "@/components/ShareButtons";
+import ShareBar from "@/components/ShareBar";
 
 type Ad = {
   id: string;
@@ -35,11 +34,11 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
+// Next.js 15: params é Promisified em rotas dinâmicas
 export default async function Page(props: { params: Promise<{ id: string }> }) {
-  // Next 15: params é Promise
   const { id } = await props.params;
 
-  // headers() é assíncrono no Next 15
+  // headers() é assíncrono em Next 15
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
@@ -72,9 +71,6 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     (ad.centerLat != null && ad.centerLng != null && { lat: ad.centerLat, lng: ad.centerLng }) ||
     (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
     null;
-
-  const priceText = formatPrice(ad.priceCents);
-  const adUrl = `${base}/anuncio/${ad.id}`;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -109,7 +105,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
             </div>
 
             <div className="p-5">
-              <div className="text-xl font-semibold">{priceText}</div>
+              <div className="text-xl font-semibold">{formatPrice(ad.priceCents)}</div>
               <div className="mt-1 text-sm text-zinc-400">
                 {ad.city}
                 {ad.uf ? `, ${ad.uf}` : ""}
@@ -130,18 +126,12 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
               <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={280} />
             </div>
 
-            <a
-              href={`https://wa.me/?text=${encodeURIComponent(
-                `${ad.title} - ${priceText}\n${adUrl}`
-              )}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-4 inline-flex w-full items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
-            >
-              Conversar no WhatsApp
-            </a>
-
-            <ShareButtons title={ad.title} priceText={priceText} url={adUrl} />
+            {/* Botões de ação */}
+            <ShareBar
+              adId={ad.id}
+              title={ad.title}
+              priceText={formatPrice(ad.priceCents)}
+            />
           </aside>
         </div>
       </div>
