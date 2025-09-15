@@ -4,6 +4,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation"; // ⬅️ novo
+
 // ⬇️ usamos o client em formato multipart
 import { createAdSecureForm } from "@/lib/ads-client";
 
@@ -33,6 +35,8 @@ function clampDigits(s: string, max: number) {
 }
 
 export default function NovaPaginaAnuncio() {
+  const router = useRouter(); // ⬅️ novo
+
   // Guard: precisa do cookie de telefone verificado
   useEffect(() => {
     try {
@@ -291,7 +295,14 @@ export default function NovaPaginaAnuncio() {
         return;
       }
 
-      alert(res.data?.id ? `Anúncio criado! ID: ${res.data.id}` : "Anúncio criado!");
+      // ✅ Redireciona para a página do anúncio
+      const id = res.data?.id as string | undefined;
+      if (id) {
+        router.push(`/anuncio/${id}`);
+      } else {
+        // fallback: se por algum motivo não vier id, volta para a vitrine
+        router.push("/vitrine");
+      }
     } catch (err) {
       console.error(err);
       alert("Erro inesperado ao criar anúncio.");
@@ -454,10 +465,10 @@ export default function NovaPaginaAnuncio() {
                 <div className="mt-1 text-xs text-zinc-400">Cidade: {city}{uf ? `, ${uf}` : ""}</div>
 
                 <div className="mt-3 grid grid-cols-2 gap-3">
-                  <button className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400">
+                  <button className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400" disabled>
                     WhatsApp
                   </button>
-                  <button className="inline-flex items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5">
+                  <button className="inline-flex items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5" disabled>
                     Compartilhar
                   </button>
                 </div>
