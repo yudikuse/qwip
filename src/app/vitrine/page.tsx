@@ -1,66 +1,144 @@
-import Link from 'next/link';
-import UfSelect from '@/components/UfSelect';
-import CitySelect from '@/components/CitySelect';
-import { headers } from 'next/headers';
+// src/app/vitrine/page.tsx
+"use client";
 
-// se quiser desligar os filtros avançados no plano básico, use a env:
-// NEXT_PUBLIC_ADV_FILTERS=false
-const ADV = process.env.NEXT_PUBLIC_ADV_FILTERS !== 'false';
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import UfSelect from "@/components/UfSelect";
+import CitySelect from "@/components/CitySelect";
 
-export default async function VitrinePage() {
-  // headers() é assíncrono no Next 15 (só usamos se precisar de baseUrl)
-  await headers();
+type AdCard = {
+  id: string;
+  title: string;
+  description: string;
+  priceCents: number;
+  city: string | null;
+  uf: string | null;
+  imageUrl: string | null;
+};
 
-  // TODO: seu fetch de anúncios aqui
+const ADV = process.env.NEXT_PUBLIC_ADV_FILTERS === "1";
 
-  // Nota: os selects abaixo são client-only, então envolvemos em um .client
-  // Você pode isolar num componente client, se preferir.
+export default function VitrinePage() {
+  const [loading, setLoading] = useState(false);
+  const [ads, setAds] = useState<AdCard[]>([]);
 
-  return (
-    <main className="min-h-screen bg-background text-foreground">
-      <div className="container mx-auto max-w-5xl px-4 py-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Vitrine</h1>
-          <Link href="/anunciar" className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500">
-            Criar anúncio
-          </Link>
-        </div>
-
-        {ADV ? (
-          <ClientFilters />
-        ) : (
-          <p className="text-sm text-zinc-400">Filtros avançados disponíveis no plano Business.</p>
-        )}
-
-        {/* TODO: sua grid de cards */}
-      </div>
-    </main>
-  );
-}
-
-// --- client sub-tree
-'use client';
-import { useState } from 'react';
-
-function ClientFilters() {
+  // filtros
+  const [q, setQ] = useState("");
+  const [radiusKm, setRadiusKm] = useState<number>(5);
   const [uf, setUf] = useState<string | null>(null);
   const [city, setCity] = useState<string | null>(null);
 
+  const qs = useMemo(() => {
+    const p = new URLSearchParams();
+    if (q.trim()) p.set("q", q.trim());
+    // geo básico: apenas radiusKm (o backend usa a localStorage geo ou ignora se não houver)
+    if (radiusKm) p.set("radiusKm", String(radiusKm));
+    // filtros avançados (ligados apenas quando ADV = 1)
+    if (ADV && uf) p.set("uf", uf);
+    if (ADV && city) p.set("city", city);
+    p.set("limit", "30");
+    return p.toString();
+  }, [q, radiusKm, uf, city]);
+
+  useEffect(() => {
+    let aborted = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await fetch(`/api/ads/search?${qs}`, { cache: "no-store" });
+        if (!r.ok) throw new Error("search failed");
+        const data = await r.json();
+        if (!aborted) setAds(data?.items ?? []);
+      } catch {
+        if (!aborted) setAds([]);
+      } finally {
+        if (!aborted) setLoading(false);
+      }
+    })();
+    return () => {
+      aborted = true;
+    };
+  }, [qs]);
+
   return (
-    <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3">
-      <UfSelect value={uf} onChange={(v) => { setUf(v); setCity(null); }} />
-      <CitySelect uf={uf} value={city} onChange={setCity} />
-      {/* Exemplo de botão que dispararia a busca */}
-      <button
-        type="button"
-        className="rounded-md bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
-        onClick={() => {
-          // aqui você chama sua rota /api/ads/search usando uf/city
-          // fetch(`/api/ads/search?uf=${uf ?? ''}&city=${city ?? ''}`)
-        }}
-      >
-        Buscar
-      </button>
-    </div>
+    <main className="min-h-screen bg-background text-foreground">
+      <div className="container mx-auto max-w-6xl px-4 py-6">
+        <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-white/10 bg-card p-4 md:flex-row md:items-end">
+          <div className="flex-1">
+            <label className="mb-1 block text-xs text-zinc-400">Palavra-chave</label>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="O que está procurando?"
+              className="w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-zinc-400">Raio (km)</label>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={radiusKm}
+              onChange={(e) => setRadiusKm(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
+              className="w-28 rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+
+          {ADV && (
+            <>
+              <div className="w-36">
+                <label className="mb-1 block text-xs text-zinc-400">UF</label>
+                <UfSelect value={uf} onChange={setUf} />
+              </div>
+              <div className="w-56">
+                <label className="mb-1 block text-xs text-zinc-400">Cidade</label>
+                <CitySelect uf={uf} value={city} onChange={setCity} />
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="mb-3 text-sm text-zinc-400">
+          {loading ? "Carregando…" : `Encontrados: ${ads.length}`}
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {ads.map((ad) => (
+            <Link
+              key={ad.id}
+              href={`/anuncio/${ad.id}`}
+              className="group overflow-hidden rounded-2xl border border-white/10 bg-card"
+            >
+              <div className="aspect-[4/3] w-full bg-zinc-900">
+                {ad.imageUrl ? (
+                  // Next/Image aqui é opcional; se preferir:
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={ad.imageUrl}
+                    alt={ad.title}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs text-zinc-500">
+                    (Sem imagem)
+                  </div>
+                )}
+              </div>
+              <div className="p-3">
+                <div className="line-clamp-1 text-sm font-semibold">{ad.title}</div>
+                <div className="mt-1 line-clamp-2 text-xs text-zinc-400">{ad.description}</div>
+                {(ad.city || ad.uf) && (
+                  <div className="mt-1 text-[11px] text-zinc-500">
+                    {ad.city ?? ""}{ad.city && ad.uf ? ", " : ""}{ad.uf ?? ""}
+                  </div>
+                )}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </main>
   );
 }
