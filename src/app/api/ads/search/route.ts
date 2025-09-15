@@ -1,158 +1,72 @@
-import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient, Prisma } from "@prisma/client";
+// src/app/api/ads/search/route.ts
+import { NextResponse } from "next/server";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-/**
- * GET /api/ads/search
- * Query params (todos opcionais):
- *  - q: string          -> busca por título/descrição (ILIKE)
- *  - uf: string         -> filtra por UF
- *  - city: string       -> filtra por cidade (nome inteiro ou prefixo)
- *  - lat, lng: number   -> ativa cálculo de distância (Haversine)
- *  - radiusKm: number   -> se informado junto com lat/lng, filtra por raio
- *  - page: number       -> paginação (default 1)
- *  - size: number       -> tamanho página (default 20, max 50)
- */
-export async function GET(req: NextRequest) {
+export async function GET(req: Request) {
   try {
-    const url = new URL(req.url);
-    const q = (url.searchParams.get("q") || "").trim();
-    const uf = (url.searchParams.get("uf") || "").trim().toUpperCase();
-    const city = (url.searchParams.get("city") || "").trim();
+    const { searchParams } = new URL(req.url);
 
-    const lat = url.searchParams.get("lat");
-    const lng = url.searchParams.get("lng");
-    const radiusKmStr = url.searchParams.get("radiusKm");
+    const q = (searchParams.get("q") || "").trim();
+    const uf = (searchParams.get("uf") || "").trim().toUpperCase();
+    const city = (searchParams.get("city") || "").trim();
 
-    const page = Math.max(1, Number(url.searchParams.get("page") || 1));
-    const size = Math.min(50, Math.max(1, Number(url.searchParams.get("size") || 20)));
-    const offset = (page - 1) * size;
+    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "12", 10)));
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
+    const offset = (page - 1) * limit;
 
-    const latNum = lat ? Number(lat) : null;
-    const lngNum = lng ? Number(lng) : null;
-    const radiusKm = radiusKmStr ? Math.max(0, Number(radiusKmStr)) : null;
+    // WHERE dinâmico em fragments Sql
+    const conds: Prisma.Sql[] = [Prisma.sql`a."expiresAt" > NOW()`];
 
-    // Condições dinâmicas construídas como Prisma.Sql
-    const conds: Prisma.Sql[] = [];
+    if (q) conds.push(Prisma.sql`(a."title" ILIKE ${"%" + q + "%"} OR a."description" ILIKE ${"%" + q + "%"})`);
+    if (uf) conds.push(Prisma.sql`a."uf" = ${uf}`);
+    if (city) conds.push(Prisma.sql`a."city" = ${city}`);
 
-    if (q) {
-      // Busca em título/descrição (ILIKE %q%)
-      const like = `%${q}%`;
-      conds.push(
-        Prisma.sql`(a."title" ILIKE ${like} OR a."description" ILIKE ${like})`
-      );
-    }
-
-    if (uf) {
-      conds.push(Prisma.sql`a."uf" = ${uf}`);
-    }
-
-    if (city) {
-      // Se quiser prefix match, use ILIKE 'foo%'
-      const likeCity = `${city}%`;
-      conds.push(Prisma.sql`a."city" ILIKE ${likeCity}`);
-    }
-
-    // Geo: se vier lat/lng, podemos calcular distância Haversine (em km)
-    let distanceSelect: Prisma.Sql = Prisma.sql`NULL::float AS distance_km`;
-    if (latNum != null && lngNum != null) {
-      // Fórmula Haversine aprox em km
-      distanceSelect = Prisma.sql`
-        (6371 * acos(
-          cos(radians(${latNum})) * cos(radians(a."lat"))
-          * cos(radians(a."lng") - radians(${lngNum}))
-          + sin(radians(${latNum})) * sin(radians(a."lat"))
-        )) AS distance_km
-      `;
-
-      // Se radiusKm vier, filtra por esse raio
-      if (radiusKm != null && radiusKm > 0) {
-        conds.push(
-          Prisma.sql`a."lat" IS NOT NULL AND a."lng" IS NOT NULL`
-        );
-        conds.push(
-          Prisma.sql`
-            (6371 * acos(
-              cos(radians(${latNum})) * cos(radians(a."lat"))
-              * cos(radians(a."lng") - radians(${lngNum}))
-              + sin(radians(${latNum})) * sin(radians(a."lat"))
-            )) <= ${radiusKm}
-          `
-        );
-      }
-    }
-
+    // Se não houver nenhuma cond adicional além do expiresAt, ainda assim gera WHERE
     const whereFrag: Prisma.Sql =
       conds.length > 0
         ? Prisma.sql`WHERE ${Prisma.join(conds, Prisma.sql` AND `)}`
         : Prisma.sql``;
 
-    // SELECT principal (tudo com Prisma.sql — nada de string simples aqui)
-    const itemsQuery = Prisma.sql`
+    // SELECT principal — tudo dentro de Prisma.sql
+    const selectSql = Prisma.sql`
       SELECT
         a."id",
         a."title",
-        a."description",
         a."priceCents",
         a."city",
         a."uf",
-        a."lat",
-        a."lng",
-        a."centerLat",
-        a."centerLng",
-        a."radiusKm",
-        a."imageUrl",
-        a."createdAt",
-        ${distanceSelect}
+        a."imageUrl"
       FROM "Ad" a
       ${whereFrag}
-      ORDER BY
-        ${latNum != null && lngNum != null ? Prisma.sql`distance_km ASC,` : Prisma.sql``}
-        a."createdAt" DESC
-      LIMIT ${size} OFFSET ${offset};
+      ORDER BY a."createdAt" DESC
+      LIMIT ${limit} OFFSET ${offset}
     `;
 
-    const countQuery = Prisma.sql`
-      SELECT COUNT(*)::int AS count
+    const countSql = Prisma.sql`
+      SELECT COUNT(*)::int AS total
       FROM "Ad" a
-      ${whereFrag};
+      ${whereFrag}
     `;
 
-    // Executa as duas queries
     const [items, countRows] = await Promise.all([
-      prisma.$queryRaw<
-        Array<{
-          id: string;
-          title: string;
-          description: string;
-          priceCents: number;
-          city: string;
-          uf: string;
-          lat: number | null;
-          lng: number | null;
-          centerLat: number | null;
-          centerLng: number | null;
-          radiusKm: number | null;
-          imageUrl: string | null;
-          createdAt: Date;
-          distance_km: number | null;
-        }>
-      >(itemsQuery),
-      prisma.$queryRaw<Array<{ count: number }>>(countQuery),
+      prisma.$queryRaw<Array<{
+        id: string;
+        title: string;
+        priceCents: number;
+        city: string | null;
+        uf: string | null;
+        imageUrl: string | null;
+      }>>(selectSql),
+      prisma.$queryRaw<Array<{ total: number }>>(countSql),
     ]);
 
-    const total = countRows?.[0]?.count ?? 0;
+    const total = countRows?.[0]?.total ?? 0;
 
-    return NextResponse.json({
-      ok: true,
-      page,
-      size,
-      total,
-      items,
-    });
+    return NextResponse.json({ items, total });
   } catch (err) {
-    console.error("search route error:", err);
-    return NextResponse.json({ ok: false, error: "SEARCH_FAILED" }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ items: [], total: 0 }, { status: 500 });
   }
 }
