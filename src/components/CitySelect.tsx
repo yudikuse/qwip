@@ -1,98 +1,72 @@
+// src/components/CitySelect.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 
-type City = { id: number; nome: string };
-
-export default function CitySelect(props: {
-  uf: string;                  // UF selecionada (ex: "SP"). Se vazio, o select fica desabilitado.
-  value: string;               // Nome da cidade atual (mesmo texto que aparece nas opções)
-  onChange: (city: string) => void;
-  placeholder?: string;
+type Props = {
+  uf: string | null;                // depende da UF
+  value: string | null;
+  onChange: (city: string | null) => void;
   disabled?: boolean;
-}) {
-  const { uf, value, onChange, placeholder = "Cidade", disabled } = props;
+  className?: string;
+};
 
-  const [cities, setCities] = useState<City[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [query, setQuery] = useState(""); // para filtrar por digitação
+// Para não depender de API externa agora, deixei um dicionário mínimo.
+// Você pode expandir depois (ou trocar por fetch de uma API de cidades).
+const CITIES_BY_UF: Record<string, string[]> = {
+  SP: ["São Paulo","Campinas","Guarulhos","Santos","São Bernardo do Campo","Santo André","Osasco","Ribeirão Preto","Sorocaba","São José dos Campos"],
+  RJ: ["Rio de Janeiro","Niterói","Duque de Caxias","Nova Iguaçu","Campos dos Goytacazes","Volta Redonda"],
+  MG: ["Belo Horizonte","Uberlândia","Juiz de Fora","Contagem","Betim","Uberaba"],
+  PR: ["Curitiba","Londrina","Maringá","Ponta Grossa","Cascavel","São José dos Pinhais"],
+  RS: ["Porto Alegre","Caxias do Sul","Pelotas","Canoas","Santa Maria","Gravataí"],
+  // ...adicione conforme precisar
+};
 
-  // Carrega cidades do IBGE ao mudar a UF
+export default function CitySelect({ uf, value, onChange, disabled, className }: Props) {
+  const [query, setQuery] = useState("");
+
+  const all = useMemo(() => (uf ? CITIES_BY_UF[uf] ?? [] : []), [uf]);
+
+  // Filtra por prefixo enquanto digita (leve e convencional)
+  const filtered = useMemo(() => {
+    if (!query) return all;
+    const q = query.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+    return all.filter((c) =>
+      c
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .toLowerCase()
+        .startsWith(q)
+    );
+  }, [all, query]);
+
+  // Se trocar de UF e a cidade atual não existir nessa UF, limpa
   useEffect(() => {
-    let abort = false;
-
-    async function load() {
-      if (!uf) {
-        setCities([]);
-        return;
-      }
-      try {
-        setLoading(true);
-        // API oficial do IBGE
-        const url = `https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios?orderBy=nome`;
-        const resp = await fetch(url, { cache: "force-cache" });
-        if (!resp.ok) throw new Error("Falha ao carregar cidades");
-        const data: Array<{ id: number; nome: string }> = await resp.json();
-        if (!abort) setCities(data);
-      } catch {
-        if (!abort) setCities([]);
-      } finally {
-        if (!abort) setLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      abort = true;
-    };
+    if (value && uf && !(CITIES_BY_UF[uf] ?? []).includes(value)) onChange(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uf]);
 
-  // Filtro leve no cliente para UX melhor (rola lista + você pode digitar para filtrar)
-  const filtered = useMemo(() => {
-    if (!query.trim()) return cities;
-    const q = query.trim().toLowerCase();
-    return cities.filter((c) => c.nome.toLowerCase().includes(q));
-  }, [cities, query]);
-
-  const isDisabled = disabled || !uf || loading;
-
   return (
-    <div className="w-full">
+    <div className={className ?? "w-full"}>
       <input
         type="text"
-        inputMode="search"
-        placeholder={uf ? "Digite para filtrar cidades..." : placeholder}
-        value={value ? value : query}
-        onChange={(e) => {
-          // Se já tem uma cidade escolhida e o usuário começa a digitar, limpamos o value
-          if (value) {
-            onChange("");
-          }
-          setQuery(e.target.value);
-        }}
+        placeholder={uf ? "Digite a cidade..." : "Selecione a UF primeiro"}
         disabled={!uf || disabled}
-        className="mb-2 w-full rounded-lg border border-white/10 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        className="mb-2 w-full rounded-md border border-white/10 bg-[#0F1115] px-3 py-2 text-sm"
       />
-
       <select
-        value={value}
-        disabled={isDisabled}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-white/10 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+        disabled={!uf || disabled}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value ? e.target.value : null)}
+        className="w-full rounded-md border border-white/10 bg-[#0F1115] px-3 py-2 text-sm"
+        size={Math.min(8, Math.max(3, filtered.length || 3))} // lista com rolagem leve
       >
-        <option value="">
-          {uf
-            ? loading
-              ? "Carregando cidades..."
-              : filtered.length
-              ? "Selecione a cidade"
-              : "Nenhuma cidade encontrada"
-            : placeholder}
-        </option>
-
+        <option value="">{uf ? "Cidade" : "Selecione a UF"}</option>
         {filtered.map((c) => (
-          <option key={c.id} value={c.nome}>
-            {c.nome}
+          <option key={c} value={c}>
+            {c}
           </option>
         ))}
       </select>
