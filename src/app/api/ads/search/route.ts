@@ -24,10 +24,11 @@ export async function GET(req: Request) {
     if (city) conds.push(Prisma.sql`a."city" = ${city}`);
 
     // Se não houver nenhuma cond adicional além do expiresAt, ainda assim gera WHERE
-    const whereFrag: Prisma.Sql =
-      conds.length > 0
-        ? Prisma.sql`WHERE ${Prisma.join(conds, Prisma.sql` AND `)}`
-        : Prisma.sql``;
+// ✅ correto
+const whereFrag: Prisma.Sql =
+  conds.length > 0
+    ? Prisma.sql`WHERE ${Prisma.join(conds, ' AND ')}`
+    : Prisma.sql``;
 
     // SELECT principal — tudo dentro de Prisma.sql
     const selectSql = Prisma.sql`
