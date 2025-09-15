@@ -1,58 +1,42 @@
+// src/components/ShareButtons.tsx
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 type Props = {
   title: string;
-  priceLabel: string;
+  priceText: string;
   url: string;
 };
 
-export default function ShareButtons({ title, priceLabel, url }: Props) {
-  const handleShare = useCallback(async () => {
-    const text = `${title} - ${priceLabel}\n${url}`;
+export default function ShareButtons({ title, priceText, url }: Props) {
+  const [copied, setCopied] = useState(false);
 
-    try {
-      if (typeof navigator !== "undefined" && (navigator as any).share) {
-        await (navigator as any).share({
-          title,
-          text,
-          url,
-        });
-      } else if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        alert("Link do anúncio copiado!");
-      } else {
-        // fallback final
-        const a = document.createElement("a");
-        a.href = url;
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
-        a.click();
+  const onShare = useCallback(async () => {
+    const text = `${title} - ${priceText}\n${url}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, text, url });
+      } catch {
+        /* usuário cancelou */
       }
-    } catch {
-      // usuário cancelou ou erro — não precisa fazer nada
+      return;
     }
-  }, [title, priceLabel, url]);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      alert("Copie este link:\n" + text);
+    }
+  }, [title, priceText, url]);
 
   return (
-    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <a
-        href={`https://wa.me/?text=${encodeURIComponent(`${title} - ${priceLabel}\n${url}`)}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex w-full items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
-      >
-        WhatsApp
-      </a>
-
-      <button
-        type="button"
-        onClick={handleShare}
-        className="inline-flex w-full items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm font-semibold hover:bg-white/5"
-      >
-        Compartilhar
-      </button>
-    </div>
+    <button
+      onClick={onShare}
+      className="mt-2 inline-flex w-full items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/5"
+    >
+      {copied ? "Copiado!" : "Compartilhar"}
+    </button>
   );
 }
