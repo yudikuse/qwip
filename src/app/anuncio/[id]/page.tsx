@@ -1,7 +1,9 @@
+// src/app/anuncio/[id]/page.tsx
 import Image from "next/image";
 import Link from "next/link";
 import { headers } from "next/headers";
 import AdMap from "@/components/AdMap";
+import ShareButtons from "@/components/ShareButtons";
 
 type Ad = {
   id: string;
@@ -34,10 +36,10 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
 }
 
 export default async function Page(props: { params: Promise<{ id: string }> }) {
-  // Next.js 15: props.params é uma Promise em rotas dinâmicas
+  // Next 15: params é Promise
   const { id } = await props.params;
 
-  // headers() agora é assíncrono em Next 15
+  // headers() é assíncrono no Next 15
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
@@ -71,6 +73,9 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
     null;
 
+  const priceText = formatPrice(ad.priceCents);
+  const adUrl = `${base}/anuncio/${ad.id}`;
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="container mx-auto max-w-5xl px-4 py-8">
@@ -89,7 +94,6 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           <div className="rounded-2xl border border-white/10 bg-card">
             <div className="relative aspect-[4/3] w-full overflow-hidden rounded-t-2xl bg-zinc-900">
               {ad.imageUrl ? (
-                // usando Image para otimização
                 <Image
                   src={ad.imageUrl}
                   alt={ad.title}
@@ -105,7 +109,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
             </div>
 
             <div className="p-5">
-              <div className="text-xl font-semibold">{formatPrice(ad.priceCents)}</div>
+              <div className="text-xl font-semibold">{priceText}</div>
               <div className="mt-1 text-sm text-zinc-400">
                 {ad.city}
                 {ad.uf ? `, ${ad.uf}` : ""}
@@ -119,7 +123,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
             </div>
           </div>
 
-          {/* DIREITA: Mapa + ação */}
+          {/* DIREITA: Mapa + ações */}
           <aside className="rounded-2xl border border-white/10 bg-card p-5">
             <div className="mb-3 text-sm font-semibold">Área do anúncio</div>
             <div className="overflow-hidden rounded-xl border border-white/10">
@@ -128,7 +132,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
 
             <a
               href={`https://wa.me/?text=${encodeURIComponent(
-                `${ad.title} - ${formatPrice(ad.priceCents)}\n${base}/anuncio/${ad.id}`
+                `${ad.title} - ${priceText}\n${adUrl}`
               )}`}
               target="_blank"
               rel="noopener noreferrer"
@@ -136,6 +140,8 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
             >
               Conversar no WhatsApp
             </a>
+
+            <ShareButtons title={ad.title} priceText={priceText} url={adUrl} />
           </aside>
         </div>
       </div>
