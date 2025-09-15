@@ -1,10 +1,7 @@
-// src/app/anuncio/[id]/page.tsx
-import { notFound } from "next/navigation";
+import Image from "next/image";
+import Link from "next/link";
 import { headers } from "next/headers";
-import dynamic from "next/dynamic";
-
-// Carrega o mapa só no client
-const GeoMap = dynamic(() => import("@/components/GeoMap"), { ssr: false });
+import AdMap from "@/components/AdMap";
 
 type Ad = {
   id: string;
@@ -13,173 +10,132 @@ type Ad = {
   priceCents: number;
   city: string;
   uf: string;
-  lat: number;
-  lng: number;
+  lat: number | null;
+  lng: number | null;
   centerLat: number | null;
   centerLng: number | null;
-  radiusKm: number;
+  radiusKm: number | null;
   imageUrl: string | null;
-  imageMime: string | null;
-  imageSha256: string | null;
   createdAt: string;
-  updatedAt: string;
-  sellerId: string | null;
 };
 
-function formatPriceBRL(cents: number) {
-  const v = Math.max(0, Math.floor(cents || 0)) / 100;
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+function formatPrice(cents: number) {
+  const v = Math.max(0, Math.trunc(cents || 0));
+  const reais = Math.floor(v / 100);
+  const cent = (v % 100).toString().padStart(2, "0");
+  return `R$ ${reais.toLocaleString("pt-BR")},${cent}`;
 }
 
-export default async function AdPage({
-  params,
-}: {
-  // Next 15: params é uma Promise
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
+async function fetchAd(base: string, id: string): Promise<Ad | null> {
+  const r = await fetch(`${base}/api/ads/${id}`, { cache: "no-store" });
+  if (!r.ok) return null;
+  const data = await r.json();
+  return (data?.ad ?? null) as Ad | null;
+}
 
-  // Monta URL absoluta da própria app (importante no Vercel)
-  const h = await headers(); // Next 15: precisa await
+export default async function Page(props: { params: Promise<{ id: string }> }) {
+  // Next.js 15: props.params é uma Promise em rotas dinâmicas
+  const { id } = await props.params;
+
+  // headers() agora é assíncrono em Next 15
+  const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
   const base = `${proto}://${host}`;
 
-  // Busca o anúncio pela rota interna (SSR, sem cache)
-  const res = await fetch(`${base}/api/ads/${encodeURIComponent(id)}`, {
-    cache: "no-store",
-  });
+  const ad = await fetchAd(base, id);
 
-  if (!res.ok) {
-    // 404 → notFound(); outros erros → tenta exibir 404 também
-    notFound();
-  }
-
-  const data: { ad?: Ad } = await res.json();
-  const ad = data.ad;
   if (!ad) {
-    notFound();
+    return (
+      <main className="min-h-screen bg-background text-foreground">
+        <div className="container mx-auto max-w-4xl px-4 py-10">
+          <div className="rounded-xl border border-white/10 p-6">
+            <h1 className="text-xl font-semibold">Anúncio não encontrado</h1>
+            <p className="mt-2 text-sm text-zinc-400">
+              O anúncio pode ter expirado ou sido removido.
+            </p>
+            <Link
+              href="/vitrine"
+              className="mt-4 inline-block rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
+            >
+              Voltar para a vitrine
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
   }
 
-  const price = formatPriceBRL(ad.priceCents);
-  const center = {
-    lat: ad.centerLat ?? ad.lat,
-    lng: ad.centerLng ?? ad.lng,
-  };
-
-  // Link/CTA de WhatsApp — placeholder: sem número por enquanto
-  // Quando houver telefone do anunciante, montar wa.me/55NUMERO?text=...
-  const waHref = `https://wa.me/?text=${encodeURIComponent(
-    `Olá! Vi seu anúncio no QWIP: ${ad.title} — ${base}/anuncio/${ad.id}`
-  )}`;
+  const center =
+    (ad.centerLat != null && ad.centerLng != null && { lat: ad.centerLat, lng: ad.centerLng }) ||
+    (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
+    null;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="container mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-6">
-          <a
-            href="/"
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="text-2xl font-bold">{ad.title}</h1>
+          <Link
+            href="/vitrine"
             className="rounded-lg border border-white/10 px-3 py-1.5 text-sm hover:bg-white/5"
           >
-            ← Voltar
-          </a>
+            Voltar
+          </Link>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          {/* Imagem + informações */}
-          <div className="rounded-2xl border border-white/10 bg-card overflow-hidden">
-            <div className="h-72 w-full bg-zinc-900">
+        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+          {/* ESQUERDA: imagem + descrição */}
+          <div className="rounded-2xl border border-white/10 bg-card">
+            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-t-2xl bg-zinc-900">
               {ad.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                // usando Image para otimização
+                <Image
                   src={ad.imageUrl}
                   alt={ad.title}
-                  className="h-72 w-full object-cover"
+                  fill
+                  className="object-cover"
+                  sizes="(min-width: 1024px) 60vw, 100vw"
                 />
               ) : (
-                <div className="flex h-72 items-center justify-center text-xs text-zinc-500">
-                  (Anúncio sem imagem)
+                <div className="flex h-full w-full items-center justify-center text-xs text-zinc-500">
+                  (Sem imagem)
                 </div>
               )}
             </div>
 
             <div className="p-5">
-              <h1 className="text-xl font-semibold">{ad.title}</h1>
+              <div className="text-xl font-semibold">{formatPrice(ad.priceCents)}</div>
               <div className="mt-1 text-sm text-zinc-400">
                 {ad.city}
                 {ad.uf ? `, ${ad.uf}` : ""}
               </div>
-
-              <div className="mt-3 text-lg font-bold text-emerald-400">
-                {price}
-              </div>
-
-              <p className="mt-4 whitespace-pre-wrap text-sm text-zinc-200">
+              <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
                 {ad.description}
               </p>
-
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <a
-                  href={waHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400"
-                >
-                  WhatsApp
-                </a>
-                <button
-                  onClick={() => {
-                    try {
-                      navigator.share
-                        ? navigator.share({
-                            title: ad.title,
-                            text: `Veja este anúncio no QWIP: ${ad.title}`,
-                            url: `${base}/anuncio/${ad.id}`,
-                          })
-                        : window.open(
-                            `https://wa.me/?text=${encodeURIComponent(
-                              `${ad.title} — ${base}/anuncio/${ad.id}`
-                            )}`,
-                            "_blank"
-                          );
-                    } catch {
-                      window.open(
-                        `https://wa.me/?text=${encodeURIComponent(
-                          `${ad.title} — ${base}/anuncio/${ad.id}`
-                        )}`,
-                        "_blank"
-                      );
-                    }
-                  }}
-                  className="inline-flex items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5"
-                >
-                  Compartilhar
-                </button>
+              <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-amber-400/10 px-2 py-0.5 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
+                Expira em 24h
               </div>
             </div>
           </div>
 
-          {/* Mapa */}
+          {/* DIREITA: Mapa + ação */}
           <aside className="rounded-2xl border border-white/10 bg-card p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Localização</h2>
-              <div className="text-xs text-zinc-400">
-                Raio:{" "}
-                <span className="font-medium text-zinc-200">
-                  {ad.radiusKm} km
-                </span>
-              </div>
+            <div className="mb-3 text-sm font-semibold">Área do anúncio</div>
+            <div className="overflow-hidden rounded-xl border border-white/10">
+              <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={280} />
             </div>
 
-            <GeoMap
-              center={{ lat: center.lat, lng: center.lng }}
-              radiusKm={ad.radiusKm}
-              onLocationChange={() => {}}
-              height={320}
-            />
-            <p className="mt-2 text-xs text-zinc-500">
-              Área aproximada informada pelo anunciante.
-            </p>
+            <a
+              href={`https://wa.me/?text=${encodeURIComponent(
+                `${ad.title} - ${formatPrice(ad.priceCents)}\n${base}/anuncio/${ad.id}`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 inline-flex w-full items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
+            >
+              Conversar no WhatsApp
+            </a>
           </aside>
         </div>
       </div>
