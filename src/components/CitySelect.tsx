@@ -1,67 +1,72 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+const cache = new Map<string, string[]>();
 
 type Props = {
-  uf: string;                 // usa a UF selecionada
-  value: string;
+  uf?: string;
+  value?: string;
   onChange: (city: string) => void;
   placeholder?: string;
-  disabled?: boolean;
   className?: string;
 };
 
-type City = { nome: string };
-
-export default function CitySelect({
-  uf,
-  value,
-  onChange,
-  placeholder = "Cidade",
-  disabled,
-  className = "",
-}: Props) {
-  const [cities, setCities] = useState<City[]>([]);
+export default function CitySelect({ uf, value, onChange, placeholder = "Cidade", className }: Props) {
+  const [list, setList] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!uf) {
-      setCities([]);
-      return;
+    let cancel = false;
+    async function load() {
+      if (!uf) {
+        setList([]);
+        return;
+      }
+      const key = uf.toUpperCase();
+      if (cache.has(key)) {
+        setList(cache.get(key)!);
+        return;
+      }
+      setLoading(true);
+      try {
+        const r = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${key}/municipios`);
+        const data = (await r.json()) as Array<{ nome: string }>;
+        const cities = data.map((d) => d.nome).sort((a, b) => a.localeCompare(b, "pt-BR"));
+        cache.set(key, cities);
+        if (!cancel) setList(cities);
+      } catch {
+        if (!cancel) setList([]);
+      } finally {
+        if (!cancel) setLoading(false);
+      }
     }
-    let abort = false;
-    setLoading(true);
-    // API oficial do IBGE (lista municípios por UF)
-    fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (!abort) setCities(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {
-        if (!abort) setCities([]);
-      })
-      .finally(() => !abort && setLoading(false));
+    load();
     return () => {
-      abort = true;
+      cancel = true;
     };
   }, [uf]);
 
-  const isDisabled = disabled || !uf || loading;
+  const disabled = !uf || loading;
+
+  const options = useMemo(() => {
+    if (!uf) return [];
+    return list;
+  }, [list, uf]);
 
   return (
     <select
-      value={value}
+      disabled={disabled}
+      value={value ?? ""}
       onChange={(e) => onChange(e.target.value)}
-      disabled={isDisabled}
-      className={`w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-sm outline-none placeholder:text-zinc-500 ${className}`}
+      className={className ?? "w-full rounded-lg bg-[#0F1115] border border-white/10 px-3 py-2 text-sm disabled:opacity-60"}
     >
       <option value="">{loading ? "Carregando..." : placeholder}</option>
-      {cities.map((c) => (
-        <option key={c.nome} value={c.nome}>
-          {c.nome}
+      {options.map((name) => (
+        <option key={name} value={name}>
+          {name}
         </option>
       ))}
     </select>
   );
 }
-
