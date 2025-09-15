@@ -1,73 +1,107 @@
-// src/components/CitySelect.tsx
-"use client";
+'use client';
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from 'react';
 
 type Props = {
-  uf: string | null;                // depende da UF
+  uf: string | null;                 // depende da UF
   value: string | null;
-  onChange: (city: string | null) => void;
+  onChange: (v: string | null) => void;
   disabled?: boolean;
+  placeholder?: string;
+  id?: string;
+  name?: string;
   className?: string;
 };
 
-// Para não depender de API externa agora, deixei um dicionário mínimo.
-// Você pode expandir depois (ou trocar por fetch de uma API de cidades).
-const CITIES_BY_UF: Record<string, string[]> = {
-  SP: ["São Paulo","Campinas","Guarulhos","Santos","São Bernardo do Campo","Santo André","Osasco","Ribeirão Preto","Sorocaba","São José dos Campos"],
-  RJ: ["Rio de Janeiro","Niterói","Duque de Caxias","Nova Iguaçu","Campos dos Goytacazes","Volta Redonda"],
-  MG: ["Belo Horizonte","Uberlândia","Juiz de Fora","Contagem","Betim","Uberaba"],
-  PR: ["Curitiba","Londrina","Maringá","Ponta Grossa","Cascavel","São José dos Pinhais"],
-  RS: ["Porto Alegre","Caxias do Sul","Pelotas","Canoas","Santa Maria","Gravataí"],
-  // ...adicione conforme precisar
-};
+// Fonte simples: você pode trocar depois por uma API/BD.
+// Para não pesar no bundle inicial, carregamos sob demanda por UF.
+async function fetchCitiesByUf(uf: string): Promise<string[]> {
+  // mock leve por enquanto (substitua por fetch real quando tiver endpoint)
+  const MAP: Record<string, string[]> = {
+    SP: ['São Paulo','Campinas','Santos','São José dos Campos','Ribeirão Preto'],
+    RJ: ['Rio de Janeiro','Niterói','Campos dos Goytacazes','Petrópolis'],
+    MG: ['Belo Horizonte','Uberlândia','Contagem','Juiz de Fora'],
+    PR: ['Curitiba','Londrina','Maringá','Ponta Grossa'],
+    RS: ['Porto Alegre','Caxias do Sul','Pelotas','Canoas'],
+    // adicione aos poucos; quando ligar à base/endpoint, remova este mock
+  };
+  return MAP[uf] ?? [];
+}
 
-export default function CitySelect({ uf, value, onChange, disabled, className }: Props) {
-  const [query, setQuery] = useState("");
+export default function CitySelect({
+  uf,
+  value,
+  onChange,
+  disabled,
+  placeholder = 'Selecione a cidade',
+  id,
+  name,
+  className,
+}: Props) {
+  const [options, setOptions] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const all = useMemo(() => (uf ? CITIES_BY_UF[uf] ?? [] : []), [uf]);
-
-  // Filtra por prefixo enquanto digita (leve e convencional)
-  const filtered = useMemo(() => {
-    if (!query) return all;
-    const q = query.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
-    return all.filter((c) =>
-      c
-        .normalize("NFD")
-        .replace(/\p{Diacritic}/gu, "")
-        .toLowerCase()
-        .startsWith(q)
-    );
-  }, [all, query]);
-
-  // Se trocar de UF e a cidade atual não existir nessa UF, limpa
   useEffect(() => {
-    if (value && uf && !(CITIES_BY_UF[uf] ?? []).includes(value)) onChange(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uf]);
+    let abort = false;
+    (async () => {
+      if (!uf) {
+        setOptions([]);
+        onChange(null);
+        return;
+      }
+      setLoading(true);
+      try {
+        const cities = await fetchCitiesByUf(uf);
+        if (!abort) setOptions(cities);
+        // se UF mudou e a cidade anterior não existir mais, limpa:
+        if (value && cities.length && !cities.includes(value)) {
+          onChange(null);
+        }
+      } finally {
+        if (!abort) setLoading(false);
+      }
+    })();
+    return () => { abort = true; };
+  }, [uf]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // busca incremental por digitação (nativa do browser com datalist é simples,
+  // mas aqui mantemos <select> para consistência visual)
+  const [filter, setFilter] = useState('');
+  const filtered = useMemo(() => {
+    const f = (filter || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+    if (!f) return options;
+    return options.filter((c) => (
+      c.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().includes(f)
+    ));
+  }, [options, filter]);
 
   return (
-    <div className={className ?? "w-full"}>
-      <input
-        type="text"
-        placeholder={uf ? "Digite a cidade..." : "Selecione a UF primeiro"}
-        disabled={!uf || disabled}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="mb-2 w-full rounded-md border border-white/10 bg-[#0F1115] px-3 py-2 text-sm"
-      />
+    <div className={className}>
+      <div className="mb-2">
+        <input
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Digite para filtrar cidades"
+          disabled={disabled || !uf}
+          className="w-full rounded-md bg-zinc-900/60 border border-white/10 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-400/30"
+        />
+      </div>
+
+      <label htmlFor={id} className="sr-only">Cidade</label>
       <select
-        disabled={!uf || disabled}
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value ? e.target.value : null)}
-        className="w-full rounded-md border border-white/10 bg-[#0F1115] px-3 py-2 text-sm"
-        size={Math.min(8, Math.max(3, filtered.length || 3))} // lista com rolagem leve
+        id={id}
+        name={name}
+        value={value ?? ''}
+        disabled={disabled || !uf || loading}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="w-full max-h-64 overflow-y-auto rounded-md bg-zinc-900/60 border border-white/10 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-400/30"
       >
-        <option value="">{uf ? "Cidade" : "Selecione a UF"}</option>
+        <option value="">
+          {uf ? (loading ? 'Carregando cidades…' : placeholder) : 'Selecione a UF primeiro'}
+        </option>
         {filtered.map((c) => (
-          <option key={c} value={c}>
-            {c}
-          </option>
+          <option key={c} value={c}>{c}</option>
         ))}
       </select>
     </div>
