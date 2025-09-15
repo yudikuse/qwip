@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { headers } from "next/headers";
 import AdMap from "@/components/AdMap";
+import ShareButtons from "@/components/ShareButtons";
 
 type Ad = {
   id: string;
@@ -34,10 +35,10 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
 }
 
 export default async function Page(props: { params: Promise<{ id: string }> }) {
-  // Next.js 15: props.params é uma Promise em rotas dinâmicas
+  // Next.js 15: params é Promise
   const { id } = await props.params;
 
-  // headers() agora é assíncrono em Next 15
+  // headers() é assíncrono em Next 15
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
@@ -71,6 +72,9 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
     null;
 
+  const priceLabel = formatPrice(ad.priceCents);
+  const canonicalUrl = `${base}/anuncio/${ad.id}`;
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="container mx-auto max-w-5xl px-4 py-8">
@@ -89,13 +93,13 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           <div className="rounded-2xl border border-white/10 bg-card">
             <div className="relative aspect-[4/3] w-full overflow-hidden rounded-t-2xl bg-zinc-900">
               {ad.imageUrl ? (
-                // usando Image para otimização
                 <Image
                   src={ad.imageUrl}
                   alt={ad.title}
                   fill
                   className="object-cover"
                   sizes="(min-width: 1024px) 60vw, 100vw"
+                  priority
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-xs text-zinc-500">
@@ -105,7 +109,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
             </div>
 
             <div className="p-5">
-              <div className="text-xl font-semibold">{formatPrice(ad.priceCents)}</div>
+              <div className="text-xl font-semibold">{priceLabel}</div>
               <div className="mt-1 text-sm text-zinc-400">
                 {ad.city}
                 {ad.uf ? `, ${ad.uf}` : ""}
@@ -116,26 +120,18 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
               <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-amber-400/10 px-2 py-0.5 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
                 Expira em 24h
               </div>
+
+              {/* Botões de ação (WhatsApp + Compartilhar) */}
+              <ShareButtons title={ad.title} priceLabel={priceLabel} url={canonicalUrl} />
             </div>
           </div>
 
-          {/* DIREITA: Mapa + ação */}
+          {/* DIREITA: Mapa */}
           <aside className="rounded-2xl border border-white/10 bg-card p-5">
             <div className="mb-3 text-sm font-semibold">Área do anúncio</div>
             <div className="overflow-hidden rounded-xl border border-white/10">
               <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={280} />
             </div>
-
-            <a
-              href={`https://wa.me/?text=${encodeURIComponent(
-                `${ad.title} - ${formatPrice(ad.priceCents)}\n${base}/anuncio/${ad.id}`
-              )}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-4 inline-flex w-full items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
-            >
-              Conversar no WhatsApp
-            </a>
           </aside>
         </div>
       </div>
