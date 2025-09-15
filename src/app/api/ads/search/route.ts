@@ -1,144 +1,121 @@
+// src/app/api/ads/search/route.ts
 import { NextResponse } from "next/server";
 import { PrismaClient, Prisma } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-function toInt(v: unknown, def = 0) {
-  const n = typeof v === "string" ? parseInt(v, 10) : Number(v);
+function toInt(v: string | null, def = 0) {
+  if (v == null) return def;
+  const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : def;
 }
-function toFloat(v: unknown, def = 0) {
-  const n = typeof v === "string" ? parseFloat(v) : Number(v);
+function toFloat(v: string | null, def = NaN) {
+  if (v == null) return def;
+  const n = parseFloat(v);
   return Number.isFinite(n) ? n : def;
 }
 
 export async function GET(req: Request) {
-  try {
-    const url = new URL(req.url);
+  const url = new URL(req.url);
 
-    // filtros
-    const q = (url.searchParams.get("q") || "").trim();
-    const uf = (url.searchParams.get("uf") || "").trim().toUpperCase();
-    const city = (url.searchParams.get("city") || "").trim();
+  // paginação
+  const page = Math.max(1, toInt(url.searchParams.get("page"), 1));
+  const pageSize = Math.min(50, Math.max(1, toInt(url.searchParams.get("pageSize"), 20)));
+  const offset = (page - 1) * pageSize;
 
-    const centerLat = toFloat(url.searchParams.get("centerLat"));
-    const centerLng = toFloat(url.searchParams.get("centerLng"));
-    const radiusKm  = toFloat(url.searchParams.get("radiusKm"));
+  // filtros simples
+  const uf = (url.searchParams.get("uf") || "").trim().toUpperCase();
+  const city = (url.searchParams.get("city") || "").trim();
 
-    // paginação
-    const page = Math.max(1, toInt(url.searchParams.get("page"), 1));
-    const pageSize = Math.min(50, Math.max(1, toInt(url.searchParams.get("pageSize"), 20)));
-    const offset = (page - 1) * pageSize;
-    const limit = pageSize;
+  // filtros geo (opcionais)
+  const lat = toFloat(url.searchParams.get("lat"));
+  const lng = toFloat(url.searchParams.get("lng"));
+  const radiusKm = toFloat(url.searchParams.get("radiusKm"));
 
-    // últimas 24h
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  // condições base: últimos 1 dia (24h)
+  const conds: Prisma.Sql[] = [
+    Prisma.sql`"createdAt" >= NOW() - INTERVAL '24 hours'`,
+  ];
 
-    // Condições base (todas em Prisma.sql)
-    const conds: Prisma.Sql[] = [
-      Prisma.sql`"active" = true`,
-      Prisma.sql`"createdAt" >= ${cutoff}`,
-    ];
+  if (uf) {
+    conds.push(Prisma.sql`"uf" = ${uf}`);
+  }
+  if (city) {
+    conds.push(Prisma.sql`"city" = ${city}`);
+  }
 
-    if (uf) {
-      conds.push(Prisma.sql`"uf" = ${uf}`);
-    }
-    if (city) {
-      conds.push(Prisma.sql`"city" = ${city}`);
-    }
-    if (q) {
-      // busca simples em título/descrição
-      const like = `%${q}%`;
-      conds.push(
-        Prisma.sql`("title" ILIKE ${like} OR "description" ILIKE ${like})`
-      );
-    }
+  // por padrão, distância nula
+  let distanceSelect: Prisma.Sql = Prisma.sql`NULL::float AS distance_km`;
 
-    // Geo: se vier centro+raio válidos, filtramos por Haversine (aprox.)
-    const useGeo =
-      Number.isFinite(centerLat) &&
-      Number.isFinite(centerLng) &&
-      Number.isFinite(radiusKm) &&
-      radiusKm > 0;
-
-    // Expressão de distância em KM (repetimos onde precisar)
-    const distExpr = Prisma.sql`
-      6371 * acos(
-        least(1, greatest(-1,
-          cos(radians(${centerLat})) * cos(radians("lat")) * cos(radians("lng") - radians(${centerLng}))
-          + sin(radians(${centerLat})) * sin(radians("lat"))
-        ))
-      )
+  // se lat/lng informados, calcula distância aprox. (Haversine)
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    distanceSelect = Prisma.sql`
+      (6371 * acos(
+        cos(radians(${lat!}))
+        * cos(radians(COALESCE("centerLat", "lat")))
+        * cos(radians(COALESCE("centerLng", "lng")) - radians(${lng!}))
+        + sin(radians(${lat!})) * sin(radians(COALESCE("centerLat", "lat")))
+      )) AS distance_km
     `;
 
-    if (useGeo) {
-      conds.push(Prisma.sql`${distExpr} <= ${radiusKm}`);
+    if (Number.isFinite(radiusKm) && radiusKm! > 0) {
+      conds.push(Prisma.sql`
+        (6371 * acos(
+          cos(radians(${lat!}))
+          * cos(radians(COALESCE("centerLat", "lat")))
+          * cos(radians(COALESCE("centerLng", "lng")) - radians(${lng!}))
+          + sin(radians(${lat!})) * sin(radians(COALESCE("centerLat", "lat")))
+        )) <= ${radiusKm!}
+      `);
     }
-
-    // WHERE fragment permanece como Prisma.Sql (NÃO string)
-    const whereFrag: Prisma.Sql =
-      conds.length > 0
-        ? Prisma.sql`WHERE ${Prisma.join(conds, Prisma.sql` AND `)}`
-        : Prisma.sql``;
-
-    // SELECT dos itens (inclui distância_km apenas se geo ativo; senão, null)
-    const items = await prisma.$queryRaw<Array<{
-      id: string;
-      title: string;
-      description: string;
-      priceCents: number;
-      city: string;
-      uf: string;
-      lat: number | null;
-      lng: number | null;
-      centerLat: number | null;
-      centerLng: number | null;
-      radiusKm: number | null;
-      imageUrl: string | null;
-      createdAt: Date;
-      distance_km: number | null;
-    }>>(Prisma.sql`
-      SELECT
-        "id",
-        "title",
-        "description",
-        "priceCents",
-        "city",
-        "uf",
-        "lat",
-        "lng",
-        "centerLat",
-        "centerLng",
-        "radiusKm",
-        "imageUrl",
-        "createdAt",
-        ${useGeo ? distExpr : Prisma.sql`NULL`} AS "distance_km"
-      FROM "Ad"
-      ${whereFrag}
-      ORDER BY "createdAt" DESC
-      LIMIT ${limit} OFFSET ${offset}
-    `);
-
-    // total para paginação (sem LIMIT/OFFSET)
-    const totalRows = await prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
-      SELECT COUNT(*)::bigint AS count
-      FROM "Ad"
-      ${whereFrag}
-    `);
-    const total = Number(totalRows?.[0]?.count ?? 0);
-
-    return NextResponse.json({
-      ok: true,
-      page,
-      pageSize,
-      total,
-      items: items.map((r) => ({
-        ...r,
-        createdAt: r.createdAt.toISOString(),
-      })),
-    });
-  } catch (err) {
-    console.error("[/api/ads/search] ERRO:", err);
-    return NextResponse.json({ ok: false, error: "Falha ao buscar anúncios" }, { status: 500 });
   }
+
+  // WHERE dinâmico (tudo tipado como Sql)
+  const whereFrag: Prisma.Sql =
+    conds.length > 0
+      ? Prisma.sql`WHERE ${Prisma.join(conds, Prisma.sql` AND `)}`
+      : Prisma.sql``;
+
+  // itens
+  const items = await prisma.$queryRaw<Array<{
+    id: string;
+    title: string;
+    description: string;
+    priceCents: number;
+    city: string;
+    uf: string;
+    lat: number | null;
+    lng: number | null;
+    centerLat: number | null;
+    centerLng: number | null;
+    radiusKm: number | null;
+    imageUrl: string | null;
+    createdAt: Date;
+    distance_km: number | null;
+  }>>(Prisma.sql`
+    SELECT
+      "id","title","description","priceCents","city","uf",
+      "lat","lng","centerLat","centerLng","radiusKm",
+      "imageUrl","createdAt",
+      ${distanceSelect}
+    FROM "Ad"
+    ${whereFrag}
+    ORDER BY "createdAt" DESC
+    LIMIT ${pageSize} OFFSET ${offset}
+  `);
+
+  // total
+  const totalRows = await prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+    SELECT COUNT(*)::bigint AS count
+    FROM "Ad"
+    ${whereFrag}
+  `);
+  const total = Number(totalRows[0]?.count ?? 0);
+
+  return NextResponse.json({
+    page,
+    pageSize,
+    total,
+    items,
+  });
 }
