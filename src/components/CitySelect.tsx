@@ -1,109 +1,93 @@
-'use client';
+// src/components/CitySelect.tsx
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 
 type Props = {
-  uf: string | null;                 // depende da UF
+  uf: string | null;
   value: string | null;
-  onChange: (v: string | null) => void;
+  onChange: (city: string | null) => void;
   disabled?: boolean;
-  placeholder?: string;
   id?: string;
-  name?: string;
   className?: string;
+  placeholder?: string;
 };
-
-// Fonte simples: você pode trocar depois por uma API/BD.
-// Para não pesar no bundle inicial, carregamos sob demanda por UF.
-async function fetchCitiesByUf(uf: string): Promise<string[]> {
-  // mock leve por enquanto (substitua por fetch real quando tiver endpoint)
-  const MAP: Record<string, string[]> = {
-    SP: ['São Paulo','Campinas','Santos','São José dos Campos','Ribeirão Preto'],
-    RJ: ['Rio de Janeiro','Niterói','Campos dos Goytacazes','Petrópolis'],
-    MG: ['Belo Horizonte','Uberlândia','Contagem','Juiz de Fora'],
-    PR: ['Curitiba','Londrina','Maringá','Ponta Grossa'],
-    RS: ['Porto Alegre','Caxias do Sul','Pelotas','Canoas'],
-    // adicione aos poucos; quando ligar à base/endpoint, remova este mock
-  };
-  return MAP[uf] ?? [];
-}
 
 export default function CitySelect({
   uf,
   value,
   onChange,
   disabled,
-  placeholder = 'Selecione a cidade',
-  id,
-  name,
-  className,
+  id = "city",
+  className = "",
+  placeholder = "Cidade",
 }: Props) {
-  const [options, setOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [cities, setCities] = useState<string[]>([]);
 
+  // carrega cidades quando UF muda
   useEffect(() => {
-    let abort = false;
-    (async () => {
+    let cancel = false;
+
+    async function load() {
       if (!uf) {
-        setOptions([]);
-        onChange(null);
+        setCities([]);
         return;
       }
       setLoading(true);
       try {
-        const cities = await fetchCitiesByUf(uf);
-        if (!abort) setOptions(cities);
-        // se UF mudou e a cidade anterior não existir mais, limpa:
-        if (value && cities.length && !cities.includes(value)) {
-          onChange(null);
+        // Se você tiver esse endpoint pronto, ótimo:
+        // /api/geo/cities?uf=SP  -> ["São Paulo","Campinas", ...]
+        const res = await fetch(`/api/geo/cities?uf=${encodeURIComponent(uf)}`, {
+          cache: "force-cache",
+        });
+        if (res.ok) {
+          const data = (await res.json()) as string[];
+          if (!cancel) setCities(data);
+        } else {
+          if (!cancel) setCities([]);
         }
+      } catch {
+        if (!cancel) setCities([]);
       } finally {
-        if (!abort) setLoading(false);
+        if (!cancel) setLoading(false);
       }
-    })();
-    return () => { abort = true; };
-  }, [uf]); // eslint-disable-line react-hooks/exhaustive-deps
+    }
 
-  // busca incremental por digitação (nativa do browser com datalist é simples,
-  // mas aqui mantemos <select> para consistência visual)
-  const [filter, setFilter] = useState('');
-  const filtered = useMemo(() => {
-    const f = (filter || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
-    if (!f) return options;
-    return options.filter((c) => (
-      c.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().includes(f)
-    ));
-  }, [options, filter]);
+    load();
+    return () => {
+      cancel = true;
+    };
+  }, [uf]);
+
+  const listId = useMemo(() => `${id}-list`, [id]);
 
   return (
-    <div className={className}>
-      <div className="mb-2">
-        <input
-          type="text"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Digite para filtrar cidades"
-          disabled={disabled || !uf}
-          className="w-full rounded-md bg-zinc-900/60 border border-white/10 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-400/30"
-        />
-      </div>
+    <div className={`flex items-center gap-2 ${className}`}>
+      <label htmlFor={id} className="text-sm text-neutral-600 whitespace-nowrap">
+        Cidade
+      </label>
 
-      <label htmlFor={id} className="sr-only">Cidade</label>
-      <select
+      <input
         id={id}
-        name={name}
-        value={value ?? ''}
-        disabled={disabled || !uf || loading}
+        list={listId}
+        value={value ?? ""}
         onChange={(e) => onChange(e.target.value || null)}
-        className="w-full max-h-64 overflow-y-auto rounded-md bg-zinc-900/60 border border-white/10 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-400/30"
-      >
-        <option value="">
-          {uf ? (loading ? 'Carregando cidades…' : placeholder) : 'Selecione a UF primeiro'}
-        </option>
-        {filtered.map((c) => (
-          <option key={c} value={c}>{c}</option>
+        disabled={!uf || disabled}
+        placeholder={loading ? "Carregando..." : placeholder}
+        className="
+          w-56 rounded-lg border border-neutral-300 px-3 py-2
+          bg-white/80 backdrop-blur-sm
+          text-sm text-neutral-900
+          outline-none focus-visible:ring-2 focus-visible:ring-neutral-800
+        "
+      />
+
+      <datalist id={listId}>
+        {cities.map((c) => (
+          <option key={c} value={c} />
         ))}
-      </select>
+      </datalist>
     </div>
   );
 }
