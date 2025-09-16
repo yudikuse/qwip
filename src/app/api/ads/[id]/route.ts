@@ -1,33 +1,18 @@
-// src/app/api/ads/[id]/route.ts
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { NextRequest, NextResponse } from "next/server";
+import { PrismaClient } from "@prisma/client";
 
-export const dynamic = "force-dynamic";
+const prisma = new PrismaClient();
 
-type RouteContext =
-  | { params: { id: string } }
-  | { params: Promise<{ id: string }> };
+type Context = { params: { id: string } };
 
-export async function GET(_req: Request, context: RouteContext) {
+// GET /api/ads/:id  -> retorna 404 se não existir
+export async function GET(_req: NextRequest, { params }: Context) {
+  const id = params?.id;
+  if (!id) {
+    return NextResponse.json({ error: "missing_id" }, { status: 400 });
+  }
+
   try {
-    const { id } = "then" in context.params ? await context.params : context.params;
-
-    // Garanta que você TEM esses campos no schema.prisma:
-    // model Ad {
-    //   id          String   @id @default(cuid())
-    //   title       String
-    //   description String
-    //   priceCents  Int
-    //   city        String
-    //   uf          String
-    //   lat         Float?
-    //   lng         Float?
-    //   centerLat   Float?
-    //   centerLng   Float?
-    //   radiusKm    Int?
-    //   imageUrl    String?
-    //   createdAt   DateTime @default(now())
-    // }
     const ad = await prisma.ad.findUnique({
       where: { id },
       select: {
@@ -42,24 +27,21 @@ export async function GET(_req: Request, context: RouteContext) {
         centerLat: true,
         centerLng: true,
         radiusKm: true,
-        imageUrl: true, // padronizado (NÃO use photoUrl aqui)
+        imageUrl: true, // <— existe no schema
         createdAt: true,
       },
     });
 
     if (!ad) {
-      return NextResponse.json({ error: "not_found" }, { status: 404 });
+      return NextResponse.json({ ad: null }, { status: 404 });
     }
 
-    // Padroniza tipos para o front (datas como string)
-    const payload = {
-      ...ad,
-      createdAt: ad.createdAt.toISOString(),
-    };
-
-    return NextResponse.json({ ad: payload });
+    // serializa datas
+    return NextResponse.json({
+      ad: { ...ad, createdAt: ad.createdAt.toISOString() },
+    });
   } catch (err) {
-    console.error("[GET /api/ads/[id]]", err);
-    return NextResponse.json({ error: "server_error" }, { status: 500 });
+    console.error("GET /api/ads/[id] failed:", err);
+    return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }
