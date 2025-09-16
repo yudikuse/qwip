@@ -18,7 +18,7 @@ type Ad = {
   radiusKm: number | null;
   imageUrl: string | null;
   createdAt: string;      // ISO
-  expiresAt?: string;     // ISO (calculado no backend)
+  expiresAt?: string;     // ISO
   sellerPhone?: string | null;
 };
 
@@ -38,7 +38,7 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
-// ✅ Next 15: headers() retorna Promise => await
+// ✅ No seu build, headers() retorna Promise => usar await
 async function getBaseFromHeaders() {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
@@ -46,7 +46,7 @@ async function getBaseFromHeaders() {
   return `${proto}://${host}`;
 }
 
-// ✅ Next 15: params é Promise => await
+// ✅ Next 15: params é Promise => usar await
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Metadata> {
@@ -69,10 +69,16 @@ export async function generateMetadata(
       images: [{ url: ogImage }],
       type: "website",
     },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [ogImage],
+    },
   };
 }
 
-// ✅ Next 15: params é Promise => await
+// ✅ Next 15: params é Promise => usar await
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
