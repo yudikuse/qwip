@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-// ⬇️ usamos o client em formato multipart
+// usamos o client em formato multipart
 import { createAdSecureForm } from "@/lib/ads-client";
 
 type LatLng = { lat: number; lng: number };
@@ -77,6 +77,7 @@ export default function NovaPaginaAnuncio() {
   const [city, setCity] = useState("Atual");
   const [uf, setUF] = useState<string>("");
   const [radius, setRadius] = useState(5);
+  const [submitting, setSubmitting] = useState(false);
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
 
@@ -133,7 +134,9 @@ export default function NovaPaginaAnuncio() {
         setUF("");
       }
     })();
-    return () => { cancel = true; };
+    return () => {
+      cancel = true;
+    };
   }, [coords]);
 
   // CEP → coords
@@ -151,7 +154,10 @@ export default function NovaPaginaAnuncio() {
         const lat = d?.location?.coordinates?.latitude;
         const lng = d?.location?.coordinates?.longitude;
         if (typeof lat === "number" && typeof lng === "number") {
-          setCoords({ lat, lng }); setCity(d?.city || "Atual"); setUF(d?.state || ""); setGeoDenied(false);
+          setCoords({ lat, lng });
+          setCity(d?.city || "Atual");
+          setUF(d?.state || "");
+          setGeoDenied(false);
           return;
         }
       }
@@ -165,16 +171,25 @@ export default function NovaPaginaAnuncio() {
           const cidade: string | undefined = d.localidade;
           const ufLocal: string | undefined = d.uf;
           const pedacoRua: string = d.logradouro || d.bairro || "";
-          const query = [pedacoRua, cidade && ufLocal ? `${cidade} - ${ufLocal}` : ""].filter(Boolean).join(", ");
+          const query = [pedacoRua, cidade && ufLocal ? `${cidade} - ${ufLocal}` : ""]
+            .filter(Boolean)
+            .join(", ");
           if (query) {
             const q = encodeURIComponent(`${query}, Brasil`);
-            const n = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${q}`, { cache: "no-store" });
+            const n = await fetch(
+              `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${q}`,
+              { cache: "no-store" }
+            );
             if (n.ok) {
               const arr = await n.json();
               if (Array.isArray(arr) && arr.length > 0) {
-                const lat = parseFloat(arr[0].lat); const lng = parseFloat(arr[0].lon);
+                const lat = parseFloat(arr[0].lat);
+                const lng = parseFloat(arr[0].lon);
                 if (Number.isFinite(lat) && Number.isFinite(lng)) {
-                  setCoords({ lat, lng }); setCity(cidade || "Atual"); setUF(ufLocal || ""); setGeoDenied(false);
+                  setCoords({ lat, lng });
+                  setCity(cidade || "Atual");
+                  setUF(ufLocal || "");
+                  setGeoDenied(false);
                   return;
                 }
               }
@@ -186,24 +201,30 @@ export default function NovaPaginaAnuncio() {
 
     try {
       const n2 = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&country=BR&postalcode=${encodeURIComponent(digits)}&limit=1`,
+        `https://nominatim.openstreetmap.org/search?format=json&country=BR&postalcode=${encodeURIComponent(
+          digits
+        )}&limit=1`,
         { cache: "no-store" }
       );
       if (n2.ok) {
         const arr = await n2.json();
         if (Array.isArray(arr) && arr.length > 0) {
-          const lat = parseFloat(arr[0].lat); const lng = parseFloat(arr[0].lon);
+          const lat = parseFloat(arr[0].lat);
+          const lng = parseFloat(arr[0].lon);
           if (Number.isFinite(lat) && Number.isFinite(lng)) {
             setCoords({ lat, lng });
             const display = String(arr[0].display_name || "");
             const parts = display.split(",").map((s) => s.trim());
-            let cidadeGuess = "Atual"; let ufGuess = "";
+            let cidadeGuess = "Atual";
+            let ufGuess = "";
             if (parts.length >= 3) {
               cidadeGuess = parts[parts.length - 3];
               const estadoNome = parts[parts.length - 2];
               ufGuess = STATE_TO_UF[estadoNome] || "";
             }
-            setCity(cidadeGuess); setUF(ufGuess); setGeoDenied(false);
+            setCity(cidadeGuess);
+            setUF(ufGuess);
+            setGeoDenied(false);
             return;
           }
         }
@@ -219,17 +240,36 @@ export default function NovaPaginaAnuncio() {
   function handlePriceKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     const k = e.key;
     if (k === "Tab") return;
-    if (k === "," || k === ".") { if (!editingCents) setEditingCents(true); e.preventDefault(); return; }
-    if (k === "Backspace") {
-      if (editingCents && centDigits.length > 0) { setCentDigits(c => c.slice(0, -1)); if (centDigits.length <= 1) setEditingCents(false); }
-      else { setIntDigits(i => i.slice(0, -1)); }
-      e.preventDefault(); return;
+    if (k === "," || k === ".") {
+      if (!editingCents) setEditingCents(true);
+      e.preventDefault();
+      return;
     }
-    if (k === "Delete") { setIntDigits(""); setCentDigits(""); setEditingCents(false); e.preventDefault(); return; }
+    if (k === "Backspace") {
+      if (editingCents && centDigits.length > 0) {
+        setCentDigits((c) => c.slice(0, -1));
+        if (centDigits.length <= 1) setEditingCents(false);
+      } else {
+        setIntDigits((i) => i.slice(0, -1));
+      }
+      e.preventDefault();
+      return;
+    }
+    if (k === "Delete") {
+      setIntDigits("");
+      setCentDigits("");
+      setEditingCents(false);
+      e.preventDefault();
+      return;
+    }
     if (/^\d$/.test(k)) {
-      if (editingCents) { if (centDigits.length < 2) setCentDigits(c => (c + k).slice(0, 2)); }
-      else { setIntDigits(i => clampDigits(i + k, MAX_INT_DIGITS)); }
-      e.preventDefault(); return;
+      if (editingCents) {
+        if (centDigits.length < 2) setCentDigits((c) => (c + k).slice(0, 2));
+      } else {
+        setIntDigits((i) => clampDigits(i + k, MAX_INT_DIGITS));
+      }
+      e.preventDefault();
+      return;
     }
     e.preventDefault();
   }
@@ -240,7 +280,9 @@ export default function NovaPaginaAnuncio() {
     const parts = normalized.split(".");
     const intPart = clampDigits(parts[0] || "0", MAX_INT_DIGITS);
     const centsPart = clampDigits(parts[1] || "", 2);
-    setIntDigits(intPart.replace(/^0+(?=\d)/, "")); setCentDigits(centsPart); setEditingCents(centsPart.length > 0);
+    setIntDigits(intPart.replace(/^0+(?=\d)/, ""));
+    setCentDigits(centsPart);
+    setEditingCents(centsPart.length > 0);
     e.preventDefault();
   }
 
@@ -249,15 +291,30 @@ export default function NovaPaginaAnuncio() {
 
   // Publicar
   const publish = async () => {
+    if (submitting) return;
     try {
-      if (!file) { alert("Selecione uma imagem."); return; }
-      if (!file.type.startsWith("image/")) { alert("Arquivo inválido. Envie uma imagem."); return; }
-      if (!coords) { alert("Defina a localização (GPS ou CEP)."); return; }
+      if (!file) {
+        alert("Selecione uma imagem.");
+        return;
+      }
+      if (!file.type.startsWith("image/")) {
+        alert("Arquivo inválido. Envie uma imagem.");
+        return;
+      }
+      if (!coords) {
+        alert("Defina a localização (GPS ou CEP).");
+        return;
+      }
 
       const MAX_BYTES = 4 * 1024 * 1024;
-      if (file.size > MAX_BYTES) { alert("Imagem muito grande (máx. 4MB)."); return; }
+      if (file.size > MAX_BYTES) {
+        alert("Imagem muito grande (máx. 4MB).");
+        return;
+      }
 
-      // 👇 multipart form — evita 413 por base64 grande
+      setSubmitting(true);
+
+      // multipart form — evita 413 por base64 grande
       const form = new FormData();
       form.append("title", title.trim());
       form.append("description", desc.trim());
@@ -269,7 +326,6 @@ export default function NovaPaginaAnuncio() {
       form.append("radiusKm", String(radius));
       form.append("image", file, file.name); // arquivo binário
 
-      // <<< CHAMADA CORRETA: APENAS 1 ARGUMENTO >>>
       const res: any = await createAdSecureForm(form);
 
       if (!res?.ok) {
@@ -294,18 +350,26 @@ export default function NovaPaginaAnuncio() {
         return;
       }
 
-      const id: string | undefined = res.data?.id;
-      if (id) {
-        // 👉 redireciona para a página do anúncio (onde ficam WhatsApp/Compartilhar)
-        router.push(`/anuncio/${id}`);
+      const newId: string | undefined = res.data?.id || res.data?.ad?.id;
+      if (newId) {
+        // redireciona para a página do anúncio
+        try {
+          router.replace(`/anuncio/${newId}`);
+        } finally {
+          // fallback em caso de navegação bloqueada
+          window.location.href = `/anuncio/${newId}`;
+        }
         return;
       }
 
-      // fallback (não deveria acontecer)
-      alert("Anúncio criado, mas não recebi o ID para redirecionar.");
+      // se criou, mas sem id (raro), volta pra vitrine
+      alert("Anúncio criado!");
+      router.replace("/vitrine");
     } catch (err) {
       console.error(err);
       alert("Erro inesperado ao criar anúncio.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -314,7 +378,10 @@ export default function NovaPaginaAnuncio() {
       <div className="container mx-auto max-w-6xl px-4 py-8">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold">Criar anúncio</h1>
-          <Link href="/" className="rounded-lg border border-white/10 px-3 py-1.5 text-sm hover:bg-white/5">
+          <Link
+            href="/"
+            className="rounded-lg border border-white/10 px-3 py-1.5 text-sm hover:bg-white/5"
+          >
             Voltar
           </Link>
         </div>
@@ -358,7 +425,9 @@ export default function NovaPaginaAnuncio() {
                   onPaste={handlePricePaste}
                   onFocus={(e) => {
                     const len = e.currentTarget.value.length;
-                    requestAnimationFrame(() => e.currentTarget.setSelectionRange(len, len));
+                    requestAnimationFrame(() =>
+                      e.currentTarget.setSelectionRange(len, len)
+                    );
                   }}
                   placeholder="Ex.: 99,90"
                   className="mt-1 w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
@@ -388,7 +457,9 @@ export default function NovaPaginaAnuncio() {
                   min={LIMITS.minRadius}
                   max={LIMITS.maxRadius}
                   value={radius}
-                  onChange={(e) => setRadius(parseInt(e.target.value, 10) || LIMITS.minRadius)}
+                  onChange={(e) =>
+                    setRadius(parseInt(e.target.value, 10) || LIMITS.minRadius)
+                  }
                   className="w-full"
                 />
               </div>
@@ -411,7 +482,7 @@ export default function NovaPaginaAnuncio() {
                   </button>
                 </div>
 
-                {(geoDenied || (triedGeo && !coords)) ? (
+                {showCEP ? (
                   <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
                     <input
                       value={cep}
@@ -432,10 +503,10 @@ export default function NovaPaginaAnuncio() {
 
               <button
                 onClick={publish}
-                disabled={!canPublish}
+                disabled={!canPublish || submitting}
                 className="mt-2 w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Publicar anúncio
+                {submitting ? "Publicando..." : "Publicar anúncio"}
               </button>
             </div>
           </div>
@@ -461,14 +532,19 @@ export default function NovaPaginaAnuncio() {
 
               <div className="p-4">
                 <div className="text-sm font-semibold">{title || "Título do anúncio"}</div>
-                <div className="mt-1 text-xs text-zinc-400">Preço: {priceMasked ? `R$ ${priceMasked}` : "—"}</div>
-                <div className="mt-1 text-xs text-zinc-400">Cidade: {city}{uf ? `, ${uf}` : ""}</div>
+                <div className="mt-1 text-xs text-zinc-400">
+                  Preço: {priceMasked ? `R$ ${priceMasked}` : "—"}
+                </div>
+                <div className="mt-1 text-xs text-zinc-400">
+                  Cidade: {city}
+                  {uf ? `, ${uf}` : ""}
+                </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-3">
-                  <button className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400" disabled>
+                  <button className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400">
                     WhatsApp
                   </button>
-                  <button className="inline-flex items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5" disabled>
+                  <button className="inline-flex items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5">
                     Compartilhar
                   </button>
                 </div>
