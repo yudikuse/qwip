@@ -1,67 +1,82 @@
 // src/app/api/ads/search/route.ts
 import { NextResponse } from "next/server";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+type Row = {
+  id: string;
+  title: string;
+  description: string | null;
+  priceCents: number;
+  city: string;
+  uf: string;
+  imageUrl: string | null;
+  createdAt: Date;
+};
+
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
+    const url = new URL(req.url);
 
-    const q = (searchParams.get("q") || "").trim();
-    const uf = (searchParams.get("uf") || "").trim().toUpperCase();
-    const city = (searchParams.get("city") || "").trim();
+    const q = (url.searchParams.get("q") ?? "").trim();
+    const city = (url.searchParams.get("city") ?? "").trim();
+    const uf = (url.searchParams.get("uf") ?? "").trim();
+    const page = Number(url.searchParams.get("page") ?? "1");
+    const pageSize = Math.min(
+      50,
+      Math.max(1, Number(url.searchParams.get("pageSize") ?? "12"))
+    );
 
-    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "12", 10)));
-    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
-    const offset = (page - 1) * limit;
+    const offset = Math.max(0, (Number.isFinite(page) ? page : 1) - 1) * pageSize;
+    const limit = pageSize;
 
-    // Monta condições dinamicamente (sempre checa expiresAt)
-    const conds: Prisma.Sql[] = [Prisma.sql`a."expiresAt" > NOW()`];
+    // Constrói condições de forma segura com Prisma.sql
+    const conds: Prisma.Sql[] = [];
 
-    if (q) conds.push(Prisma.sql`(a."title" ILIKE ${"%" + q + "%"} OR a."description" ILIKE ${"%" + q + "%"})`);
-    if (uf) conds.push(Prisma.sql`a."uf" = ${uf}`);
+    if (q) {
+      // Busca simples por título/descrição
+      conds.push(
+        Prisma.sql`(a."title" ILIKE ${"%" + q + "%"} OR a."description" ILIKE ${"%" + q + "%"})`
+      );
+    }
     if (city) conds.push(Prisma.sql`a."city" = ${city}`);
+    if (uf) conds.push(Prisma.sql`a."uf" = ${uf}`);
 
-    const whereFrag: Prisma.Sql = conds.length > 0 ? Prisma.sql`WHERE ${Prisma.join(conds, Prisma.sql` AND `)}` : Prisma.sql``;
+    // WHERE dinâmico totalmente em Prisma.sql
+    const whereFrag =
+      conds.length > 0
+        ? Prisma.sql`WHERE ${Prisma.join(conds, Prisma.sql` AND `)}`
+        : Prisma.sql``;
 
-    const selectSql = Prisma.sql`
+    // Query final 100% template-tagged (nada de string comum no meio)
+    const query = Prisma.sql<Row[]>`
       SELECT
         a."id",
         a."title",
+        a."description",
         a."priceCents",
         a."city",
         a."uf",
-        a."imageUrl"
+        a."imageUrl",
+        a."createdAt"
       FROM "Ad" a
       ${whereFrag}
       ORDER BY a."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset}
     `;
 
-    const countSql = Prisma.sql`
-      SELECT COUNT(*)::int AS total
-      FROM "Ad" a
-      ${whereFrag}
-    `;
+    const rows = await prisma.$queryRaw<Row[]>(query);
 
-    const [items, countRows] = await Promise.all([
-      prisma.$queryRaw<Array<{
-        id: string;
-        title: string;
-        priceCents: number;
-        city: string | null;
-        uf: string | null;
-        imageUrl: string | null;
-      }>>(selectSql),
-      prisma.$queryRaw<Array<{ total: number }>>(countSql),
-    ]);
-
-    const total = countRows?.[0]?.total ?? 0;
-
-    return NextResponse.json({ items, total });
+    return NextResponse.json({
+      ok: true,
+      items: rows,
+      page,
+      pageSize,
+      count: rows.length,
+    });
   } catch (err) {
-    console.error("[/api/ads/search] error:", err);
-    return NextResponse.json({ items: [], total: 0 }, { status: 500 });
+    console.error("[/api/ads/search][GET] error:", err);
+    return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }
