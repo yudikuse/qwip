@@ -2,6 +2,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { headers } from "next/headers";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import AdMap from "@/components/AdMap";
 
 type Ad = {
@@ -17,6 +19,7 @@ type Ad = {
   centerLng: number | null;
   radiusKm: number | null;
   imageUrl: string | null;
+  phoneE164: string | null;
   createdAt: string;
 };
 
@@ -34,106 +37,102 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
-// ⚠️ Em Next 15, use PageProps padrão (sem Promise aqui).
-export default async function Page({ params }: { params: { id: string } }) {
-  const id = params.id;
-
-  // headers() segue síncrono na tipagem; pode ser aguardado indiretamente no servidor
+export async function generateMetadata(
+  { params }: { params: { id: string } }
+): Promise<Metadata> {
   const h = headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
   const base = `${proto}://${host}`;
 
-  const ad = await fetchAd(base, id);
+  const ad = await fetchAd(base, params.id);
 
   if (!ad) {
-    return (
-      <main className="min-h-screen bg-background text-foreground">
-        <div className="container mx-auto max-w-4xl px-4 py-10">
-          <div className="rounded-xl border border-white/10 p-6">
-            <h1 className="text-xl font-semibold">Anúncio não encontrado</h1>
-            <p className="mt-2 text-sm text-zinc-400">
-              O anúncio pode ter expirado ou sido removido.
-            </p>
-            <Link
-              href="/vitrine"
-              className="mt-4 inline-block rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
-            >
-              Voltar para a vitrine
-            </Link>
-          </div>
-        </div>
-      </main>
-    );
+    return {
+      title: "Anúncio não encontrado — Qwip",
+      alternates: { canonical: `/anuncio/${params.id}` },
+    };
   }
+
+  const title = `${ad.title} — ${formatPrice(ad.priceCents)}`;
+  const description =
+    (ad.description || "").slice(0, 180) ||
+    `${ad.city}${ad.uf ? `, ${ad.uf}` : ""}`;
+
+  return {
+    title,
+    description,
+    alternates: { canonical: `/anuncio/${ad.id}` },
+    openGraph: {
+      title,
+      description,
+      url: `${base}/anuncio/${ad.id}`,
+      type: "article",
+      images: ad.imageUrl ? [{ url: ad.imageUrl, width: 1200, height: 630 }] : [],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: ad.imageUrl ? [ad.imageUrl] : [],
+    },
+  };
+}
+
+export default async function Page({ params }: { params: { id: string } }) {
+  const h = headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const base = `${proto}://${host}`;
+
+  const ad = await fetchAd(base, params.id);
+  if (!ad) return notFound();
 
   const center =
     (ad.centerLat != null && ad.centerLng != null && { lat: ad.centerLat, lng: ad.centerLng }) ||
     (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
     null;
 
-  // Metadados e JSON-LD para social/SEO
-  const shareTitle = `${ad.title} - ${formatPrice(ad.priceCents)}`;
-  const shareDesc = ad.description?.slice(0, 160) ?? "";
-  const shareImg = ad.imageUrl ?? "/og-image.png";
-  const pageUrl = `${base}/anuncio/${ad.id}`;
+  // Mensagem pronta para o WhatsApp
+  const msg =
+    `Olá! Tenho interesse no anúncio “${ad.title}” por ${formatPrice(ad.priceCents)}.\n` +
+    `Link: ${base}/anuncio/${ad.id}`;
+
+  const waTo =
+    ad.phoneE164
+      ? `https://wa.me/${ad.phoneE164.replace(/^\+/, "")}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+
+  const shareUrl = `${base}/anuncio/${ad.id}`;
+  const shareTitle = `${ad.title} — ${formatPrice(ad.priceCents)}`;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      {/* OpenGraph/Twitter */}
-      <meta property="og:title" content={shareTitle} />
-      <meta property="og:description" content={shareDesc} />
-      <meta property="og:image" content={shareImg} />
-      <meta property="og:url" content={pageUrl} />
-      <meta property="og:type" content="product" />
-      <meta name="twitter:card" content="summary_large_image" />
-      <meta name="twitter:title" content={shareTitle} />
-      <meta name="twitter:description" content={shareDesc} />
-      <meta name="twitter:image" content={shareImg} />
-
-      {/* JSON-LD sem @ts-expect-error */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "Product",
-            name: ad.title,
-            description: ad.description,
-            image: ad.imageUrl ? [ad.imageUrl] : [],
-            offers: {
-              "@type": "Offer",
-              priceCurrency: "BRL",
-              price: (ad.priceCents / 100).toFixed(2),
-              availability: "https://schema.org/InStock",
-              url: pageUrl,
-            },
-          }),
-        }}
-      />
-
-      <div className="container mx-auto max-w-5xl px-4 py-8">
+      <div className="container mx-auto max-w-6xl px-4 py-8">
+        {/* Cabeçalho */}
         <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl font-bold">{ad.title}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{ad.title}</h1>
           <Link
             href="/vitrine"
-            className="rounded-lg border border-white/10 px-3 py-1.5 text-sm hover:bg-white/5"
+            className="rounded-xl border border-white/10 px-3 py-1.5 text-sm hover:bg-white/5"
           >
             Voltar
           </Link>
         </div>
 
+        {/* Duas colunas: card do anúncio + card de ações/mapa */}
         <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          {/* ESQUERDA: imagem + descrição */}
-          <div className="rounded-2xl border border-white/10 bg-card">
-            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-t-2xl bg-zinc-900">
+          {/* Card principal */}
+          <article className="rounded-2xl border border-white/10 bg-card overflow-hidden">
+            <div className="relative aspect-[4/3] w-full bg-zinc-900">
               {ad.imageUrl ? (
                 <Image
                   src={ad.imageUrl}
                   alt={ad.title}
                   fill
-                  className="object-cover"
+                  priority
                   sizes="(min-width: 1024px) 60vw, 100vw"
+                  className="object-cover"
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-xs text-zinc-500">
@@ -142,68 +141,85 @@ export default async function Page({ params }: { params: { id: string } }) {
               )}
             </div>
 
-            <div className="p-5">
-              <div className="text-xl font-semibold">{formatPrice(ad.priceCents)}</div>
-              <div className="mt-1 text-sm text-zinc-400">
-                {ad.city}
-                {ad.uf ? `, ${ad.uf}` : ""}
+            <div className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xl font-semibold">{formatPrice(ad.priceCents)}</div>
+                  <div className="mt-1 text-sm text-zinc-400">
+                    {ad.city}{ad.uf ? `, ${ad.uf}` : ""}
+                  </div>
+                </div>
+
+                <span className="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
+                  Expira em 24h
+                </span>
               </div>
-              <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
+
+              <p className="prose prose-invert mt-5 text-sm leading-relaxed text-zinc-200">
                 {ad.description}
               </p>
-
-              <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-amber-400/10 px-2 py-0.5 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
-                Expira em 24h
-              </div>
             </div>
-          </div>
+          </article>
 
-          {/* DIREITA: mapa + ações */}
-          <aside className="rounded-2xl border border-white/10 bg-card p-4">
-            <div className="mb-3 text-sm font-medium">Área do anúncio</div>
-            <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={260} />
+          {/* Ações + mapa */}
+          <aside className="rounded-2xl border border-white/10 bg-card p-5">
+            <div className="text-sm font-medium mb-3">Área do anúncio</div>
+            <div className="overflow-hidden rounded-xl border border-white/10">
+              <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={280} />
+            </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              {/* WhatsApp: mensagem pré-pronta direcionando ao vendedor */}
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              {/* WhatsApp — abre conversa com o anunciante (se houver número) e sempre com mensagem pronta */}
               <a
-                href={
-                  // Prefill da conversa (substitua o número se quiser fixar um DDI/DD)
-                  `https://wa.me/?text=${encodeURIComponent(
-                    `${shareTitle}\n${pageUrl}\n\nOlá! Tenho interesse nesse anúncio: ${ad.title}. Ainda está disponível?`
-                  )}`
-                }
+                href={waTo}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400"
+                className="inline-flex items-center justify-center rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400"
               >
                 WhatsApp
               </a>
 
-              {/* Compartilhar: usa os metatags/OG da própria página */}
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    if (navigator.share) {
-                      await navigator.share({
-                        title: shareTitle,
-                        text: ad.description?.slice(0, 120) ?? "",
-                        url: pageUrl,
-                      });
-                    } else {
-                      await navigator.clipboard.writeText(pageUrl);
-                      alert("Link copiado!");
-                    }
-                  } catch {}
-                }}
-                className="inline-flex items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5"
+              {/* Compartilhar — usa Web Share quando disponível; fallback: copiar link */}
+              <a
+                href={shareUrl}
+                data-share
+                data-title={shareTitle}
+                data-url={shareUrl}
+                className="inline-flex items-center justify-center rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5"
               >
                 Compartilhar
-              </button>
+              </a>
             </div>
           </aside>
         </div>
       </div>
+
+      {/* Script leve para Web Share / copiar link (sem @ts-expect-error) */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `
+          (function () {
+            document.addEventListener('click', function (e) {
+              var t = e.target && e.target.closest && e.target.closest('[data-share]');
+              if (!t) return;
+              e.preventDefault();
+              var url = t.getAttribute('data-url');
+              var title = t.getAttribute('data-title') || document.title;
+              if (navigator.share) {
+                navigator.share({ title: title, url: url }).catch(function(){});
+              } else if (navigator.clipboard) {
+                navigator.clipboard.writeText(url).then(function(){
+                  var prev = t.textContent;
+                  t.textContent = 'Link copiado!';
+                  setTimeout(function(){ t.textContent = prev; }, 1500);
+                });
+              } else {
+                window.open(url, '_blank');
+              }
+            }, { passive: false });
+          })();`,
+        }}
+      />
     </main>
   );
 }
