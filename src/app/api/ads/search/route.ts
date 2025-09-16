@@ -4,15 +4,12 @@ import { Prisma, PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+// TTL em horas (mantenha igual ao detalhe)
+const TTL_HOURS = 24;
+
 /**
  * GET /api/ads/search
- * Query params (todos opcionais):
- *  - q: string (busca por título/descrição)
- *  - uf: string (sigla UF)
- *  - city: string
- *  - lat, lng: number (p/ geo)
- *  - radiusKm: number (p/ geo)
- *  - limit, offset: number (paginaçao)
+ * q, uf, city, lat, lng, radiusKm, limit, offset (todos opcionais)
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -29,11 +26,13 @@ export async function GET(req: Request) {
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 20), 1), 50);
   const offset = Math.max(Number(url.searchParams.get("offset") ?? 0), 0);
 
-  // WHERE dinâmico com Prisma.sql
+  // WHERE dinâmico
   const conds: Prisma.Sql[] = [];
 
+  // TTL (últimas 24h)
+  conds.push(Prisma.sql`a."createdAt" >= NOW() - INTERVAL '${TTL_HOURS} hours'`);
+
   if (q) {
-    // ILIKE para busca textual simples (Postgres)
     conds.push(
       Prisma.sql`(a.title ILIKE ${"%" + q + "%"} OR a.description ILIKE ${"%" + q + "%"})`
     );
@@ -45,13 +44,12 @@ export async function GET(req: Request) {
     conds.push(Prisma.sql`a.city = ${city}`);
   }
 
-  // Geo (Haversine aproximado). Só aplica se vier lat/lng/radius.
+  // Geo (Haversine aprox.) — só aplica se vier tudo
   if (lat && lng && radiusKm) {
     const latNum = Number(lat);
     const lngNum = Number(lng);
     const rKm = Number(radiusKm);
 
-    // distância em KM (Raio da Terra ~6371km)
     const haversine = Prisma.sql`
       6371 * acos(
         cos(radians(${latNum})) * cos(radians(a.lat)) * cos(radians(a.lng) - radians(${lngNum}))
@@ -62,13 +60,12 @@ export async function GET(req: Request) {
     conds.push(Prisma.sql`${haversine} <= ${rKm}`);
   }
 
-  // ⚠️ Aqui estava o erro de tipos: use separador ' AND ' como string simples.
   const whereFrag: Prisma.Sql =
     conds.length > 0
-      ? Prisma.sql`WHERE ${Prisma.join(conds, ' AND ')}`
+      ? Prisma.sql`WHERE ${Prisma.join(conds, Prisma.sql` AND `)}`
       : Prisma.sql``;
 
-  // SELECT principal — tudo dentro de Prisma.sql
+  // SELECT principal — padroniza photoUrl + imageUrl
   const baseSelect = Prisma.sql`
     SELECT
       a.id,
@@ -78,12 +75,13 @@ export async function GET(req: Request) {
       a.city,
       a.priceCents,
       a.photoUrl,
+      a.photoUrl AS "imageUrl",
       a.lat,
       a.lng,
       a.createdAt
     FROM "Ad" a
     ${whereFrag}
-    ORDER BY a.createdAt DESC
+    ORDER BY a."createdAt" DESC
     LIMIT ${limit} OFFSET ${offset}
   `;
 
@@ -95,13 +93,12 @@ export async function GET(req: Request) {
   `;
 
   try {
-    // $queryRaw aceita Prisma.sql (não use $queryRawUnsafe aqui)
     const rows = await prisma.$queryRaw<any[]>(baseSelect);
     const [{ total }] = (await prisma.$queryRaw<any[]>(countSelect)) as [{ total: number }];
 
     return NextResponse.json({ items: rows, total, limit, offset });
   } catch (err) {
-    console.error("search route error", err);
+    console.error("GET /api/ads/search error", err);
     return NextResponse.json({ error: "search_failed" }, { status: 500 });
   }
 }
