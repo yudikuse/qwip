@@ -3,7 +3,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import type { Metadata } from "next";
 import AdMap from "@/components/AdMap";
-import WhatsAppButton from "@/components/WhatsAppButton";
+// opcional: import WhatsAppButton from "@/components/WhatsAppButton";
 
 type Ad = {
   id: string;
@@ -20,7 +20,7 @@ type Ad = {
   imageUrl: string | null;
   createdAt: string;      // ISO
   expiresAt?: string;     // ISO (calculado no backend)
-  sellerPhone?: string | null; // opcional: se o backend expuser
+  sellerPhone?: string | null;
 };
 
 function formatPriceBRL(cents: number) {
@@ -46,16 +46,18 @@ function getBaseFromHeaders() {
   return `${proto}://${host}`;
 }
 
+// ✅ Next 15: params vem como Promise
 export async function generateMetadata(
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ): Promise<Metadata> {
+  const { id } = await params;
   const base = getBaseFromHeaders();
-  const ad = await fetchAd(base, params.id);
+  const ad = await fetchAd(base, id);
 
   const title = ad ? `${ad.title} - ${formatPriceBRL(ad.priceCents)}` : "Anúncio";
   const description = ad?.description?.slice(0, 160) ?? "Veja este anúncio no Qwip.";
   const ogImage = ad?.imageUrl ?? `${base}/og-image.png`;
-  const url = `${base}/anuncio/${params.id}`;
+  const url = `${base}/anuncio/${id}`;
 
   return {
     title,
@@ -76,9 +78,12 @@ export async function generateMetadata(
   };
 }
 
-export default async function Page({ params }: { params: { id: string } }) {
+// ✅ Next 15: params vem como Promise
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+
   const base = getBaseFromHeaders();
-  const ad = await fetchAd(base, params.id);
+  const ad = await fetchAd(base, id);
 
   if (!ad) {
     return (
@@ -116,7 +121,6 @@ export default async function Page({ params }: { params: { id: string } }) {
       ? `Válido até ${expiresDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} de ${expiresDate.toLocaleDateString("pt-BR")}`
       : null;
 
-  // WhatsApp: se o backend expuser o telefone do vendedor, usamos direto; senão abre o share genérico
   const waMsg = `Olá! Tenho interesse no seu anúncio "${ad.title}" (${formatPriceBRL(ad.priceCents)}). Está disponível? ${pageUrl}`;
   const waHref = ad.sellerPhone
     ? `https://wa.me/${ad.sellerPhone.replace(/\D/g, "")}?text=${encodeURIComponent(waMsg)}`
@@ -162,7 +166,6 @@ export default async function Page({ params }: { params: { id: string } }) {
             )}
 
             <div className="grid grid-cols-2 gap-3 pt-2">
-              {/* WhatsApp direto (usa componente para tratar fallback de env quando não há telefone do vendedor) */}
               <a
                 href={waHref}
                 target="_blank"
@@ -172,7 +175,6 @@ export default async function Page({ params }: { params: { id: string } }) {
                 Falar no WhatsApp
               </a>
 
-              {/* Compartilhar (Web Share API + fallback para copiar link) */}
               <button
                 onClick={() => {
                   const data = { title: shareTitle, text: shareText, url: pageUrl };
@@ -189,7 +191,6 @@ export default async function Page({ params }: { params: { id: string } }) {
               </button>
             </div>
 
-            {/* Localização (opcional) */}
             {center && (
               <div className="pt-2 text-xs text-muted-foreground">
                 {ad.city && ad.uf ? `${ad.city} - ${ad.uf}` : null}
@@ -198,7 +199,6 @@ export default async function Page({ params }: { params: { id: string } }) {
           </div>
         </div>
 
-        {/* Mapa (opcional) */}
         {center ? (
           <div className="mt-8">
             <AdMap center={center} markers={[{ id: ad.id, lat: center.lat, lng: center.lng }]} />
