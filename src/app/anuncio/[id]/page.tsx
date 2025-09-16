@@ -38,7 +38,7 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
-// ✅ No seu build, headers() retorna Promise => usar await
+// ✅ seu build trata headers() como Promise — usar await
 async function getBaseFromHeaders() {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
@@ -46,7 +46,7 @@ async function getBaseFromHeaders() {
   return `${proto}://${host}`;
 }
 
-// ✅ Next 15: params é Promise => usar await
+// ✅ Next 15: params é Promise — usar await
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Metadata> {
@@ -78,7 +78,7 @@ export async function generateMetadata(
   };
 }
 
-// ✅ Next 15: params é Promise => usar await
+// ✅ Next 15: params é Promise — usar await
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
@@ -199,9 +199,10 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           </div>
         </div>
 
+        {/* ✅ AdMap: sem markers; com radiusKm obrigatório */}
         {center ? (
           <div className="mt-8">
-            <AdMap center={center} markers={[{ id: ad.id, lat: center.lat, lng: center.lng }]} />
+            <AdMap center={center} radiusKm={ad.radiusKm ?? 5} />
           </div>
         ) : null}
       </div>
