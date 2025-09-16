@@ -34,14 +34,12 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
-export default async function Page(
-  props: { params: { id: string } } | { params: Promise<{ id: string }> }
-) {
-  // Next 15 pode entregar params como Promise; cobrimos os dois casos
-  const p = "then" in props.params ? await (props as any).params : (props as any).params;
-  const id = p?.id as string;
+// ⚠️ Em Next 15, use PageProps padrão (sem Promise aqui).
+export default async function Page({ params }: { params: { id: string } }) {
+  const id = params.id;
 
-  const h = await headers(); // assíncrono no Next 15
+  // headers() segue síncrono na tipagem; pode ser aguardado indiretamente no servidor
+  const h = headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
   const base = `${proto}://${host}`;
@@ -74,23 +72,46 @@ export default async function Page(
     (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
     null;
 
-  // JSON-LD seguro (sem @ts-expect-error)
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "Product",
-    name: ad.title,
-    description: ad.description,
-    image: ad.imageUrl || undefined,
-    offers: {
-      "@type": "Offer",
-      priceCurrency: "BRL",
-      price: (ad.priceCents / 100).toFixed(2),
-      availability: "https://schema.org/InStock",
-    },
-  };
+  // Metadados e JSON-LD para social/SEO
+  const shareTitle = `${ad.title} - ${formatPrice(ad.priceCents)}`;
+  const shareDesc = ad.description?.slice(0, 160) ?? "";
+  const shareImg = ad.imageUrl ?? "/og-image.png";
+  const pageUrl = `${base}/anuncio/${ad.id}`;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
+      {/* OpenGraph/Twitter */}
+      <meta property="og:title" content={shareTitle} />
+      <meta property="og:description" content={shareDesc} />
+      <meta property="og:image" content={shareImg} />
+      <meta property="og:url" content={pageUrl} />
+      <meta property="og:type" content="product" />
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content={shareTitle} />
+      <meta name="twitter:description" content={shareDesc} />
+      <meta name="twitter:image" content={shareImg} />
+
+      {/* JSON-LD sem @ts-expect-error */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Product",
+            name: ad.title,
+            description: ad.description,
+            image: ad.imageUrl ? [ad.imageUrl] : [],
+            offers: {
+              "@type": "Offer",
+              priceCurrency: "BRL",
+              price: (ad.priceCents / 100).toFixed(2),
+              availability: "https://schema.org/InStock",
+              url: pageUrl,
+            },
+          }),
+        }}
+      />
+
       <div className="container mx-auto max-w-5xl px-4 py-8">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold">{ad.title}</h1>
@@ -113,7 +134,6 @@ export default async function Page(
                   fill
                   className="object-cover"
                   sizes="(min-width: 1024px) 60vw, 100vw"
-                  priority
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-xs text-zinc-500">
@@ -131,6 +151,7 @@ export default async function Page(
               <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
                 {ad.description}
               </p>
+
               <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-amber-400/10 px-2 py-0.5 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
                 Expira em 24h
               </div>
@@ -138,31 +159,41 @@ export default async function Page(
           </div>
 
           {/* DIREITA: mapa + ações */}
-          <div className="rounded-2xl border border-white/10 bg-card p-5">
-            <div className="text-sm font-medium">Área do anúncio</div>
-            <div className="mt-3">
-              <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={260} />
-            </div>
+          <aside className="rounded-2xl border border-white/10 bg-card p-4">
+            <div className="mb-3 text-sm font-medium">Área do anúncio</div>
+            <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={260} />
 
             <div className="mt-4 grid grid-cols-2 gap-3">
+              {/* WhatsApp: mensagem pré-pronta direcionando ao vendedor */}
               <a
-                href={`https://wa.me/?text=${encodeURIComponent(
-                  `${ad.title} - ${formatPrice(ad.priceCents)}\n${base}/anuncio/${ad.id}`
-                )}`}
+                href={
+                  // Prefill da conversa (substitua o número se quiser fixar um DDI/DD)
+                  `https://wa.me/?text=${encodeURIComponent(
+                    `${shareTitle}\n${pageUrl}\n\nOlá! Tenho interesse nesse anúncio: ${ad.title}. Ainda está disponível?`
+                  )}`
+                }
                 target="_blank"
+                rel="noopener noreferrer"
                 className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400"
               >
                 WhatsApp
               </a>
+
+              {/* Compartilhar: usa os metatags/OG da própria página */}
               <button
                 type="button"
                 onClick={async () => {
                   try {
-                    await navigator.share?.({
-                      title: ad.title,
-                      text: `${ad.title} - ${formatPrice(ad.priceCents)}`,
-                      url: `${base}/anuncio/${ad.id}`,
-                    });
+                    if (navigator.share) {
+                      await navigator.share({
+                        title: shareTitle,
+                        text: ad.description?.slice(0, 120) ?? "",
+                        url: pageUrl,
+                      });
+                    } else {
+                      await navigator.clipboard.writeText(pageUrl);
+                      alert("Link copiado!");
+                    }
                   } catch {}
                 }}
                 className="inline-flex items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5"
@@ -170,15 +201,9 @@ export default async function Page(
                 Compartilhar
               </button>
             </div>
-          </div>
+          </aside>
         </div>
       </div>
-
-      {/* JSON-LD */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
     </main>
   );
 }
