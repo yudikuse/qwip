@@ -1,43 +1,44 @@
+// src/app/api/ads/[id]/route.ts
 import { NextResponse } from "next/server";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-/**
- * GET /api/ads/[id]
- * Retorna 404 se não existir.
- */
-export async function GET(_req: Request, ctx: { params: { id: string } }) {
-  const { id } = ctx.params;
-
+// Next 15: o segundo argumento recebe { params: Promise<...> }
+export async function GET(
+  _req: Request,
+  ctx: { params: Promise<{ id: string }> }
+) {
   try {
-    // Usamos SQL cru p/ ficar imune a diferenças de nomes (photoUrl vs imageUrl)
-    const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
-      SELECT
-        a."id",
-        a."title",
-        a."description",
-        a."priceCents",
-        a."city",
-        a."uf",
-        a."lat",
-        a."lng",
-        a."centerLat",
-        a."centerLng",
-        a."radiusKm",
-        COALESCE(a."imageUrl", a."photoUrl") AS "imageUrl",
-        a."createdAt"
-      FROM "Ad" a
-      WHERE a."id" = ${id}
-      LIMIT 1
-    `);
+    const { id } = await ctx.params;
 
-    const ad = rows?.[0] ?? null;
-    if (!ad) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    const ad = await prisma.ad.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        priceCents: true,
+        city: true,
+        uf: true,
+        lat: true,
+        lng: true,
+        centerLat: true,
+        centerLng: true,
+        radiusKm: true,
+        // ⚠️ seu schema usa imageUrl (não existe photoUrl)
+        imageUrl: true,
+        createdAt: true,
+      },
+    });
 
-    return NextResponse.json({ ad });
+    if (!ad) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ ad }, { status: 200 });
   } catch (err) {
     console.error("GET /api/ads/[id] failed:", err);
-    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+    return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 }
