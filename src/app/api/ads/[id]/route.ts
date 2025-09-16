@@ -1,19 +1,17 @@
 // src/app/api/ads/[id]/route.ts
-import { NextResponse, type RouteContext } from "next/server";
+/**
+ * GET /api/ads/:id
+ * Retorna um anúncio pelo ID.
+ * Compatível com Next.js 15 (sem RouteContext).
+ */
+import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-/**
- * GET /api/ads/:id
- * Retorna um anúncio por id.
- *
- * Nota: assinatura corrigida para Next 15:
- *   GET(req: Request, ctx: RouteContext<{ id: string }>)
- */
-export async function GET(req: Request, ctx: RouteContext<{ id: string }>) {
+export async function GET(_req: Request, { params }: { params: { id: string } }) {
   try {
-    const id = ctx.params?.id;
+    const id = params?.id;
     if (!id || typeof id !== "string") {
       return NextResponse.json({ error: "invalid_id" }, { status: 400 });
     }
@@ -32,8 +30,11 @@ export async function GET(req: Request, ctx: RouteContext<{ id: string }>) {
         centerLat: true,
         centerLng: true,
         radiusKm: true,
-        imageUrl: true, // coluna de imagem — usar a coluna do seu schema
+        imageUrl: true,
+        imageMime: true,
         createdAt: true,
+        // Se no seu schema existir relação com vendedor e telefone, você pode expor aqui:
+        // seller: { select: { phoneE164: true } },
       },
     });
 
@@ -41,9 +42,17 @@ export async function GET(req: Request, ctx: RouteContext<{ id: string }>) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ad });
+    // Normalização simples para o front
+    const payload = {
+      ...ad,
+      // expiresAt = 24h após criação
+      expiresAt: new Date(ad.createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+      // sellerPhone: ad.seller?.phoneE164 ?? null, // descomente se tiver no schema
+    };
+
+    return NextResponse.json({ ad: payload });
   } catch (err) {
-    console.error("GET /api/ads/[id] error:", err);
+    console.error("[/api/ads/:id][GET] error:", err);
     return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }
