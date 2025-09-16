@@ -3,7 +3,6 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import type { Metadata } from "next";
 import AdMap from "@/components/AdMap";
-// opcional: import WhatsAppButton from "@/components/WhatsAppButton";
 
 type Ad = {
   id: string;
@@ -46,7 +45,7 @@ function getBaseFromHeaders() {
   return `${proto}://${host}`;
 }
 
-// ✅ Next 15: params vem como Promise
+// Next 15: params é Promise => await
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Metadata> {
@@ -78,7 +77,7 @@ export async function generateMetadata(
   };
 }
 
-// ✅ Next 15: params vem como Promise
+// Next 15: params é Promise => await
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
