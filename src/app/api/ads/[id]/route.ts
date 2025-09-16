@@ -4,34 +4,19 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-/**
- * GET /api/ads/:id
- * Retorna um anúncio por id.
- */
-export async function GET(
-  _req: Request,
-  ctx: { params: { id: string } } // <- RouteContext correto no Next 15
-) {
-  try {
-    const id = ctx.params.id;
+// Tipagem mínima e estável do contexto (sem importar tipos do Next)
+type Context = { params: { id?: string } };
 
+export async function GET(_req: Request, { params }: Context) {
+  const id = params?.id?.trim();
+  if (!id) {
+    return NextResponse.json({ error: "missing_id" }, { status: 400 });
+  }
+
+  try {
+    // Evita 'select' rígido para não estourar TS caso o schema tenha mudado
     const ad = await prisma.ad.findUnique({
       where: { id },
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        priceCents: true,
-        city: true,
-        uf: true,
-        lat: true,
-        lng: true,
-        centerLat: true,
-        centerLng: true,
-        radiusKm: true,
-        imageUrl: true, // sua coluna de imagem
-        createdAt: true,
-      },
     });
 
     if (!ad) {
@@ -40,7 +25,7 @@ export async function GET(
 
     return NextResponse.json({ ad });
   } catch (err) {
-    console.error("GET /api/ads/[id] error:", err);
+    console.error("GET /api/ads/[id] failed:", err);
     return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }
