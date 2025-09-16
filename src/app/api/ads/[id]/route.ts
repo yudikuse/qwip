@@ -4,21 +4,18 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// TTL em horas (mantenha alinhado com a vitrine)
-const TTL_HOURS = 24;
-
-export async function GET(
-  _req: Request,
-  ctx: { params: { id: string } }
-) {
-  const id = ctx?.params?.id;
-  if (!id) {
-    return NextResponse.json({ error: "missing_id" }, { status: 400 });
-  }
-
+export async function GET(req: Request) {
   try {
-    const cutoff = new Date(Date.now() - TTL_HOURS * 60 * 60 * 1000);
+    // Extrai o id do path, evitando depender do tipo do 2º argumento
+    const url = new URL(req.url);
+    const segments = url.pathname.split("/").filter(Boolean);
+    const id = segments[segments.length - 1];
 
+    if (!id) {
+      return NextResponse.json({ error: "missing_id" }, { status: 400 });
+    }
+
+    // Seleciona os campos necessários
     const ad = await prisma.ad.findUnique({
       where: { id },
       select: {
@@ -33,25 +30,30 @@ export async function GET(
         centerLat: true,
         centerLng: true,
         radiusKm: true,
-        photoUrl: true,      // coluna no banco
+        // dependendo do schema, sua coluna pode chamar photoUrl ou imageUrl
+        photoUrl: true,
+        imageUrl: true,
         createdAt: true,
       },
     });
 
-    // não existe ou expirado
-    if (!ad || ad.createdAt < cutoff) {
+    if (!ad) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
 
-    // envia ambos os nomes de campo para compatibilidade
+    // Normaliza o nome do campo de imagem e datas para string
     const payload = {
       ...ad,
-      imageUrl: ad.photoUrl, // alias usado por algumas telas
+      imageUrl: ad.imageUrl ?? ad.photoUrl ?? null,
+      createdAt:
+        typeof ad.createdAt === "string"
+          ? ad.createdAt
+          : ad.createdAt?.toISOString?.() ?? null,
     };
 
     return NextResponse.json({ ad: payload });
-  } catch (e) {
-    console.error("GET /api/ads/[id] error", e);
+  } catch (err) {
+    console.error("ads/[id] GET error:", err);
     return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }
