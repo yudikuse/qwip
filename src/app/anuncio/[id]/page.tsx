@@ -27,19 +27,21 @@ function formatPrice(cents: number) {
 }
 
 async function fetchAd(base: string, id: string): Promise<Ad | null> {
-  const r = await fetch(`${base}/api/ads/${id}`, { cache: "no-store" });
-  if (!r.ok) return null;
-  const data = await r.json();
-  return (data?.ad ?? null) as Ad | null;
+  try {
+    const r = await fetch(`${base}/api/ads/${id}`, { cache: "no-store" });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return (data?.ad ?? null) as Ad | null;
+  } catch {
+    return null;
+  }
 }
 
-/**
- * Next.js 15: em páginas com segmentação dinâmica, `params` é uma Promise.
- */
-export default async function Page(props: { params: Promise<{ id: string }> }) {
-  const { id } = await props.params;
+// ✅ Next 15: params é Promise; headers() é assíncrono (mesmo padrão já usado) :contentReference[oaicite:1]{index=1}
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
 
-  const h = await headers(); // headers agora é assíncrono no 15
+  const h = await headers(); // async no Next 15
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
   const base = `${proto}://${host}`;
@@ -72,45 +74,19 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
     null;
 
-  const shareTitle = `${ad.title} - ${formatPrice(ad.priceCents)}`;
-  const shareDesc =
-    ad.description?.slice(0, 140).replace(/\s+/g, " ").trim() +
-    (ad.description && ad.description.length > 140 ? "…" : "");
-  const canonical = `${base}/anuncio/${ad.id}`;
+  const price = formatPrice(ad.priceCents);
+
+  // Deep link do WhatsApp com mensagem completa
+  const waText = encodeURIComponent(
+    `Olá! Tenho interesse no seu anúncio:\n\n${ad.title}\n${price}\n${ad.city}${ad.uf ? ", " + ad.uf : ""}\n\nLink: ${base}/anuncio/${ad.id}`
+  );
+  const waHref = `https://wa.me/?text=${waText}`;
+
+  // Link “compartilhar” nativo + fallback
+  const shareHref = `${base}/anuncio/${ad.id}`;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      {/* SEO básico + social */}
-      <head>
-        <title>{shareTitle}</title>
-        <meta name="description" content={shareDesc} />
-        <meta property="og:title" content={shareTitle} />
-        <meta property="og:description" content={shareDesc} />
-        {ad.imageUrl && <meta property="og:image" content={ad.imageUrl} />}
-        <meta property="og:url" content={canonical} />
-        <meta name="twitter:card" content="summary_large_image" />
-        <link rel="canonical" href={canonical} />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "Product",
-              name: ad.title,
-              description: ad.description,
-              offers: {
-                "@type": "Offer",
-                priceCurrency: "BRL",
-                price: (ad.priceCents / 100).toFixed(2),
-                availability: "https://schema.org/InStock",
-              },
-              image: ad.imageUrl || undefined,
-              areaServed: ad.uf ? `BR-${ad.uf}` : undefined,
-            }),
-          }}
-        />
-      </head>
-
       <div className="container mx-auto max-w-5xl px-4 py-8">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold">{ad.title}</h1>
@@ -127,6 +103,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           <div className="rounded-2xl border border-white/10 bg-card">
             <div className="relative aspect-[4/3] w-full overflow-hidden rounded-t-2xl bg-zinc-900">
               {ad.imageUrl ? (
+                // Usa <Image> com fill e object-cover
                 <Image
                   src={ad.imageUrl}
                   alt={ad.title}
@@ -142,7 +119,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
             </div>
 
             <div className="p-5">
-              <div className="text-xl font-semibold">{formatPrice(ad.priceCents)}</div>
+              <div className="text-xl font-semibold">{price}</div>
               <div className="mt-1 text-sm text-zinc-400">
                 {ad.city}
                 {ad.uf ? `, ${ad.uf}` : ""}
@@ -150,57 +127,43 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
               <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">
                 {ad.description}
               </p>
-              <div className="mt-4">
-                <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
-                  Expira em 24h
-                </span>
+              <div className="mt-5 flex gap-3">
+                <a
+                  href={waHref}
+                  className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400"
+                >
+                  WhatsApp
+                </a>
+
+                {/* Share API nativo (quando disponível) com fallback para o link */}
+                <button
+                  className="inline-flex items-center justify-center rounded-md border border-white/10 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5"
+                  onClick={async () => {
+                    try {
+                      if (typeof navigator !== "undefined" && (navigator as any).share) {
+                        await (navigator as any).share({
+                          title: ad.title,
+                          text: `${ad.title} — ${price}`,
+                          url: shareHref,
+                        });
+                      } else {
+                        window.open(shareHref, "_blank");
+                      }
+                    } catch {}
+                  }}
+                >
+                  Compartilhar
+                </button>
               </div>
             </div>
           </div>
 
-          {/* DIREITA: mapa + ações */}
-          <aside className="rounded-2xl border border-white/10 bg-card p-5">
+          {/* DIREITA: mapa */} 
+          {/* Componente isolado (dinâmico) – idêntico ao que você já tem (AdMap) :contentReference[oaicite:2]{index=2} */}
+          <div className="rounded-2xl border border-white/10 bg-card p-5">
             <div className="mb-2 text-xs font-medium text-zinc-400">Área do anúncio</div>
-            <div className="overflow-hidden rounded-xl border border-white/10">
-              <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={260} />
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              {/* WhatsApp — mensagem pré-pronta para o vendedor */}
-              <a
-                href={`https://wa.me/?text=${encodeURIComponent(
-                  `${shareTitle}\n${canonical}\n\nOlá! Tenho interesse neste anúncio.`
-                )}`}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                WhatsApp
-              </a>
-
-              {/* Compartilhar nativo/Web Share API com fallback */}
-              <button
-                onClick={async () => {
-                  const url = canonical;
-                  const title = shareTitle;
-                  const text = shareDesc;
-                  try {
-                    // @ts-ignore – web share disponível em mobile/alguns desktops
-                    if (navigator.share) {
-                      // @ts-ignore
-                      await navigator.share({ title, text, url });
-                    } else {
-                      await navigator.clipboard.writeText(url);
-                      alert("Link copiado!");
-                    }
-                  } catch {}
-                }}
-                className="inline-flex items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5"
-              >
-                Compartilhar
-              </button>
-            </div>
-          </aside>
+            <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={280} />
+          </div>
         </div>
       </div>
     </main>
