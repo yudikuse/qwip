@@ -1,17 +1,33 @@
 // src/app/api/ads/[id]/route.ts
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 
-const prisma = new PrismaClient();
+export const dynamic = "force-dynamic";
 
-// Next 15: o segundo argumento recebe { params: Promise<...> }
-export async function GET(
-  _req: Request,
-  ctx: { params: Promise<{ id: string }> }
-) {
+type RouteContext =
+  | { params: { id: string } }
+  | { params: Promise<{ id: string }> };
+
+export async function GET(_req: Request, context: RouteContext) {
   try {
-    const { id } = await ctx.params;
+    const { id } = "then" in context.params ? await context.params : context.params;
 
+    // Garanta que você TEM esses campos no schema.prisma:
+    // model Ad {
+    //   id          String   @id @default(cuid())
+    //   title       String
+    //   description String
+    //   priceCents  Int
+    //   city        String
+    //   uf          String
+    //   lat         Float?
+    //   lng         Float?
+    //   centerLat   Float?
+    //   centerLng   Float?
+    //   radiusKm    Int?
+    //   imageUrl    String?
+    //   createdAt   DateTime @default(now())
+    // }
     const ad = await prisma.ad.findUnique({
       where: { id },
       select: {
@@ -26,8 +42,7 @@ export async function GET(
         centerLat: true,
         centerLng: true,
         radiusKm: true,
-        // ⚠️ seu schema usa imageUrl (não existe photoUrl)
-        imageUrl: true,
+        imageUrl: true, // padronizado (NÃO use photoUrl aqui)
         createdAt: true,
       },
     });
@@ -36,9 +51,15 @@ export async function GET(
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ad }, { status: 200 });
+    // Padroniza tipos para o front (datas como string)
+    const payload = {
+      ...ad,
+      createdAt: ad.createdAt.toISOString(),
+    };
+
+    return NextResponse.json({ ad: payload });
   } catch (err) {
-    console.error("GET /api/ads/[id] failed:", err);
+    console.error("[GET /api/ads/[id]]", err);
     return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 }
