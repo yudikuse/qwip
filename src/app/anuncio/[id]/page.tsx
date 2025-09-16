@@ -34,12 +34,11 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
-export default async function Page(props: { params: Promise<{ id: string }> }) {
-  // Next 15: params é Promise
-  const { id } = await props.params;
+// Next 15: Page props shape { params: { id: string } }
+export default async function Page({ params }: { params: { id: string } }) {
+  const id = params.id;
 
-  // Next 15: headers() é assíncrono
-  const h = await headers();
+  const h = headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
   const base = `${proto}://${host}`;
@@ -72,83 +71,90 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
     null;
 
-  // link de WhatsApp com mensagem pré-pronta
-  const waMsg = encodeURIComponent(
-    `Olá! Tenho interesse no seu anúncio "${ad.title}" (${formatPrice(ad.priceCents)}). Você pode me confirmar se ainda está disponível?`
-  );
-  const waLink = `https://wa.me/?text=${waMsg}`;
+  // share / meta
+  const shareTitle = `${ad.title} - ${formatPrice(ad.priceCents)}`;
+  const shareDesc = ad.description?.slice(0, 160) ?? "";
+  const shareImg = ad.imageUrl ?? `${base}/og-image.png`;
+  const pageUrl = `${base}/anuncio/${ad.id}`;
 
-  // link de compartilhamento (usa a própria URL)
-  const selfUrl = `${base}/anuncio/${ad.id}`;
-  const shareText = encodeURIComponent(`${ad.title} - ${formatPrice(ad.priceCents)}\n${selfUrl}`);
-  const shareLink = `https://wa.me/?text=${shareText}`;
+  // WhatsApp prefilled
+  const waMsg = encodeURIComponent(
+    `Olá! Tenho interesse no seu anúncio "${ad.title}" (${formatPrice(ad.priceCents)}). Está disponível?`
+  );
+  // se quiser fixar número do anunciante, use wa.me/<phone>?text=...
+  const waLink = `https://wa.me/?text=${waMsg}`;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <div className="container mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl font-bold">{ad.title}</h1>
-          <Link
-            href="/vitrine"
-            className="rounded-lg border border-white/10 px-3 py-1.5 text-sm hover:bg-white/5"
-          >
-            Voltar
-          </Link>
-        </div>
+      <head>
+        <title>{shareTitle}</title>
+        <meta name="description" content={shareDesc} />
+        <meta property="og:title" content={shareTitle} />
+        <meta property="og:description" content={shareDesc} />
+        <meta property="og:image" content={shareImg} />
+        <meta property="og:url" content={pageUrl} />
+      </head>
 
-        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          {/* ESQUERDA: imagem + descrição */}
-          <div className="rounded-2xl border border-white/10 bg-card">
-            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-t-2xl bg-zinc-900">
-              {ad.imageUrl ? (
-                <Image
-                  src={ad.imageUrl}
-                  alt={ad.title}
-                  fill
-                  className="object-cover"
-                  sizes="(min-width: 1024px) 60vw, 100vw"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs text-zinc-500">
-                  (Sem imagem)
-                </div>
-              )}
+      <div className="container mx-auto max-w-4xl px-4 py-8">
+        <div className="rounded-2xl border border-white/10 bg-card p-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div>
+              <div className="overflow-hidden rounded-xl border border-white/6">
+                {ad.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={ad.imageUrl} alt={ad.title} className="h-80 w-full object-cover" />
+                ) : (
+                  <div className="flex h-80 items-center justify-center text-zinc-500">
+                    (Sem imagem)
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="p-5">
-              <div className="text-xl font-semibold">{formatPrice(ad.priceCents)}</div>
-              <div className="mt-1 text-sm text-zinc-400">
-                {ad.city}, {ad.uf}
+            <div>
+              <h1 className="text-2xl font-semibold">{ad.title}</h1>
+              <div className="mt-2 text-lg font-bold">{formatPrice(ad.priceCents)}</div>
+              <div className="mt-3 text-sm text-zinc-400">{ad.description}</div>
+
+              <div className="mt-4 flex gap-3">
+                <a
+                  href={waLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
+                >
+                  Entrar em contato (WhatsApp)
+                </a>
+
+                <button
+                  onClick={() => {
+                    if (navigator.share) {
+                      navigator
+                        .share({
+                          title: shareTitle,
+                          text: shareDesc,
+                          url: pageUrl,
+                        })
+                        .catch(() => {});
+                    } else {
+                      // fallback: copia url
+                      navigator.clipboard?.writeText(pageUrl);
+                      alert("Link copiado para a área de transferência.");
+                    }
+                  }}
+                  className="rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/5"
+                >
+                  Compartilhar
+                </button>
               </div>
-              <p className="prose prose-invert mt-4 text-sm leading-6 text-zinc-200">
-                {ad.description}
-              </p>
             </div>
           </div>
 
-          {/* DIREITA: mapa + ações */}
-          <aside className="rounded-2xl border border-white/10 bg-card p-4">
-            <h2 className="mb-3 text-sm font-semibold text-zinc-300">Área do anúncio</h2>
-            <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={260} />
-            <div className="mt-4 flex gap-3">
-              <a
-                href={waLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-center text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
-              >
-                WhatsApp
-              </a>
-              <a
-                href={shareLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 rounded-lg border border-white/10 px-3 py-2 text-center text-sm hover:bg-white/5"
-              >
-                Compartilhar
-              </a>
+          {center ? (
+            <div className="mt-6">
+              <AdMap center={center} markers={[{ id: ad.id, lat: center.lat, lng: center.lng }]} />
             </div>
-          </aside>
+          ) : null}
         </div>
       </div>
     </main>
