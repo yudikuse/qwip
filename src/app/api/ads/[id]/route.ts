@@ -4,20 +4,16 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-/**
- * GET /api/ads/:id
- * Retorna um anúncio por ID (ou 404).
- */
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const id = params.id;
+type Ctx = { params: { id: string } };
+
+export async function GET(_req: Request, { params }: Ctx) {
+  const id = (params?.id || "").trim();
+  if (!id || id.length > 64) {
+    return NextResponse.json({ error: "invalid_id" }, { status: 400 });
+  }
 
   try {
-    // Se o ID vier vazio/estranho:
-    if (!id || typeof id !== "string") {
-      return NextResponse.json({ error: "invalid_id" }, { status: 400 });
-    }
-
-    // Traga só o que a página realmente usa:
+    // Use apenas campos que realmente existem no schema
     const ad = await prisma.ad.findUnique({
       where: { id },
       select: {
@@ -32,19 +28,17 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         centerLat: true,
         centerLng: true,
         radiusKm: true,
-        // ❗ use a coluna que existe no schema
-        imageUrl: true, // <- estava 'photoUrl' antes
+        imageUrl: true,      // <— substitui photoUrl
+        phoneE164: true,     // usado para abrir o WhatsApp do anunciante (se existir)
         createdAt: true,
       },
     });
 
-    if (!ad) {
-      return NextResponse.json({ error: "not_found" }, { status: 404 });
-    }
+    if (!ad) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
     return NextResponse.json({ ad });
   } catch (err) {
-    console.error("GET /api/ads/[id] error:", err);
+    console.error("GET /api/ads/[id] failed:", err);
     return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 }
