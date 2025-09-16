@@ -1,0 +1,70 @@
+// =========================
+// Prisma Schema COMPLETO
+// =========================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"       // Supabase/Neon/Postgres
+  url      = env("DATABASE_URL")
+}
+
+// =========================
+// MODELS
+// =========================
+
+model Seller {
+  id        String   @id @default(cuid())
+
+  // Mapeado para a coluna existente "phoneE164" no banco
+  // (SEM @unique por enquanto para não travar deploy com dados duplicados)
+  phone     String?  @map("phoneE164")
+
+  // Pode não existir no banco ainda — fica opcional para não quebrar linhas antigas
+  name      String?
+
+  createdAt DateTime @default(now())
+
+  ads       Ad[]
+
+  // Índice simples ajuda performance sem travar deploy
+  @@index([phone])
+}
+
+model Ad {
+  id           String   @id @default(cuid())
+  title        String
+  description  String
+  priceCents   Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // ===== Campos existentes (não remover) =====
+  city        String
+  uf          String
+  lat         Float
+  lng         Float
+  centerLat   Float?
+  centerLng   Float?
+  radiusKm    Float?
+  expiresAt   DateTime?
+  isActive    Boolean  @default(true)
+
+  // Relacionamento existente
+  sellerId   String?
+  seller     Seller?  @relation(fields: [sellerId], references: [id])
+
+  // ===== Novos campos de IMAGEM (opcionais para não quebrar dados existentes) =====
+  imageUrl     String?           // URL pública no storage (ex.: Vercel Blob)
+  imageMime    String?           // ex.: "image/jpeg", "image/png"
+  imageWidth   Int?
+  imageHeight  Int?
+  imageSha256  String?           // hash para dedupe/antiabuso
+
+  // Índices
+  @@index([imageSha256])
+  @@index([city, uf])
+  @@index([isActive, expiresAt])
+}
