@@ -4,76 +4,83 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-function toNumOrUndef(v: unknown): number | undefined {
-  if (v === null || v === undefined || v === "") return undefined;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : undefined;
+// Helpers de validação/conversão
+function toRequiredNumber(name: string, v: unknown): number {
+  const n = typeof v === "string" ? Number(v) : typeof v === "number" ? v : NaN;
+  if (!Number.isFinite(n)) {
+    throw new Error(`invalid_${name}`);
+  }
+  return n;
 }
-
-function toStrOrEmpty(v: unknown): string {
-  if (v === null || v === undefined) return "";
+function toRequiredString(name: string, v: unknown): string {
+  if (v === null || v === undefined) throw new Error(`missing_${name}`);
   const s = String(v).trim();
+  if (!s) throw new Error(`missing_${name}`);
   return s;
+}
+function toOptionalString(v: unknown): string | undefined {
+  if (v === null || v === undefined) return undefined;
+  const s = String(v).trim();
+  return s ? s : undefined;
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    // validações básicas obrigatórias
-    const title = toStrOrEmpty(body?.title);
-    const description = toStrOrEmpty(body?.description);
-    const priceCents = Number(body?.priceCents);
-
-    if (!title) {
-      return NextResponse.json({ error: "missing_title" }, { status: 400 });
-    }
-    if (!Number.isFinite(priceCents) || priceCents < 0) {
-      return NextResponse.json({ error: "invalid_priceCents" }, { status: 400 });
+    // Obrigatórios (sem eles, 400)
+    const title = toRequiredString("title", body?.title);
+    const description = toRequiredString("description", body?.description);
+    const priceCents = toRequiredNumber("priceCents", body?.priceCents);
+    if (priceCents < 0 || !Number.isInteger(priceCents)) {
+      throw new Error("invalid_priceCents");
     }
 
-    // strings obrigatórias no schema (não podem ser undefined)
-    const city = toStrOrEmpty(body?.city); // se vier vazio, envia ""
-    const uf = toStrOrEmpty(body?.uf);     // idem
+    // Campos obrigatórios de localização — conforme seu schema
+    const lat = toRequiredNumber("lat", body?.lat);
+    const lng = toRequiredNumber("lng", body?.lng);
+    const centerLat = toRequiredNumber("centerLat", body?.centerLat);
+    const centerLng = toRequiredNumber("centerLng", body?.centerLng);
+    const radiusKm = toRequiredNumber("radiusKm", body?.radiusKm);
 
-    // opcionais (omitir com undefined se não vierem)
-    const lat = toNumOrUndef(body?.lat);
-    const lng = toNumOrUndef(body?.lng);
-    const centerLat = toNumOrUndef(body?.centerLat);
-    const centerLng = toNumOrUndef(body?.centerLng);
-    const radiusKm = toNumOrUndef(body?.radiusKm);
+    // city/uf obrigatórios (string não vazia)
+    const city = toRequiredString("city", body?.city);
+    const uf = toRequiredString("uf", body?.uf);
 
-    // opcionais string (podem ser undefined se seu schema permitir nullabilidade/optional)
-    const imageUrl =
-      body?.imageUrl != null && String(body.imageUrl).trim() !== ""
-        ? String(body.imageUrl).trim()
-        : undefined;
+    // Opcionais
+    const imageUrl = toOptionalString(body?.imageUrl);
+    const imageMime = toOptionalString(body?.imageMime);
 
-    const imageMime =
-      body?.imageMime != null && String(body.imageMime).trim() !== ""
-        ? String(body.imageMime).trim()
-        : undefined;
-
+    // Criação — sempre envia number nos geo (nunca undefined/null)
     const ad = await prisma.ad.create({
       data: {
         title,
         description,
         priceCents,
-        city,      // string obrigatória (nunca undefined)
-        uf,        // string obrigatória (nunca undefined)
-        lat,       // number | undefined
-        lng,       // number | undefined
-        centerLat, // number | undefined
-        centerLng, // number | undefined
-        radiusKm,  // number | undefined
-        imageUrl,  // string | undefined
-        imageMime, // string | undefined
+        city,
+        uf,
+        lat,
+        lng,
+        centerLat,
+        centerLng,
+        radiusKm,
+        ...(imageUrl && { imageUrl }),
+        ...(imageMime && { imageMime }),
       },
       select: { id: true, title: true },
     });
 
     return NextResponse.json({ ok: true, id: ad.id });
-  } catch (err) {
+  } catch (err: any) {
+    // Mapeia erros de validação em 400 com códigos previsíveis
+    const msg: string = err?.message ?? "";
+    if (
+      msg.startsWith("missing_") ||
+      msg.startsWith("invalid_")
+    ) {
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
+
     console.error("[/api/ads/create][POST] error:", err);
     return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
