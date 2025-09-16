@@ -34,11 +34,11 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
-// Next 15: em páginas de rota dinâmica, params é Promise<{ id: string }>
+// ⬇⬇ Next 15: params pode vir como Promise
 export default async function Page(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
 
-  // Next 15: headers() é assíncrono
+  // headers() também é assíncrono no Next 15
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
@@ -86,7 +86,6 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          {/* Imagem + descrição */}
           <div className="rounded-2xl border border-white/10 bg-card">
             <div className="relative aspect-[4/3] w-full overflow-hidden rounded-t-2xl bg-zinc-900">
               {ad.imageUrl ? (
@@ -109,35 +108,29 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
               <div className="mt-1 text-sm text-zinc-400">
                 {ad.city}, {ad.uf}
               </div>
-              <p className="mt-4 text-sm leading-6 text-zinc-300 whitespace-pre-wrap">
+              <p className="mt-4 text-sm leading-relaxed text-zinc-300">
                 {ad.description}
               </p>
-              <div className="mt-5 text-xs text-zinc-500">
+              <div className="mt-4 text-[11px] text-zinc-500">
                 Publicado em {new Date(ad.createdAt).toLocaleString("pt-BR")}
               </div>
             </div>
           </div>
 
-          {/* Mapa + ações */}
           <aside className="rounded-2xl border border-white/10 bg-card p-4">
-            <div className="text-sm font-medium text-zinc-300">Área do anúncio</div>
-            <div className="mt-3 overflow-hidden rounded-xl border border-white/10">
+            <div className="rounded-xl border border-white/10">
               <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={280} />
             </div>
-
             <div className="mt-4 grid grid-cols-2 gap-3">
               <a
-                href={
-                  "https://wa.me/?text=" +
-                  encodeURIComponent(`${ad.title} - ${formatPrice(ad.priceCents)}\n${base}/anuncio/${ad.id}`)
-                }
+                href={`https://wa.me/?text=${encodeURIComponent(
+                  `${ad.title} - ${formatPrice(ad.priceCents)}\n\n${base}/anuncio/${ad.id}`
+                )}`}
                 target="_blank"
-                rel="noopener noreferrer"
                 className="rounded-lg bg-emerald-600 px-3 py-2 text-center text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
               >
                 WhatsApp
               </a>
-
               <button
                 onClick={async () => {
                   try {
