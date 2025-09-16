@@ -4,8 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation"; // ⬅️ novo
-
+import { useRouter } from "next/navigation";
 // ⬇️ usamos o client em formato multipart
 import { createAdSecureForm } from "@/lib/ads-client";
 
@@ -35,7 +34,7 @@ function clampDigits(s: string, max: number) {
 }
 
 export default function NovaPaginaAnuncio() {
-  const router = useRouter(); // ⬅️ novo
+  const router = useRouter();
 
   // Guard: precisa do cookie de telefone verificado
   useEffect(() => {
@@ -295,14 +294,15 @@ export default function NovaPaginaAnuncio() {
         return;
       }
 
-      // ✅ Redireciona para a página do anúncio
-      const id = res.data?.id as string | undefined;
+      const id: string | undefined = res.data?.id;
       if (id) {
+        // 👉 redireciona para a página do anúncio (onde ficam WhatsApp/Compartilhar)
         router.push(`/anuncio/${id}`);
-      } else {
-        // fallback: se por algum motivo não vier id, volta para a vitrine
-        router.push("/vitrine");
+        return;
       }
+
+      // fallback (não deveria acontecer)
+      alert("Anúncio criado, mas não recebi o ID para redirecionar.");
     } catch (err) {
       console.error(err);
       alert("Erro inesperado ao criar anúncio.");
