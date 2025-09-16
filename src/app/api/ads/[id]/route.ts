@@ -4,16 +4,17 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-/**
- * GET /api/ads/:id
- */
 export async function GET(
   _req: Request,
-  ctx: { params: Promise<{ id: string }> } // Next 15: params é Promise
+  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
 ) {
-  const { id } = await ctx.params;
-
   try {
+    const params = "then" in (ctx as any).params ? await (ctx as any).params : (ctx as any).params;
+    const id = params?.id;
+    if (!id || typeof id !== "string") {
+      return NextResponse.json({ error: "invalid_id" }, { status: 400 });
+    }
+
     const ad = await prisma.ad.findUnique({
       where: { id },
       select: {
@@ -25,9 +26,10 @@ export async function GET(
         uf: true,
         lat: true,
         lng: true,
+        centerLat: true,
+        centerLng: true,
         radiusKm: true,
-        // IMPORTANTE: no schema existe "imageUrl" (não "photoUrl")
-        imageUrl: true,
+        imageUrl: true,        // <— apenas imageUrl
         createdAt: true,
       },
     });
@@ -38,7 +40,7 @@ export async function GET(
 
     return NextResponse.json({ ad });
   } catch (err) {
-    console.error("ad [id] route error", err);
-    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+    console.error("GET /api/ads/[id] failed:", err);
+    return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 }
