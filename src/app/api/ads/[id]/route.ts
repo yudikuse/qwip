@@ -1,17 +1,16 @@
 // src/app/api/ads/[id]/route.ts
 /**
  * GET /api/ads/:id
- * Retorna um anúncio pelo ID.
- * Compatível com Next.js 15 (sem RouteContext).
+ * Compatível com Next.js 15: sem RouteContext e com contexto frouxo.
  */
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, context: any) {
   try {
-    const id = params?.id;
+    const id = context?.params?.id;
     if (!id || typeof id !== "string") {
       return NextResponse.json({ error: "invalid_id" }, { status: 400 });
     }
@@ -33,7 +32,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         imageUrl: true,
         imageMime: true,
         createdAt: true,
-        // seller: { select: { phoneE164: true } }, // habilite quando tiver no schema
+        // seller: { select: { phoneE164: true } }, // habilite quando existir no schema
       },
     });
 
@@ -43,6 +42,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
     const payload = {
       ...ad,
+      // expira em 24h
       expiresAt: new Date(ad.createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
       // sellerPhone: ad.seller?.phoneE164 ?? null,
     };
