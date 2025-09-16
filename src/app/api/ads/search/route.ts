@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 
 /**
  * GET /api/ads/search
- * Query params aceitos (todos opcionais):
+ * Query params (todos opcionais):
  *  - q: string (busca por título/descrição)
  *  - uf: string (sigla UF)
  *  - city: string
@@ -62,9 +62,10 @@ export async function GET(req: Request) {
     conds.push(Prisma.sql`${haversine} <= ${rKm}`);
   }
 
+  // ⚠️ Aqui estava o erro de tipos: use separador ' AND ' como string simples.
   const whereFrag: Prisma.Sql =
     conds.length > 0
-      ? Prisma.sql`WHERE ${Prisma.join(conds, Prisma.sql` AND `)}`
+      ? Prisma.sql`WHERE ${Prisma.join(conds, ' AND ')}`
       : Prisma.sql``;
 
   // SELECT principal — tudo dentro de Prisma.sql
