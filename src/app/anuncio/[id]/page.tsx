@@ -38,19 +38,20 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
-function getBaseFromHeaders() {
-  const h = headers();
+// ✅ Next 15: headers() retorna Promise => await
+async function getBaseFromHeaders() {
+  const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
   return `${proto}://${host}`;
 }
 
-// Next 15: params é Promise => await
+// ✅ Next 15: params é Promise => await
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Metadata> {
   const { id } = await params;
-  const base = getBaseFromHeaders();
+  const base = await getBaseFromHeaders();
   const ad = await fetchAd(base, id);
 
   const title = ad ? `${ad.title} - ${formatPriceBRL(ad.priceCents)}` : "Anúncio";
@@ -68,20 +69,14 @@ export async function generateMetadata(
       images: [{ url: ogImage }],
       type: "website",
     },
-    twitter: {
-      card: "summary_large_image",
-      title,
-      description,
-      images: [ogImage],
-    },
   };
 }
 
-// Next 15: params é Promise => await
+// ✅ Next 15: params é Promise => await
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const base = getBaseFromHeaders();
+  const base = await getBaseFromHeaders();
   const ad = await fetchAd(base, id);
 
   if (!ad) {
