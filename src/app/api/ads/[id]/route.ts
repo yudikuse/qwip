@@ -1,35 +1,57 @@
+// src/app/api/ads/[id]/route.ts
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// Evita cache agressivo em plataformas edge
-export const dynamic = "force-dynamic";
+// TTL em horas (mantenha alinhado com a vitrine)
+const TTL_HOURS = 24;
 
-export async function GET(_req: Request, ctx: any) {
+export async function GET(
+  _req: Request,
+  ctx: { params: { id: string } }
+) {
+  const id = ctx?.params?.id;
+  if (!id) {
+    return NextResponse.json({ error: "missing_id" }, { status: 400 });
+  }
+
   try {
-    const id = ctx?.params?.id as string | undefined;
-    if (!id) {
-      return NextResponse.json({ error: "Parâmetro 'id' é obrigatório." }, { status: 400 });
-    }
+    const cutoff = new Date(Date.now() - TTL_HOURS * 60 * 60 * 1000);
 
-    // Busca anúncio
     const ad = await prisma.ad.findUnique({
       where: { id },
-      // Se quiser limitar a anúncios ainda válidos (24h), descomente:
-      // where: {
-      //   id,
-      //   createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-      // },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        priceCents: true,
+        city: true,
+        uf: true,
+        lat: true,
+        lng: true,
+        centerLat: true,
+        centerLng: true,
+        radiusKm: true,
+        photoUrl: true,      // coluna no banco
+        createdAt: true,
+      },
     });
 
-    if (!ad) {
-      return NextResponse.json({ error: "Anúncio não encontrado." }, { status: 404 });
+    // não existe ou expirado
+    if (!ad || ad.createdAt < cutoff) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
 
-    return NextResponse.json(ad, { status: 200 });
-  } catch (err) {
-    console.error("[/api/ads/[id]] ERRO:", err);
-    return NextResponse.json({ error: "Falha ao carregar anúncio." }, { status: 500 });
+    // envia ambos os nomes de campo para compatibilidade
+    const payload = {
+      ...ad,
+      imageUrl: ad.photoUrl, // alias usado por algumas telas
+    };
+
+    return NextResponse.json({ ad: payload });
+  } catch (e) {
+    console.error("GET /api/ads/[id] error", e);
+    return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }
