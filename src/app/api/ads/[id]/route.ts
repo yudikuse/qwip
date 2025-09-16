@@ -1,46 +1,43 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
 /**
  * GET /api/ads/[id]
- * Next.js 15: o segundo argumento do handler expõe params como Promise
+ * Retorna 404 se não existir.
  */
-export async function GET(
-  _req: Request,
-  ctx: { params: Promise<{ id: string }> }
-) {
-  const { id } = await ctx.params;
+export async function GET(_req: Request, ctx: { params: { id: string } }) {
+  const { id } = ctx.params;
 
   try {
-    const ad = await prisma.ad.findUnique({
-      where: { id },
-      // Selecione apenas colunas que sabemos que existem no schema
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        priceCents: true,
-        city: true,
-        uf: true,
-        lat: true,
-        lng: true,
-        centerLat: true,
-        centerLng: true,
-        radiusKm: true,
-        imageUrl: true,          // mantenha este — seu schema usa imageUrl
-        createdAt: true,
-      },
-    });
+    // Usamos SQL cru p/ ficar imune a diferenças de nomes (photoUrl vs imageUrl)
+    const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
+      SELECT
+        a."id",
+        a."title",
+        a."description",
+        a."priceCents",
+        a."city",
+        a."uf",
+        a."lat",
+        a."lng",
+        a."centerLat",
+        a."centerLng",
+        a."radiusKm",
+        COALESCE(a."imageUrl", a."photoUrl") AS "imageUrl",
+        a."createdAt"
+      FROM "Ad" a
+      WHERE a."id" = ${id}
+      LIMIT 1
+    `);
 
-    if (!ad) {
-      return NextResponse.json({ error: "not_found" }, { status: 404 });
-    }
+    const ad = rows?.[0] ?? null;
+    if (!ad) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
     return NextResponse.json({ ad });
   } catch (err) {
-    console.error("GET /api/ads/[id] failed", err);
-    return NextResponse.json({ error: "server_error" }, { status: 500 });
+    console.error("GET /api/ads/[id] failed:", err);
+    return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }
