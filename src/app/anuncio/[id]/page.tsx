@@ -1,30 +1,35 @@
 // src/app/anuncio/[id]/page.tsx
-import Image from "next/image";
 import Link from "next/link";
 import { headers } from "next/headers";
+import type { Metadata } from "next";
 import AdMap from "@/components/AdMap";
+import WhatsAppButton from "@/components/WhatsAppButton";
 
 type Ad = {
   id: string;
   title: string;
   description: string;
   priceCents: number;
-  city: string;
-  uf: string;
+  city: string | null;
+  uf: string | null;
   lat: number | null;
   lng: number | null;
   centerLat: number | null;
   centerLng: number | null;
   radiusKm: number | null;
   imageUrl: string | null;
-  createdAt: string;
+  createdAt: string;      // ISO
+  expiresAt?: string;     // ISO (calculado no backend)
+  sellerPhone?: string | null; // opcional: se o backend expuser
 };
 
-function formatPrice(cents: number) {
+function formatPriceBRL(cents: number) {
   const v = Math.max(0, Math.trunc(cents || 0));
-  const reais = Math.floor(v / 100);
-  const cent = (v % 100).toString().padStart(2, "0");
-  return `R$ ${reais.toLocaleString("pt-BR")},${cent}`;
+  return (v / 100).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+  });
 }
 
 async function fetchAd(base: string, id: string): Promise<Ad | null> {
@@ -34,31 +39,61 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
-// Next 15: Page props shape { params: { id: string } }
-export default async function Page({ params }: { params: { id: string } }) {
-  const id = params.id;
-
+function getBaseFromHeaders() {
   const h = headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
-  const base = `${proto}://${host}`;
+  return `${proto}://${host}`;
+}
 
-  const ad = await fetchAd(base, id);
+export async function generateMetadata(
+  { params }: { params: { id: string } }
+): Promise<Metadata> {
+  const base = getBaseFromHeaders();
+  const ad = await fetchAd(base, params.id);
+
+  const title = ad ? `${ad.title} - ${formatPriceBRL(ad.priceCents)}` : "Anúncio";
+  const description = ad?.description?.slice(0, 160) ?? "Veja este anúncio no Qwip.";
+  const ogImage = ad?.imageUrl ?? `${base}/og-image.png`;
+  const url = `${base}/anuncio/${params.id}`;
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      url,
+      images: [{ url: ogImage }],
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [ogImage],
+    },
+  };
+}
+
+export default async function Page({ params }: { params: { id: string } }) {
+  const base = getBaseFromHeaders();
+  const ad = await fetchAd(base, params.id);
 
   if (!ad) {
     return (
       <main className="min-h-screen bg-background text-foreground">
-        <div className="container mx-auto max-w-4xl px-4 py-10">
-          <div className="rounded-xl border border-white/10 p-6">
-            <h1 className="text-xl font-semibold">Anúncio não encontrado</h1>
-            <p className="mt-2 text-sm text-zinc-400">
-              O anúncio pode ter expirado ou sido removido.
-            </p>
+        <div className="mx-auto max-w-3xl px-4 py-20 text-center">
+          <h1 className="text-2xl font-semibold">Anúncio não encontrado</h1>
+          <p className="mt-2 text-muted-foreground">
+            O anúncio que você tentou acessar não existe ou expirou.
+          </p>
+          <div className="mt-6">
             <Link
               href="/vitrine"
-              className="mt-4 inline-block rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
+              className="rounded-lg border px-4 py-2 font-medium hover:bg-white/5"
             >
-              Voltar para a vitrine
+              ← Voltar para a Vitrine
             </Link>
           </div>
         </div>
@@ -71,91 +106,104 @@ export default async function Page({ params }: { params: { id: string } }) {
     (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
     null;
 
-  // share / meta
-  const shareTitle = `${ad.title} - ${formatPrice(ad.priceCents)}`;
-  const shareDesc = ad.description?.slice(0, 160) ?? "";
-  const shareImg = ad.imageUrl ?? `${base}/og-image.png`;
   const pageUrl = `${base}/anuncio/${ad.id}`;
+  const shareTitle = `${ad.title} - ${formatPriceBRL(ad.priceCents)}`;
+  const shareText = ad.description?.slice(0, 160) ?? "";
 
-  // WhatsApp prefilled
-  const waMsg = encodeURIComponent(
-    `Olá! Tenho interesse no seu anúncio "${ad.title}" (${formatPrice(ad.priceCents)}). Está disponível?`
-  );
-  // se quiser fixar número do anunciante, use wa.me/<phone>?text=...
-  const waLink = `https://wa.me/?text=${waMsg}`;
+  const expiresDate = ad.expiresAt ? new Date(ad.expiresAt) : null;
+  const expiresText =
+    expiresDate
+      ? `Válido até ${expiresDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} de ${expiresDate.toLocaleDateString("pt-BR")}`
+      : null;
+
+  // WhatsApp: se o backend expuser o telefone do vendedor, usamos direto; senão abre o share genérico
+  const waMsg = `Olá! Tenho interesse no seu anúncio "${ad.title}" (${formatPriceBRL(ad.priceCents)}). Está disponível? ${pageUrl}`;
+  const waHref = ad.sellerPhone
+    ? `https://wa.me/${ad.sellerPhone.replace(/\D/g, "")}?text=${encodeURIComponent(waMsg)}`
+    : `https://wa.me/?text=${encodeURIComponent(`${shareTitle}\n${pageUrl}`)}`;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <head>
-        <title>{shareTitle}</title>
-        <meta name="description" content={shareDesc} />
-        <meta property="og:title" content={shareTitle} />
-        <meta property="og:description" content={shareDesc} />
-        <meta property="og:image" content={shareImg} />
-        <meta property="og:url" content={pageUrl} />
-      </head>
-
-      <div className="container mx-auto max-w-4xl px-4 py-8">
-        <div className="rounded-2xl border border-white/10 bg-card p-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            <div>
-              <div className="overflow-hidden rounded-xl border border-white/6">
-                {ad.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={ad.imageUrl} alt={ad.title} className="h-80 w-full object-cover" />
-                ) : (
-                  <div className="flex h-80 items-center justify-center text-zinc-500">
-                    (Sem imagem)
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <h1 className="text-2xl font-semibold">{ad.title}</h1>
-              <div className="mt-2 text-lg font-bold">{formatPrice(ad.priceCents)}</div>
-              <div className="mt-3 text-sm text-zinc-400">{ad.description}</div>
-
-              <div className="mt-4 flex gap-3">
-                <a
-                  href={waLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
-                >
-                  Entrar em contato (WhatsApp)
-                </a>
-
-                <button
-                  onClick={() => {
-                    if (navigator.share) {
-                      navigator
-                        .share({
-                          title: shareTitle,
-                          text: shareDesc,
-                          url: pageUrl,
-                        })
-                        .catch(() => {});
-                    } else {
-                      // fallback: copia url
-                      navigator.clipboard?.writeText(pageUrl);
-                      alert("Link copiado para a área de transferência.");
-                    }
-                  }}
-                  className="rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/5"
-                >
-                  Compartilhar
-                </button>
-              </div>
+      <div className="container mx-auto max-w-5xl px-4 py-8">
+        <div className="grid gap-8 md:grid-cols-2">
+          {/* Imagem destaque */}
+          <div>
+            <div className="overflow-hidden rounded-2xl border border-white/10">
+              {ad.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={ad.imageUrl}
+                  alt={ad.title}
+                  className="h-80 w-full object-cover md:h-[28rem]"
+                />
+              ) : (
+                <div className="flex h-80 items-center justify-center text-muted-foreground">
+                  (Sem imagem)
+                </div>
+              )}
             </div>
           </div>
 
-          {center ? (
-            <div className="mt-6">
-              <AdMap center={center} markers={[{ id: ad.id, lat: center.lat, lng: center.lng }]} />
+          {/* Informações */}
+          <div className="space-y-4">
+            <h1 className="text-2xl font-bold leading-tight">{ad.title}</h1>
+            <div className="text-emerald-400 text-2xl font-extrabold">
+              {formatPriceBRL(ad.priceCents)}
             </div>
-          ) : null}
+
+            {expiresText && (
+              <div className="text-sm text-amber-400/90">⏳ {expiresText}</div>
+            )}
+
+            {ad.description && (
+              <p className="text-sm text-muted-foreground whitespace-pre-line">
+                {ad.description}
+              </p>
+            )}
+
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              {/* WhatsApp direto (usa componente para tratar fallback de env quando não há telefone do vendedor) */}
+              <a
+                href={waHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex w-full items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
+              >
+                Falar no WhatsApp
+              </a>
+
+              {/* Compartilhar (Web Share API + fallback para copiar link) */}
+              <button
+                onClick={() => {
+                  const data = { title: shareTitle, text: shareText, url: pageUrl };
+                  if (navigator.share) {
+                    navigator.share(data).catch(() => {});
+                  } else {
+                    navigator.clipboard?.writeText(`${shareTitle}\n${pageUrl}`);
+                    alert("Link copiado!");
+                  }
+                }}
+                className="inline-flex w-full items-center justify-center rounded-md border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
+              >
+                Compartilhar
+              </button>
+            </div>
+
+            {/* Localização (opcional) */}
+            {center && (
+              <div className="pt-2 text-xs text-muted-foreground">
+                {ad.city && ad.uf ? `${ad.city} - ${ad.uf}` : null}
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Mapa (opcional) */}
+        {center ? (
+          <div className="mt-8">
+            <AdMap center={center} markers={[{ id: ad.id, lat: center.lat, lng: center.lng }]} />
+          </div>
+        ) : null}
       </div>
     </main>
   );
