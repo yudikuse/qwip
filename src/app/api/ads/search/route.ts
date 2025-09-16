@@ -4,12 +4,12 @@ import { Prisma, PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// TTL em horas (mantenha igual ao detalhe)
-const TTL_HOURS = 24;
-
 /**
  * GET /api/ads/search
- * q, uf, city, lat, lng, radiusKm, limit, offset (todos opcionais)
+ * Query params opcionais:
+ *  - q, uf, city
+ *  - lat, lng, radiusKm
+ *  - limit, offset
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -22,29 +22,20 @@ export async function GET(req: Request) {
   const lng = url.searchParams.get("lng");
   const radiusKm = url.searchParams.get("radiusKm");
 
-  // paginação (com fallback e clamp)
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 20), 1), 50);
   const offset = Math.max(Number(url.searchParams.get("offset") ?? 0), 0);
 
-  // WHERE dinâmico
+  // WHERE dinâmico com Prisma.sql
   const conds: Prisma.Sql[] = [];
-
-  // TTL (últimas 24h)
-  conds.push(Prisma.sql`a."createdAt" >= NOW() - INTERVAL '${TTL_HOURS} hours'`);
 
   if (q) {
     conds.push(
       Prisma.sql`(a.title ILIKE ${"%" + q + "%"} OR a.description ILIKE ${"%" + q + "%"})`
     );
   }
-  if (uf) {
-    conds.push(Prisma.sql`a.uf = ${uf}`);
-  }
-  if (city) {
-    conds.push(Prisma.sql`a.city = ${city}`);
-  }
+  if (uf) conds.push(Prisma.sql`a.uf = ${uf}`);
+  if (city) conds.push(Prisma.sql`a.city = ${city}`);
 
-  // Geo (Haversine aprox.) — só aplica se vier tudo
   if (lat && lng && radiusKm) {
     const latNum = Number(lat);
     const lngNum = Number(lng);
@@ -65,7 +56,7 @@ export async function GET(req: Request) {
       ? Prisma.sql`WHERE ${Prisma.join(conds, Prisma.sql` AND `)}`
       : Prisma.sql``;
 
-  // SELECT principal — padroniza photoUrl + imageUrl
+  // SELECT principal
   const baseSelect = Prisma.sql`
     SELECT
       a.id,
@@ -75,17 +66,20 @@ export async function GET(req: Request) {
       a.city,
       a.priceCents,
       a.photoUrl,
-      a.photoUrl AS "imageUrl",
+      a.imageUrl,
       a.lat,
       a.lng,
+      a.centerLat,
+      a.centerLng,
+      a.radiusKm,
       a.createdAt
     FROM "Ad" a
     ${whereFrag}
-    ORDER BY a."createdAt" DESC
+    ORDER BY a.createdAt DESC
     LIMIT ${limit} OFFSET ${offset}
   `;
 
-  // COUNT total — mesmo WHERE
+  // COUNT total
   const countSelect = Prisma.sql`
     SELECT COUNT(*)::int AS total
     FROM "Ad" a
@@ -93,12 +87,23 @@ export async function GET(req: Request) {
   `;
 
   try {
+    // $queryRaw aceita Prisma.Sql
     const rows = await prisma.$queryRaw<any[]>(baseSelect);
     const [{ total }] = (await prisma.$queryRaw<any[]>(countSelect)) as [{ total: number }];
 
-    return NextResponse.json({ items: rows, total, limit, offset });
+    // Normaliza imagem e data
+    const items = rows.map((r) => ({
+      ...r,
+      imageUrl: r.imageUrl ?? r.photoUrl ?? null,
+      createdAt:
+        typeof r.createdAt === "string"
+          ? r.createdAt
+          : r.createdAt?.toISOString?.() ?? null,
+    }));
+
+    return NextResponse.json({ items, total, limit, offset });
   } catch (err) {
-    console.error("GET /api/ads/search error", err);
+    console.error("search route error", err);
     return NextResponse.json({ error: "search_failed" }, { status: 500 });
   }
 }
