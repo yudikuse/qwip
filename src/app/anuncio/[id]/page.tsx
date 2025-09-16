@@ -1,3 +1,4 @@
+// src/app/anuncio/[id]/page.tsx
 import Image from "next/image";
 import Link from "next/link";
 import { headers } from "next/headers";
@@ -33,10 +34,11 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
-// Next 15: params é Promise; headers() é assíncrono
 export default async function Page(props: { params: Promise<{ id: string }> }) {
+  // Next 15: params é Promise
   const { id } = await props.params;
 
+  // Next 15: headers() é assíncrono
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
@@ -70,19 +72,16 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
     null;
 
-  // link WhatsApp com mensagem pronta e dados do anúncio
-  const waText = encodeURIComponent(
-    `Olá! Tenho interesse no anúncio:\n\n` +
-      `• ${ad.title}\n` +
-      `• ${formatPrice(ad.priceCents)}\n` +
-      `• ${ad.city}/${ad.uf}\n\n` +
-      `Poderia me passar mais detalhes?`
+  // link de WhatsApp com mensagem pré-pronta
+  const waMsg = encodeURIComponent(
+    `Olá! Tenho interesse no seu anúncio "${ad.title}" (${formatPrice(ad.priceCents)}). Você pode me confirmar se ainda está disponível?`
   );
-  const waHref = `https://wa.me/?text=${waText}`;
+  const waLink = `https://wa.me/?text=${waMsg}`;
 
-  // link de compartilhamento (usa mesma mensagem + URL da página)
-  const shareText = encodeURIComponent(`${ad.title} - ${formatPrice(ad.priceCents)}\n${base}/anuncio/${ad.id}`);
-  const shareHref = `https://wa.me/?text=${shareText}`;
+  // link de compartilhamento (usa a própria URL)
+  const selfUrl = `${base}/anuncio/${ad.id}`;
+  const shareText = encodeURIComponent(`${ad.title} - ${formatPrice(ad.priceCents)}\n${selfUrl}`);
+  const shareLink = `https://wa.me/?text=${shareText}`;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -121,8 +120,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
               <div className="mt-1 text-sm text-zinc-400">
                 {ad.city}, {ad.uf}
               </div>
-
-              <p className="prose prose-invert mt-4 whitespace-pre-wrap text-sm leading-relaxed">
+              <p className="prose prose-invert mt-4 text-sm leading-6 text-zinc-200">
                 {ad.description}
               </p>
             </div>
@@ -130,26 +128,22 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
 
           {/* DIREITA: mapa + ações */}
           <aside className="rounded-2xl border border-white/10 bg-card p-4">
-            <div className="text-sm font-medium text-zinc-300">Área do anúncio</div>
-            <div className="mt-3 overflow-hidden rounded-xl">
-              {/* AdMap usa GeoMap com SSR desabilitado. */}
-              <AdMap center={center} radiusKm={ad.radiusKm ?? 0} height={260} />
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-3">
+            <h2 className="mb-3 text-sm font-semibold text-zinc-300">Área do anúncio</h2>
+            <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={260} />
+            <div className="mt-4 flex gap-3">
               <a
-                href={waHref}
+                href={waLink}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded-lg bg-emerald-600 px-3 py-2 text-center text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
+                className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-center text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
               >
                 WhatsApp
               </a>
               <a
-                href={shareHref}
+                href={shareLink}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded-lg border border-white/10 px-3 py-2 text-center text-sm hover:bg-white/5"
+                className="flex-1 rounded-lg border border-white/10 px-3 py-2 text-center text-sm hover:bg-white/5"
               >
                 Compartilhar
               </a>
