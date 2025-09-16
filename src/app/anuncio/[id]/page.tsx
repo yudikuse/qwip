@@ -3,7 +3,6 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import AdMap from "@/components/AdMap";
 
-/** Campos retornados pelo /api/ads/[id]  */
 type Ad = {
   id: string;
   title: string;
@@ -11,19 +10,12 @@ type Ad = {
   priceCents: number;
   city: string;
   uf: string;
-  // localização
   lat: number | null;
   lng: number | null;
   centerLat: number | null;
   centerLng: number | null;
   radiusKm: number | null;
-  // imagem e contato
-  imageUrl: string | null;
-  // o backend pode devolver um destes campos — tratamos todos:
-  phoneE164?: string | null;
-  whatsappE164?: string | null;
-  contactPhone?: string | null;
-  // datas
+  imageUrl: string | null; // coluna usada nas APIs
   createdAt: string;
 };
 
@@ -41,63 +33,81 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
-/* ===================== Open Graph / Share preview ===================== */
+// -------- Metadados (Open Graph / Twitter) para o "Compartilhar" mostrar o thumb do anúncio
 export async function generateMetadata(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
   const base = `${proto}://${host}`;
+  const url = `${base}/anuncio/${id}`;
 
   const ad = await fetchAd(base, id);
+
   if (!ad) {
+    const title = "Anúncio não encontrado – Qwip";
+    const description = "Este anúncio pode ter expirado ou sido removido.";
     return {
-      title: "Anúncio não encontrado",
-      description: "O anúncio pode ter expirado ou sido removido.",
+      title,
+      description,
+      alternates: { canonical: url },
       openGraph: {
-        title: "Anúncio não encontrado",
-        description: "O anúncio pode ter expirado ou sido removido.",
-        url: `${base}/anuncio/${id}`,
-        images: [],
+        title,
+        description,
+        url,
+        siteName: "Qwip — Venda HOJE",
+        type: "article",
+      },
+      twitter: {
+        card: "summary",
+        title,
+        description,
       },
     };
   }
 
-  const title = `${ad.title} — ${formatPrice(ad.priceCents)}`;
-  const description =
-    ad.description?.slice(0, 160) ||
-    `${ad.city}${ad.uf ? `, ${ad.uf}` : ""} • ${formatPrice(ad.priceCents)}`;
+  const title = ad.title || "Anúncio";
+  const description = ad.description?.slice(0, 160) || "Confira detalhes do anúncio.";
+  const image = ad.imageUrl || `${base}/file.svg`;
 
   return {
-    title,
+    title: `${title} — ${formatPrice(ad.priceCents)}`,
     description,
-    alternates: { canonical: `${base}/anuncio/${ad.id}` },
+    alternates: { canonical: url },
     openGraph: {
-      type: "article",
-      title,
+      title: `${title} — ${formatPrice(ad.priceCents)}`,
       description,
-      url: `${base}/anuncio/${ad.id}`,
-      images: ad.imageUrl ? [{ url: ad.imageUrl, width: 1200, height: 630, alt: ad.title }] : [],
+      url,
+      siteName: "Qwip — Venda HOJE",
+      type: "product",
+      images: [
+        {
+          url: image,
+          width: 1200,
+          height: 630,
+          alt: title,
+        },
+      ],
     },
     twitter: {
       card: "summary_large_image",
-      title,
+      title: `${title} — ${formatPrice(ad.priceCents)}`,
       description,
-      images: ad.imageUrl ? [ad.imageUrl] : [],
+      images: [image],
     },
   };
 }
 
-/* ========================= Página do anúncio ========================= */
+// -------- Página
 export default async function Page(props: { params: Promise<{ id: string }> }) {
-  // Next.js 15: params é Promise
   const { id } = await props.params;
 
-  // headers() também é assíncrono no 15
+  // headers() é assíncrono no Next 15
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "https";
   const base = `${proto}://${host}`;
+  const selfUrl = `${base}/anuncio/${id}`;
 
   const ad = await fetchAd(base, id);
 
@@ -122,52 +132,63 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     );
   }
 
-  // centro do círculo no mapa
   const center =
     (ad.centerLat != null && ad.centerLng != null && { lat: ad.centerLat, lng: ad.centerLng }) ||
     (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
     null;
 
-  // link do próprio anúncio
-  const adUrl = `${base}/anuncio/${ad.id}`;
+  // Mensagem pré-pronta para WhatsApp
+  const waText = encodeURIComponent(
+    [
+      `Olá! Vi seu anúncio no Qwip 👋`,
+      `*${ad.title}* — ${formatPrice(ad.priceCents)}`,
+      `${ad.city}${ad.uf ? `, ${ad.uf}` : ""}`,
+      ``,
+      `Ainda disponível?`,
+      selfUrl,
+    ].join("\n")
+  );
+  // Se você quiser enviar direto para um número específico, troque "send" por o número: /<DDD+numero>/?text=...
+  const whatsappHref = `https://wa.me/?text=${waText}`;
 
-  // telefone em E.164 (usa o que o backend enviar)
-  const phone =
-    ad.whatsappE164 || ad.phoneE164 || ad.contactPhone || ""; // tolerante a diferentes nomes
-
-  // mensagem pronta para o comprador
-  const msg = [
-    `Olá! Vi este anúncio no Qwip e me interessei 👇`,
-    ``,
-    `${ad.title} — ${formatPrice(ad.priceCents)}`,
-    `${ad.city}${ad.uf ? `, ${ad.uf}` : ""}`,
-    adUrl,
-  ].join("\n");
-
-  // link WhatsApp (se não houver telefone, cai no Web WhatsApp em branco com a mensagem)
-  const waHref = phone
-    ? `https://wa.me/${encodeURIComponent(phone)}?text=${encodeURIComponent(msg)}`
-    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  // JSON-LD (schema.org Product) — sem @ts-expect-error
+  const ld = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: ad.title,
+    description: ad.description,
+    image: ad.imageUrl ?? undefined,
+    offers: {
+      "@type": "Offer",
+      priceCurrency: "BRL",
+      price: (ad.priceCents / 100).toFixed(2),
+      availability: "https://schema.org/InStock",
+      url: selfUrl,
+    },
+  };
 
   return (
     <main className="min-h-screen bg-background text-foreground">
+      {/* JSON-LD para melhorar snippet em apps/mensageiros que suportam */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }}
+      />
       <div className="container mx-auto max-w-6xl px-4 py-8">
-        {/* cabeçalho */}
         <div className="mb-6 flex items-center justify-between">
-          <h1 className="truncate text-2xl font-bold">{ad.title}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{ad.title}</h1>
           <Link
             href="/vitrine"
-            className="rounded-lg border border-white/10 px-3 py-1.5 text-sm hover:bg-white/5"
+            className="rounded-xl border border-white/10 px-3 py-1.5 text-sm hover:bg-white/5"
           >
             Voltar
           </Link>
         </div>
 
-        {/* grade principal */}
-        <div className="grid items-start gap-6 lg:grid-cols-[1.25fr_0.75fr]">
-          {/* esquerda: mídia + descrição */}
-          <article className="overflow-hidden rounded-2xl border border-white/10 bg-card">
-            <div className="relative aspect-[4/3] w-full bg-zinc-900">
+        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+          {/* CARD ESQUERDO */}
+          <article className="rounded-2xl border border-white/10 bg-card shadow-xl ring-1 ring-white/5">
+            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-t-2xl bg-zinc-900">
               {ad.imageUrl ? (
                 <Image
                   src={ad.imageUrl}
@@ -182,102 +203,70 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
                   (Sem imagem)
                 </div>
               )}
+              <div className="absolute left-4 top-4 rounded-full bg-emerald-500/90 px-3 py-1 text-sm font-semibold text-[#0F1115] shadow">
+                {formatPrice(ad.priceCents)}
+              </div>
             </div>
 
             <div className="grid gap-4 p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xl font-semibold">{formatPrice(ad.priceCents)}</div>
-                  <div className="text-sm text-zinc-400">
-                    {ad.city}
-                    {ad.uf ? `, ${ad.uf}` : ""}
-                  </div>
-                </div>
-                <span className="inline-flex items-center gap-2 rounded-full bg-amber-400/10 px-2 py-0.5 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-400">
+                <span className="rounded-full bg-white/5 px-2 py-0.5">
+                  {ad.city}
+                  {ad.uf ? `, ${ad.uf}` : ""}
+                </span>
+                <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-amber-300 ring-1 ring-amber-400/20">
                   Expira em 24h
                 </span>
               </div>
 
-              <p className="whitespace-pre-wrap leading-relaxed text-zinc-200">{ad.description}</p>
+              <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-zinc-200">
+                {ad.description}
+              </p>
 
-              {/* ações (mobile) */}
-              <div className="mt-1 grid grid-cols-2 gap-3 sm:hidden">
+              <div className="mt-1 grid grid-cols-2 gap-3">
                 <a
-                  href={waHref}
+                  href={whatsappHref}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-[#0F1115] ring-1 ring-emerald-400/30 transition hover:bg-emerald-400"
                 >
                   WhatsApp
                 </a>
 
-                <a
-                  href={adUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5"
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-zinc-200 transition hover:bg-white/5"
+                  onClick={async () => {
+                    const shareData = {
+                      title: `${ad.title} — ${formatPrice(ad.priceCents)}`,
+                      text: `${ad.description?.slice(0, 120) ?? ""}`,
+                      url: selfUrl,
+                    };
+                    try {
+                      if (navigator.share) {
+                        await navigator.share(shareData);
+                      } else {
+                        await navigator.clipboard.writeText(selfUrl);
+                        alert("Link copiado!");
+                      }
+                    } catch {
+                      // ignorar cancelamentos
+                    }
+                  }}
                 >
                   Compartilhar
-                </a>
+                </button>
               </div>
             </div>
           </article>
 
-          {/* direita: mapa + ações */}
-          <aside className="sticky top-6 grid gap-4 rounded-2xl border border-white/10 bg-card p-5">
-            <div className="text-sm font-semibold">Área do anúncio</div>
-            <div className="overflow-hidden rounded-xl border border-white/10">
-              <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={260} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <a
-                href={waHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-[#0F1115] transition hover:bg-emerald-400"
-              >
-                WhatsApp
-              </a>
-              <a
-                href={adUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/5"
-              >
-                Compartilhar
-              </a>
-            </div>
-
-            <p className="mt-1 text-xs text-zinc-500">
-              O link de compartilhar já inclui *thumb*, título e descrição do seu anúncio (Open
-              Graph). Ao enviar no WhatsApp ou redes sociais, a prévia sai com a foto do anúncio.
-            </p>
+          {/* CARD DIREITO (MAPA) */}
+          <aside className="rounded-2xl border border-white/10 bg-card p-5 shadow-xl ring-1 ring-white/5">
+            <div className="mb-3 text-sm font-medium text-zinc-300">Área do anúncio</div>
+            <AdMap center={center} radiusKm={ad.radiusKm ?? 5} height={320} />
           </aside>
         </div>
       </div>
-
-      {/* JSON-LD para enriquecer o preview/SEO */}
-      <script
-        type="application/ld+json"
-        // @ts-expect-error – JSON dentro do dangerouslySetInnerHTML
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "Product",
-            name: ad.title,
-            description: ad.description,
-            image: ad.imageUrl ? [ad.imageUrl] : undefined,
-            offers: {
-              "@type": "Offer",
-              priceCurrency: "BRL",
-              price: (ad.priceCents / 100).toFixed(2),
-              availability: "https://schema.org/InStock",
-              url: adUrl,
-            },
-          }),
-        }}
-      />
     </main>
   );
 }
