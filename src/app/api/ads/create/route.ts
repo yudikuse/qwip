@@ -10,14 +10,21 @@ function toNumOrUndef(v: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function toStrOrEmpty(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  const s = String(v).trim();
+  return s;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    // validações básicas
-    const title = (body?.title ?? "").toString().trim();
-    const description = (body?.description ?? "").toString().trim();
+    // validações básicas obrigatórias
+    const title = toStrOrEmpty(body?.title);
+    const description = toStrOrEmpty(body?.description);
     const priceCents = Number(body?.priceCents);
+
     if (!title) {
       return NextResponse.json({ error: "missing_title" }, { status: 400 });
     }
@@ -25,18 +32,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "invalid_priceCents" }, { status: 400 });
     }
 
-    // campos opcionais (usar undefined para omitir)
+    // strings obrigatórias no schema (não podem ser undefined)
+    const city = toStrOrEmpty(body?.city); // se vier vazio, envia ""
+    const uf = toStrOrEmpty(body?.uf);     // idem
+
+    // opcionais (omitir com undefined se não vierem)
     const lat = toNumOrUndef(body?.lat);
     const lng = toNumOrUndef(body?.lng);
     const centerLat = toNumOrUndef(body?.centerLat);
     const centerLng = toNumOrUndef(body?.centerLng);
     const radiusKm = toNumOrUndef(body?.radiusKm);
 
-    const city =
-      body?.city != null && String(body.city).trim() !== "" ? String(body.city).trim() : undefined;
-    const uf =
-      body?.uf != null && String(body.uf).trim() !== "" ? String(body.uf).trim() : undefined;
-
+    // opcionais string (podem ser undefined se seu schema permitir nullabilidade/optional)
     const imageUrl =
       body?.imageUrl != null && String(body.imageUrl).trim() !== ""
         ? String(body.imageUrl).trim()
@@ -52,20 +59,17 @@ export async function POST(req: Request) {
         title,
         description,
         priceCents,
-        city,       // string | undefined
-        uf,         // string | undefined
-        lat,        // number | undefined  (≠ null) → omite se não vier
-        lng,        // number | undefined
-        centerLat,  // number | undefined
-        centerLng,  // number | undefined
-        radiusKm,   // number | undefined
-        imageUrl,   // string | undefined
-        imageMime,  // string | undefined
+        city,      // string obrigatória (nunca undefined)
+        uf,        // string obrigatória (nunca undefined)
+        lat,       // number | undefined
+        lng,       // number | undefined
+        centerLat, // number | undefined
+        centerLng, // number | undefined
+        radiusKm,  // number | undefined
+        imageUrl,  // string | undefined
+        imageMime, // string | undefined
       },
-      select: {
-        id: true,
-        title: true,
-      },
+      select: { id: true, title: true },
     });
 
     return NextResponse.json({ ok: true, id: ad.id });
