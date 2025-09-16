@@ -33,8 +33,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         imageUrl: true,
         imageMime: true,
         createdAt: true,
-        // Se no seu schema existir relação com vendedor e telefone, você pode expor aqui:
-        // seller: { select: { phoneE164: true } },
+        // seller: { select: { phoneE164: true } }, // habilite quando tiver no schema
       },
     });
 
@@ -42,12 +41,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
 
-    // Normalização simples para o front
     const payload = {
       ...ad,
-      // expiresAt = 24h após criação
       expiresAt: new Date(ad.createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
-      // sellerPhone: ad.seller?.phoneE164 ?? null, // descomente se tiver no schema
+      // sellerPhone: ad.seller?.phoneE164 ?? null,
     };
 
     return NextResponse.json({ ad: payload });
