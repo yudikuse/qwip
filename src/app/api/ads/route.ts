@@ -66,11 +66,9 @@ export async function GET(req: Request) {
       whereBase.uf = uf;
     }
     if (city) {
-      // case-insensitive
       whereBase.city = { equals: city, mode: "insensitive" as const };
     }
 
-    // Puxamos "um pouco mais" se tiver filtro por raio para depois filtrar em memória
     const fetchSize = (lat && lng && radiusKm) ? Math.min(200, pageSize * 6) : pageSize;
 
     const itemsRaw = await prisma.ad.findMany({
@@ -101,12 +99,10 @@ export async function GET(req: Request) {
       const origin = { lat, lng };
       filtered = itemsRaw.filter((ad) => {
         const center = {
-          lat: ad.centerLat ?? ad.lat,
-          lng: ad.centerLng ?? ad.lng,
+          lat: (ad.centerLat ?? ad.lat) as number,
+          lng: (ad.centerLng ?? ad.lng) as number,
         };
         const d = haversineKm(origin, center);
-        // anúncio "alcança" origin se estiver dentro do raio do anúncio
-        // ou se origin estiver dentro do raio recebido na query
         return d <= (ad.radiusKm || 0) || d <= radiusKm;
       });
     }
@@ -134,16 +130,14 @@ export async function GET(req: Request) {
 }
 
 // ===========================================
-// POST /api/ads  -> criação (agora copia telefone verificado)
+// POST /api/ads  -> criação (sem tocar em User/Phone por ora)
 // ===========================================
 export async function POST(req: Request) {
   try {
     // 1) Autorização básica por cookie (telefone verificado no frontend)
     const jar = await cookies();
-    const rawCookie = jar.get("qwip_phone_e164")?.value || "";
-    const phoneE164 = rawCookie ? decodeURIComponent(rawCookie) : "";
-
-    if (!phoneE164) {
+    const phoneCookie = jar.get("qwip_phone_e164")?.value;
+    if (!phoneCookie) {
       return NextResponse.json(
         { error: "Autenticação necessária (verifique seu telefone)." },
         { status: 401 }
@@ -200,8 +194,7 @@ export async function POST(req: Request) {
       image.type === "image/png"  ? "png" :
       image.type === "image/webp" ? "webp" : "bin";
 
-    // 6) (aqui entra seu filtro de segurança de imagem antes do upload, se habilitado)
-    // if (conteudoProibido) return NextResponse.json({ error: "Imagem proibida."}, { status: 400 });
+    // 6) (filtro de segurança da imagem – opcional)
 
     // 7) Upload Blob
     const blobPath = `ads/${sha}.${ext}`;
@@ -211,15 +204,7 @@ export async function POST(req: Request) {
       token: process.env.BLOB_READ_WRITE_TOKEN,
     });
 
-    // 8) Dono do anúncio (fonte única: telefone verificado)
-    const user = await prisma.user.upsert({
-      where: { phoneE164 },
-      update: { phoneE164 },
-      create: { phoneE164, phoneVerifiedAt: new Date() },
-      select: { id: true, phoneE164: true },
-    });
-
-    // 9) Persistência do anúncio + vínculo + cópia do telefone
+    // 8) Persistência (sem sellerId/sellerPhone por enquanto)
     const ad = await prisma.ad.create({
       data: {
         title,
@@ -235,10 +220,6 @@ export async function POST(req: Request) {
         imageUrl: putRes.url,
         imageMime: image.type,
         imageSha256: sha,
-
-        // >>>>>>> NOVO: liga ao usuário e grava o telefone do vendedor
-        sellerId: user.id,
-        sellerPhone: user.phoneE164,
       },
       select: { id: true },
     });
