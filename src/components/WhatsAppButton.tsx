@@ -1,51 +1,35 @@
-"use client";
-
-import React, { useMemo } from "react";
+// Substitua todo o conteúdo do componente/botão do WhatsApp por este
 
 type Props = {
-  // Se você tiver o campo no banco, passe aqui.
-  // Pode ser "5599999999999" (com DDI e DDD) sem +, só dígitos.
-  sellerPhone?: string | null;
-
-  // Mensagem/URL do anúncio para montar o texto
-  shareUrl: string;
-  title: string;
-  cityUf?: string;
+  sellerPhone: string;        // ex: "34987654321" ou "(34) 98765-4321"
+  title: string;              // ex: "diagram"
+  priceBRL: number;           // ex: 456
+  adUrl: string;              // ex: "https://qwip.pro/anuncio/cmfo7u7l30000b284rj4jmfj5"
   className?: string;
 };
 
-function onlyDigits(s?: string | null) {
-  return (s ?? "").replace(/\D+/g, "");
+function buildWhatsappUrl(rawPhone: string, message: string) {
+  // Mantém só dígitos
+  const digits = (rawPhone || "").replace(/\D/g, "");
+  // Garante DDI 55 (Brasil)
+  const withCountry = digits.startsWith("55") ? digits : `55${digits}`;
+  // Para api.whatsapp.com, pode manter somente dígitos
+  const text = encodeURIComponent(message);
+  return `https://api.whatsapp.com/send?phone=${withCountry}&text=${text}`;
 }
 
-export default function WhatsAppButton({
-  sellerPhone,
-  shareUrl,
-  title,
-  cityUf,
-  className,
-}: Props) {
-  const href = useMemo(() => {
-    const texto = `Olá! Tenho interesse no anúncio: ${title}${cityUf ? " (" + cityUf + ")" : ""}\n${shareUrl}`;
-    const msg = encodeURIComponent(texto);
-
-    const phone = onlyDigits(sellerPhone);
-    // Se há telefone do vendedor => direto no vendedor
-    if (phone) {
-      return `https://wa.me/${phone}?text=${msg}`;
-    }
-    // Senão, abre o "compartilhar no WhatsApp" com o texto pronto
-    return `https://wa.me/?text=${msg}`;
-  }, [sellerPhone, shareUrl, title, cityUf]);
+export default function WhatsAppButton({ sellerPhone, title, priceBRL, adUrl, className }: Props) {
+  const msg = `${title} - R$ ${priceBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} ${adUrl}`;
+  const href = buildWhatsappUrl(sellerPhone, msg);
 
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className={className ?? "px-4 py-2 rounded-xl bg-green-600 text-white font-medium inline-flex items-center justify-center"}
+      className={className ?? "inline-flex items-center justify-center rounded-md px-4 py-2"}
     >
-      WhatsApp
+      Enviar pelo WhatsApp
     </a>
   );
 }
