@@ -30,6 +30,8 @@ export default function WhatsAppButton({
   const { href, disabled } = useMemo(() => {
     const price = formatBRL(priceCents);
     const msg = `Olá! Tenho interesse no anúncio: ${title} - ${price}. Está disponível? ${adUrl}`;
+
+    // aceita telefone "sujo" mas garante E.164 (55...) antes de montar a URL
     const normalized = toBrazilE164(sellerPhone ?? "");
     const link = normalized ? buildWhatsAppUrl(normalized, msg) : null;
 
@@ -61,3 +63,4 @@ export default function WhatsAppButton({
     </a>
   );
 }
+
