@@ -3,6 +3,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import type { Metadata } from "next";
 import AdMap from "@/components/AdMap";
+import ShareButton from "@/components/ShareButton";
 
 type Ad = {
   id: string;
@@ -38,7 +39,7 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
-// ✅ seu build trata headers() como Promise — usar await
+// Em seu projeto, headers() está tipando como Promise — manter await.
 async function getBaseFromHeaders() {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
@@ -46,17 +47,18 @@ async function getBaseFromHeaders() {
   return `${proto}://${host}`;
 }
 
-// ✅ Next 15: params é Promise — usar await
+// SEO/OpenGraph desta própria página
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Metadata> {
   const { id } = await params;
-  const base = await getBaseFromHeaders();
+  const baseEnv = process.env.NEXT_PUBLIC_SITE_URL;
+  const base = baseEnv ?? (await getBaseFromHeaders());
   const ad = await fetchAd(base, id);
 
   const title = ad ? `${ad.title} - ${formatPriceBRL(ad.priceCents)}` : "Anúncio";
   const description = ad?.description?.slice(0, 160) ?? "Veja este anúncio no Qwip.";
-  const ogImage = ad?.imageUrl ?? `${base}/og-image.png`;
+  const ogImage = ad?.imageUrl ?? `${base}/og-default.jpg`;
   const url = `${base}/anuncio/${id}`;
 
   return {
@@ -66,8 +68,9 @@ export async function generateMetadata(
       title,
       description,
       url,
-      images: [{ url: ogImage }],
-      type: "website",
+      siteName: "Qwip",
+      images: [{ url: ogImage, width: 1200, height: 630 }],
+      type: "article",
     },
     twitter: {
       card: "summary_large_image",
@@ -75,14 +78,15 @@ export async function generateMetadata(
       description,
       images: [ogImage],
     },
+    alternates: { canonical: url },
   };
 }
 
-// ✅ Next 15: params é Promise — usar await
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const base = await getBaseFromHeaders();
+  const baseEnv = process.env.NEXT_PUBLIC_SITE_URL;
+  const base = baseEnv ?? (await getBaseFromHeaders());
   const ad = await fetchAd(base, id);
 
   if (!ad) {
@@ -121,9 +125,11 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       ? `Válido até ${expiresDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} de ${expiresDate.toLocaleDateString("pt-BR")}`
       : null;
 
+  // WhatsApp direto ao vendedor (se houver), senão cai no share geral
   const waMsg = `Olá! Tenho interesse no seu anúncio "${ad.title}" (${formatPriceBRL(ad.priceCents)}). Está disponível? ${pageUrl}`;
-  const waHref = ad.sellerPhone
-    ? `https://wa.me/${ad.sellerPhone.replace(/\D/g, "")}?text=${encodeURIComponent(waMsg)}`
+  const waPhone = ad.sellerPhone?.replace(/\D/g, "") || "";
+  const waHref = waPhone
+    ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waMsg)}`
     : `https://wa.me/?text=${encodeURIComponent(`${shareTitle}\n${pageUrl}`)}`;
 
   return (
@@ -175,20 +181,13 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 Falar no WhatsApp
               </a>
 
-              <button
-                onClick={() => {
-                  const data = { title: shareTitle, text: shareText, url: pageUrl };
-                  if (navigator.share) {
-                    navigator.share(data).catch(() => {});
-                  } else {
-                    navigator.clipboard?.writeText(`${shareTitle}\n${pageUrl}`);
-                    alert("Link copiado!");
-                  }
-                }}
+              {/* Sem onClick aqui: interatividade ficou no Client Component */}
+              <ShareButton
+                url={pageUrl}
+                title={shareTitle}
+                text={shareText}
                 className="inline-flex w-full items-center justify-center rounded-md border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
-              >
-                Compartilhar
-              </button>
+              />
             </div>
 
             {center && (
@@ -199,7 +198,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           </div>
         </div>
 
-        {/* ✅ AdMap: sem markers; com radiusKm obrigatório */}
+        {/* Mapa com raio */}
         {center ? (
           <div className="mt-8">
             <AdMap center={center} radiusKm={ad.radiusKm ?? 5} />
