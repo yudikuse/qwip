@@ -3,7 +3,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import type { Metadata } from "next";
 import AdMap from "@/components/AdMap";
-import ShareButton from "@/components/ShareButton";
+import ShareButton from "@/components/ShareButtons"; // ⬅️ caminho corrigido
 
 type Ad = {
   id: string;
@@ -39,7 +39,7 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
-// Em seu projeto, headers() está tipando como Promise — manter await.
+// Em seu projeto, headers() está tratada como Promise — manter await.
 async function getBaseFromHeaders() {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
@@ -47,7 +47,7 @@ async function getBaseFromHeaders() {
   return `${proto}://${host}`;
 }
 
-// SEO/OpenGraph desta própria página
+// SEO/OpenGraph desta página
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Metadata> {
@@ -58,7 +58,7 @@ export async function generateMetadata(
 
   const title = ad ? `${ad.title} - ${formatPriceBRL(ad.priceCents)}` : "Anúncio";
   const description = ad?.description?.slice(0, 160) ?? "Veja este anúncio no Qwip.";
-  const ogImage = ad?.imageUrl ?? `${base}/og-default.jpg`;
+  const ogImage = ad?.imageUrl ?? `${base}/og-default.jpg`; // tenha um fallback em /public
   const url = `${base}/anuncio/${id}`;
 
   return {
@@ -125,7 +125,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       ? `Válido até ${expiresDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} de ${expiresDate.toLocaleDateString("pt-BR")}`
       : null;
 
-  // WhatsApp direto ao vendedor (se houver), senão cai no share geral
+  // WhatsApp direto ao vendedor (se houver), senão share geral
   const waMsg = `Olá! Tenho interesse no seu anúncio "${ad.title}" (${formatPriceBRL(ad.priceCents)}). Está disponível? ${pageUrl}`;
   const waPhone = ad.sellerPhone?.replace(/\D/g, "") || "";
   const waHref = waPhone
@@ -181,7 +181,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 Falar no WhatsApp
               </a>
 
-              {/* Sem onClick aqui: interatividade ficou no Client Component */}
+              {/* Interatividade no Client Component */}
               <ShareButton
                 url={pageUrl}
                 title={shareTitle}
