@@ -1,10 +1,9 @@
-// src/app/api/ads/[id]/route.ts
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// procura, dentro de um objeto qualquer, uma string que pareça telefone
+/** Varre um objeto e tenta achar um campo "telefone" provável */
 function findPhoneCandidate(obj: unknown): string | null {
   try {
     const seen = new Set<unknown>();
@@ -18,16 +17,16 @@ function findPhoneCandidate(obj: unknown): string | null {
 
       for (const [k, v] of Object.entries(cur as Record<string, unknown>)) {
         if (typeof v === "string") {
-          // prioriza campos com nome “phone/whats”
-          const kLower = k.toLowerCase();
-          const weight =
-            kLower.includes("phone") ||
-            kLower.includes("whats") ||
-            kLower.includes("msisdn") ||
-            kLower.includes("e164");
-
+          const key = k.toLowerCase();
+          const isPhoneKey =
+            key.includes("phone") ||
+            key.includes("whats") ||
+            key.includes("msisdn") ||
+            key.includes("e164") ||
+            key.includes("telefone") ||
+            key === "tel";
           const digits = v.replace(/\D/g, "");
-          if (digits.length >= 10 && (weight || (!best || digits.length > best.replace(/\D/g, "").length))) {
+          if (digits.length >= 10 && (isPhoneKey || !best || digits.length > best.replace(/\D/g, "").length)) {
             best = v;
           }
         } else if (v && typeof v === "object") {
@@ -41,17 +40,33 @@ function findPhoneCandidate(obj: unknown): string | null {
   }
 }
 
-// normaliza p/ wa.me: apenas dígitos, com DDI (assumo BR=55 se não tiver)
-function normalizeForWa(raw: string | null): string | null {
+/** Normaliza para dígitos aceitos pelo WhatsApp (sem +). Assume BR=55 se não tiver DDI. */
+function normalizeForWhatsApp(raw: string | null): string | null {
   if (!raw) return null;
-  let digits = raw.replace(/\D/g, ""); // wa.me NÃO aceita '+'
-  if (!digits) return null;
+  let d = raw.replace(/\D/g, ""); // só dígitos
 
-  // Se aparenta não ter DDI (ex.: 11xxxxxxxx ou 0xx...), prefixa 55
-  if (digits.length <= 12 && !digits.startsWith("55")) {
-    digits = `55${digits.replace(/^0+/, "")}`;
+  if (!d) return null;
+
+  // remove zeros à esquerda
+  d = d.replace(/^0+/, "");
+
+  // se não tem DDI (<= 12 dígitos costuma ser local), prefixa 55
+  if (d.length <= 12 && !d.startsWith("55")) d = `55${d}`;
+
+  // casos em que ficou "550" por causa de DDD escrito com 0 (ex.: 05511...)
+  d = d.replace(/^550+/, "55");
+
+  // Brasil: 55 + 2 dígitos DDD + 8/9 dígitos de número (11~13 dígitos totais após 55)
+  // Se tiver coisa a mais, cortamos do começo (usuários às vezes duplicam DDI/DDD).
+  if (d.length > 13 && d.startsWith("55")) {
+    // tenta manter o final (número) e os 2 do DDD
+    d = "55" + d.slice(-11); // mantém DDD+9d (ou 8d; se for 8d ficará 10 e tudo ok)
   }
-  return digits;
+
+  // limites finais razoáveis
+  if (d.length < 12 || d.length > 13) return null;
+
+  return d;
 }
 
 export async function GET(
@@ -61,25 +76,21 @@ export async function GET(
   try {
     const { id } = await ctx.params;
 
-    // Use apenas include (sem select) para evitar o erro do Prisma
+    // apenas include (sem select) para não conflitar tipos
     const ad = await prisma.ad.findUnique({
       where: { id },
       include: { seller: true },
     });
 
-    if (!ad) {
-      return NextResponse.json({ ad: null }, { status: 404 });
-    }
+    if (!ad) return NextResponse.json({ ad: null }, { status: 404 });
 
-    // tenta achar telefone dentro do objeto seller (em qualquer campo)
+    // tenta extrair telefone do seller (ou, na falta, do próprio anúncio)
     const rawPhone =
       findPhoneCandidate((ad as any).seller) ??
-      // fallback: se por acaso gravaram no próprio anúncio
       findPhoneCandidate(ad as any);
 
-    const sellerPhoneDigits = normalizeForWa(rawPhone);
+    const sellerPhone = normalizeForWhatsApp(rawPhone);
 
-    // monta payload que o front espera (sem expor seller inteiro)
     const {
       id: adId,
       title,
@@ -97,25 +108,28 @@ export async function GET(
       expiresAt,
     } = ad as any;
 
-    const payload = {
-      id: adId,
-      title,
-      description,
-      priceCents,
-      city,
-      uf,
-      lat,
-      lng,
-      centerLat,
-      centerLng,
-      radiusKm,
-      imageUrl,
-      createdAt,
-      expiresAt,
-      sellerPhone: sellerPhoneDigits, // << usado pelo botão do WhatsApp
-    };
-
-    return NextResponse.json({ ad: payload }, { status: 200 });
+    return NextResponse.json(
+      {
+        ad: {
+          id: adId,
+          title,
+          description,
+          priceCents,
+          city,
+          uf,
+          lat,
+          lng,
+          centerLat,
+          centerLng,
+          radiusKm,
+          imageUrl,
+          createdAt,
+          expiresAt,
+          sellerPhone, // ← usado pelo botão
+        },
+      },
+      { status: 200 }
+    );
   } catch (err) {
     console.error("GET /api/ads/[id] error:", err);
     return NextResponse.json({ error: "Failed to load ad" }, { status: 500 });
