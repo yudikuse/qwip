@@ -1,4 +1,3 @@
-// src/app/api/ads/[id]/route.ts
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 
@@ -11,7 +10,6 @@ export async function GET(_req: Request, ctx: any) {
       return NextResponse.json({ ok: false, error: "MISSING_ID" }, { status: 400 });
     }
 
-    // Buscamos só o necessário p/ página + sellerId/Phone
     const ad = await prisma.ad.findUnique({
       where: { id },
       select: {
@@ -29,8 +27,7 @@ export async function GET(_req: Request, ctx: any) {
         imageUrl: true,
         createdAt: true,
         expiresAt: true,
-        sellerId: true,
-        sellerPhone: true, // preferido (copiado do OTP na criação)
+        // sellerId / sellerPhone não existem no schema atual
       },
     });
 
@@ -38,33 +35,11 @@ export async function GET(_req: Request, ctx: any) {
       return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
     }
 
-    // Fonte única: número verificado do usuário.
-    // Preferimos o que já foi copiado para o anúncio; se não existir (legado), buscamos no User.
-    let sellerPhone = ad.sellerPhone;
-    if (!sellerPhone && ad.sellerId) {
-      const user = await prisma.user.findUnique({
-        where: { id: ad.sellerId },
-        select: { phoneE164: true },
-      });
-      sellerPhone = user?.phoneE164 ?? null;
-    }
-
     const payload = {
-      id: ad.id,
-      title: ad.title,
-      description: ad.description ?? null,
-      priceCents: ad.priceCents ?? 0,
-      city: ad.city ?? null,
-      uf: ad.uf ?? null,
-      lat: ad.lat ?? null,
-      lng: ad.lng ?? null,
-      centerLat: ad.centerLat ?? null,
-      centerLng: ad.centerLng ?? null,
-      radiusKm: ad.radiusKm ?? null,
-      imageUrl: ad.imageUrl ?? null,
+      ...ad,
       createdAt: (ad.createdAt as any)?.toISOString?.() ?? ad.createdAt,
       expiresAt: (ad.expiresAt as any)?.toISOString?.() ?? ad.expiresAt ?? null,
-      sellerPhone, // <- usado pelo botão WhatsApp
+      // sellerPhone será resolvido na página via cookie (ver arquivo da página)
     };
 
     return NextResponse.json({ ok: true, ad: payload });
