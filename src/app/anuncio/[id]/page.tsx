@@ -1,6 +1,5 @@
-// src/app/anuncio/[id]/page.tsx
 import Link from "next/link";
-import { headers } from "next/headers";
+import { headers, cookies } from "next/headers";
 import type { Metadata } from "next";
 import AdMap from "@/components/AdMap";
 import ShareButton from "@/components/ShareButtons";
@@ -21,7 +20,6 @@ type Ad = {
   imageUrl: string | null;
   createdAt: string;
   expiresAt: string | null;
-  sellerPhone: string | null;
 };
 
 function formatPriceBRL(cents: number) {
@@ -107,6 +105,18 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     );
   }
 
+  // Lê o telefone verificado do cookie (fonte única no MVP sem schema)
+  const jar = await cookies();
+  const rawCookie = jar.get("qwip_phone_e164")?.value || "";
+  let sellerPhone: string | null = null;
+  if (rawCookie) {
+    try {
+      sellerPhone = decodeURIComponent(rawCookie);
+    } catch {
+      sellerPhone = rawCookie;
+    }
+  }
+
   const center =
     (ad.centerLat != null && ad.centerLng != null && { lat: ad.centerLat, lng: ad.centerLng }) ||
     (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
@@ -154,7 +164,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
             <div className="grid grid-cols-2 gap-3 pt-4">
               <WhatsAppButton
-                sellerPhone={ad.sellerPhone}
+                sellerPhone={sellerPhone}         // <- vem do cookie OTP
                 title={ad.title}
                 priceCents={ad.priceCents}
                 adUrl={pageUrl}
