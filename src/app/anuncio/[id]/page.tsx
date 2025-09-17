@@ -3,7 +3,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import type { Metadata } from "next";
 import AdMap from "@/components/AdMap";
-import ShareButton from "@/components/ShareButtons"; // ⬅️ caminho corrigido
+import ShareButton from "@/components/ShareButtons";
 
 type Ad = {
   id: string;
@@ -20,7 +20,7 @@ type Ad = {
   imageUrl: string | null;
   createdAt: string;      // ISO
   expiresAt?: string;     // ISO
-  sellerPhone?: string | null;
+  sellerPhone?: string | null; // ⬅️ virá do servidor já verificado
 };
 
 function formatPriceBRL(cents: number) {
@@ -39,7 +39,6 @@ async function fetchAd(base: string, id: string): Promise<Ad | null> {
   return (data?.ad ?? null) as Ad | null;
 }
 
-// Em seu projeto, headers() está tratada como Promise — manter await.
 async function getBaseFromHeaders() {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
@@ -47,7 +46,6 @@ async function getBaseFromHeaders() {
   return `${proto}://${host}`;
 }
 
-// SEO/OpenGraph desta página
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Metadata> {
@@ -58,7 +56,7 @@ export async function generateMetadata(
 
   const title = ad ? `${ad.title} - ${formatPriceBRL(ad.priceCents)}` : "Anúncio";
   const description = ad?.description?.slice(0, 160) ?? "Veja este anúncio no Qwip.";
-  const ogImage = ad?.imageUrl ?? `${base}/og-default.jpg`; // tenha um fallback em /public
+  const ogImage = ad?.imageUrl ?? `${base}/og-default.jpg`;
   const url = `${base}/anuncio/${id}`;
 
   return {
@@ -125,9 +123,9 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       ? `Válido até ${expiresDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} de ${expiresDate.toLocaleDateString("pt-BR")}`
       : null;
 
-  // WhatsApp direto ao vendedor (se houver), senão share geral
+  // Agora o telefone vem do servidor, já verificado
   const waMsg = `Olá! Tenho interesse no seu anúncio "${ad.title}" (${formatPriceBRL(ad.priceCents)}). Está disponível? ${pageUrl}`;
-  const waPhone = ad.sellerPhone?.replace(/\D/g, "") || "";
+  const waPhone = (ad.sellerPhone ?? "").replace(/[^\d+]/g, ""); // já vem em E.164, só garantindo
   const waHref = waPhone
     ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waMsg)}`
     : `https://wa.me/?text=${encodeURIComponent(`${shareTitle}\n${pageUrl}`)}`;
@@ -181,7 +179,6 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 Falar no WhatsApp
               </a>
 
-              {/* Interatividade no Client Component */}
               <ShareButton
                 url={pageUrl}
                 title={shareTitle}
@@ -198,7 +195,6 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           </div>
         </div>
 
-        {/* Mapa com raio */}
         {center ? (
           <div className="mt-8">
             <AdMap center={center} radiusKm={ad.radiusKm ?? 5} />
