@@ -6,10 +6,12 @@ export function onlyDigits(s: string | null | undefined): string {
 }
 
 /**
- * Normaliza telefone BR para E.164 **sem** o símbolo "+"
- * (WhatsApp aceita só dígitos). Ex. "(34) 98888-7777" -> "5534988887777"
- * - Se não iniciar com 55, prefixa 55
- * - Retorna null se ficar muito curto (< 12 dígitos: 55 + DDD(2) + número(8-9))
+ * Normaliza telefone BR para E.164 **sem** o símbolo "+" (WhatsApp aceita só dígitos).
+ * Ex.: "(34) 98888-7777" -> "5534988887777"
+ * Regras:
+ *  - Remove tudo que não for dígito
+ *  - Se não iniciar com 55, prefixa 55
+ *  - Retorna null se ficar muito curto (< 12 dígitos: 55 + DDD(2) + número(8-9))
  */
 export function toBrazilE164(raw: string | null | undefined): string | null {
   const digits = onlyDigits(raw);
