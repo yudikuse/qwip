@@ -28,7 +28,7 @@ export async function GET(req: Request) {
     const offset = Math.max(0, (Number.isFinite(page) ? page : 1) - 1) * pageSize;
     const limit = pageSize;
 
-    // Condições dinâmicas
+    // Monta condições com Prisma.sql
     const conds: Prisma.Sql[] = [];
     if (q) {
       conds.push(
@@ -38,11 +38,12 @@ export async function GET(req: Request) {
     if (city) conds.push(Prisma.sql`a."city" = ${city}`);
     if (uf) conds.push(Prisma.sql`a."uf" = ${uf}`);
 
-    // ❇️ Aqui está a correção: separador como STRING
-    const whereFrag =
+    // WHERE dinâmico — separador precisa ser string em 5.22
+    const whereFrag: Prisma.Sql =
       conds.length > 0 ? Prisma.sql`WHERE ${Prisma.join(conds, " AND ")}` : Prisma.sql``;
 
-    const query = Prisma.sql<Row[]>`
+    // NÃO tipar Prisma.sql — tipar só o $queryRaw
+    const query = Prisma.sql`
       SELECT
         a."id",
         a."title",
