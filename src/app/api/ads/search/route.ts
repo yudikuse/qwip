@@ -23,19 +23,14 @@ export async function GET(req: Request) {
     const city = (url.searchParams.get("city") ?? "").trim();
     const uf = (url.searchParams.get("uf") ?? "").trim();
     const page = Number(url.searchParams.get("page") ?? "1");
-    const pageSize = Math.min(
-      50,
-      Math.max(1, Number(url.searchParams.get("pageSize") ?? "12"))
-    );
+    const pageSize = Math.min(50, Math.max(1, Number(url.searchParams.get("pageSize") ?? "12")));
 
     const offset = Math.max(0, (Number.isFinite(page) ? page : 1) - 1) * pageSize;
     const limit = pageSize;
 
-    // Constrói condições de forma segura com Prisma.sql
+    // Condições dinâmicas
     const conds: Prisma.Sql[] = [];
-
     if (q) {
-      // Busca simples por título/descrição
       conds.push(
         Prisma.sql`(a."title" ILIKE ${"%" + q + "%"} OR a."description" ILIKE ${"%" + q + "%"})`
       );
@@ -43,13 +38,10 @@ export async function GET(req: Request) {
     if (city) conds.push(Prisma.sql`a."city" = ${city}`);
     if (uf) conds.push(Prisma.sql`a."uf" = ${uf}`);
 
-    // WHERE dinâmico totalmente em Prisma.sql
+    // ❇️ Aqui está a correção: separador como STRING
     const whereFrag =
-      conds.length > 0
-        ? Prisma.sql`WHERE ${Prisma.join(conds, Prisma.sql` AND `)}`
-        : Prisma.sql``;
+      conds.length > 0 ? Prisma.sql`WHERE ${Prisma.join(conds, " AND ")}` : Prisma.sql``;
 
-    // Query final 100% template-tagged (nada de string comum no meio)
     const query = Prisma.sql<Row[]>`
       SELECT
         a."id",
