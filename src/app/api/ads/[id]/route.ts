@@ -11,34 +11,17 @@ export async function GET(
   try {
     const { id } = await ctx.params;
 
+    // ✔️ Use APENAS include (sem select) para evitar o erro.
     const ad = await prisma.ad.findUnique({
       where: { id },
-      // ⚠️ Não especifique campos do Seller para não quebrar o tipo.
       include: { seller: true },
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        priceCents: true,
-        city: true,
-        uf: true,
-        lat: true,
-        lng: true,
-        centerLat: true,
-        centerLng: true,
-        radiusKm: true,
-        imageUrl: true,
-        createdAt: true,
-        expiresAt: true,
-        seller: true, // já incluso acima
-      },
     });
 
     if (!ad) {
       return NextResponse.json({ ad: null }, { status: 404 });
     }
 
-    // Descobrir dinamicamente os campos de telefone/verificação
+    // --- Descobrir telefone verificado do seller (campos flexíveis) ---
     const seller = (ad as any).seller as Record<string, any> | null;
 
     let rawPhone: string | null = null;
@@ -50,29 +33,59 @@ export async function GET(
     }
 
     let verified = false;
-    // booleanos comuns
     for (const kb of ["isPhoneVerified", "phoneVerified", "isVerified"]) {
-      if (typeof seller?.[kb] === "boolean") {
-        verified ||= seller[kb];
-      }
+      if (typeof seller?.[kb] === "boolean") verified ||= seller[kb];
     }
-    // datas (considera verificado se tiver data)
     for (const kd of ["phoneVerifiedAt", "verifiedAt"]) {
-      if (seller?.[kd]) {
-        verified = true;
-      }
+      if (seller?.[kd]) verified = true;
     }
 
-    // Normaliza telefone E164 (+55…)
+    // Normaliza para E.164 quando verificado
     let sellerPhone: string | null = null;
     if (rawPhone && verified) {
       const digits = rawPhone.replace(/[^\d+]/g, "");
       sellerPhone = digits.startsWith("+") ? digits : `+${digits}`;
     }
 
-    // Remove seller do payload final (privacidade) e injeta sellerPhone
-    const { seller: _omit, ...rest } = ad as any;
-    return NextResponse.json({ ad: { ...rest, sellerPhone } }, { status: 200 });
+    // --- Monta resposta sem expor seller inteiro ---
+    const {
+      seller: _omit,
+      id: adId,
+      title,
+      description,
+      priceCents,
+      city,
+      uf,
+      lat,
+      lng,
+      centerLat,
+      centerLng,
+      radiusKm,
+      imageUrl,
+      createdAt,
+      expiresAt,
+      // ... quaisquer outros campos que o model Ad possua
+    } = ad as any;
+
+    const payload = {
+      id: adId,
+      title,
+      description,
+      priceCents,
+      city,
+      uf,
+      lat,
+      lng,
+      centerLat,
+      centerLng,
+      radiusKm,
+      imageUrl,
+      createdAt,
+      expiresAt,
+      sellerPhone, // usado no botão de WhatsApp no front
+    };
+
+    return NextResponse.json({ ad: payload }, { status: 200 });
   } catch (err) {
     console.error("GET /api/ads/[id] error:", err);
     return NextResponse.json({ error: "Failed to load ad" }, { status: 500 });
