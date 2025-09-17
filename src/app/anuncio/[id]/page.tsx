@@ -20,7 +20,7 @@ type Ad = {
   imageUrl: string | null;
   createdAt: string;      // ISO
   expiresAt?: string;     // ISO
-  sellerPhone?: string | null; // ⬅️ virá do servidor já verificado
+  sellerPhone?: string | null; // vem do servidor já verificado
 };
 
 function formatPriceBRL(cents: number) {
@@ -123,12 +123,17 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       ? `Válido até ${expiresDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} de ${expiresDate.toLocaleDateString("pt-BR")}`
       : null;
 
-  // Agora o telefone vem do servidor, já verificado
+  // mensagem padrão de contato
   const waMsg = `Olá! Tenho interesse no seu anúncio "${ad.title}" (${formatPriceBRL(ad.priceCents)}). Está disponível? ${pageUrl}`;
-  const waPhone = (ad.sellerPhone ?? "").replace(/[^\d+]/g, ""); // já vem em E.164, só garantindo
-  const waHref = waPhone
-    ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waMsg)}`
-    : `https://wa.me/?text=${encodeURIComponent(`${shareTitle}\n${pageUrl}`)}`;
+
+  // normaliza telefone para somente dígitos (o WhatsApp aceita apenas dígitos no parâmetro phone)
+  const phoneDigits = (ad.sellerPhone ?? "").replace(/\D/g, "");
+  const phoneOk = phoneDigits.length >= 10; // regra mínima razoável
+
+  // usa api.whatsapp.com (mais tolerante que wa.me)
+  const waHref = phoneOk
+    ? `https://api.whatsapp.com/send?phone=${phoneDigits}&text=${encodeURIComponent(waMsg)}`
+    : `https://api.whatsapp.com/send?text=${encodeURIComponent(`${shareTitle}\n${pageUrl}`)}`;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
