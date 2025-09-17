@@ -1,42 +1,43 @@
-// src/components/ShareButtons.tsx
 "use client";
 
-import { useCallback, useState } from "react";
+import React from "react";
 
 type Props = {
-  title: string;
-  priceText: string;
-  url: string;
+  url: string;          // URL canônica do anúncio
+  title: string;        // Título do anúncio
+  text?: string;        // Texto curto opcional
+  className?: string;
 };
 
-export default function ShareButtons({ title, priceText, url }: Props) {
-  const [copied, setCopied] = useState(false);
-
-  const onShare = useCallback(async () => {
-    const text = `${title} - ${priceText}\n${url}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({ title, text, url });
-      } catch {
-        /* usuário cancelou */
-      }
-      return;
-    }
+export default function ShareButton({ url, title, text, className }: Props) {
+  const onClick = async () => {
+    const payload = { title, text, url };
     try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      // Mobile moderno (iOS/Android/Chrome)
+      if (navigator.share) {
+        await navigator.share(payload);
+        return;
+      }
+      // Fallback: copia pro clipboard
+      await navigator.clipboard.writeText(url);
+      // feedback simples
+      alert("Link copiado!");
     } catch {
-      alert("Copie este link:\n" + text);
+      // usuário cancelou ou share não suportado; tenta copiar
+      try {
+        await navigator.clipboard.writeText(url);
+        alert("Link copiado!");
+      } catch {}
     }
-  }, [title, priceText, url]);
+  };
 
   return (
     <button
-      onClick={onShare}
-      className="mt-2 inline-flex w-full items-center justify-center rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/5"
+      type="button"
+      onClick={onClick}
+      className={className ?? "px-4 py-2 rounded-xl bg-blue-600 text-white font-medium"}
     >
-      {copied ? "Copiado!" : "Compartilhar"}
+      Compartilhar
     </button>
   );
 }
