@@ -4,6 +4,8 @@ import { headers } from "next/headers";
 import type { Metadata } from "next";
 import AdMap from "@/components/AdMap";
 import ShareButton from "@/components/ShareButtons";
+import WhatsAppButton from "@/components/WhatsAppButton";
+import { buildWhatsAppUrl } from "@/lib/whatsapp";
 
 type Ad = {
   id: string;
@@ -20,11 +22,10 @@ type Ad = {
   imageUrl: string | null;
   createdAt: string;      // ISO
   expiresAt?: string;     // ISO
-  sellerPhone?: string | null; // vem do servidor já verificado
+  sellerPhone?: string | null; // telefone verificado salvo no servidor
 };
 
-function formatPriceBRL(cents: number) {
-  const v = Math.max(0, Math.trunc(cents || 0));
+function formatPriceBRL(v: number) {
   return (v / 100).toLocaleString("pt-BR", {
     style: "currency",
     currency: "BRL",
@@ -53,34 +54,24 @@ export async function generateMetadata(
   const baseEnv = process.env.NEXT_PUBLIC_SITE_URL;
   const base = baseEnv ?? (await getBaseFromHeaders());
   const ad = await fetchAd(base, id);
+  if (!ad) return { title: "Anúncio não encontrado" };
 
-  const title = ad ? `${ad.title} - ${formatPriceBRL(ad.priceCents)}` : "Anúncio";
-  const description = ad?.description?.slice(0, 160) ?? "Veja este anúncio no Qwip.";
-  const ogImage = ad?.imageUrl ?? `${base}/og-default.jpg`;
-  const url = `${base}/anuncio/${id}`;
+  const pageUrl = `${base}/anuncio/${ad.id}`;
+  const shareTitle = `${ad.title} - ${formatPriceBRL(ad.priceCents)}`;
 
   return {
-    title,
-    description,
+    title: shareTitle,
     openGraph: {
-      title,
-      description,
-      url,
-      siteName: "Qwip",
-      images: [{ url: ogImage, width: 1200, height: 630 }],
-      type: "article",
+      title: shareTitle,
+      url: pageUrl,
+      images: ad.imageUrl ? [ad.imageUrl] : [],
     },
-    twitter: {
-      card: "summary_large_image",
-      title,
-      description,
-      images: [ogImage],
-    },
-    alternates: { canonical: url },
   };
 }
 
-export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+export default async function AdPage(
+  { params }: { params: Promise<{ id: string }> }
+) {
   const { id } = await params;
 
   const baseEnv = process.env.NEXT_PUBLIC_SITE_URL;
@@ -96,44 +87,28 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
             O anúncio que você tentou acessar não existe ou expirou.
           </p>
           <div className="mt-6">
-            <Link
-              href="/vitrine"
-              className="rounded-lg border px-4 py-2 font-medium hover:bg-white/5"
-            >
-              ← Voltar para a Vitrine
-            </Link>
+            <Link href="/" className="underline">← Voltar para a Home</Link>
           </div>
         </div>
       </main>
     );
   }
 
-  const center =
-    (ad.centerLat != null && ad.centerLng != null && { lat: ad.centerLat, lng: ad.centerLng }) ||
-    (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
-    null;
-
   const pageUrl = `${base}/anuncio/${ad.id}`;
   const shareTitle = `${ad.title} - ${formatPriceBRL(ad.priceCents)}`;
-  const shareText = ad.description?.slice(0, 160) ?? "";
+  const shareText = `${shareTitle}\n${pageUrl}`;
 
   const expiresDate = ad.expiresAt ? new Date(ad.expiresAt) : null;
-  const expiresText =
-    expiresDate
-      ? `Válido até ${expiresDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} de ${expiresDate.toLocaleDateString("pt-BR")}`
-      : null;
+  const expiresText = expiresDate
+    ? `Expira às ${expiresDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} de ${expiresDate.toLocaleDateString("pt-BR")}`
+    : null;
 
-  // mensagem padrão de contato
-  const waMsg = `Olá! Tenho interesse no seu anúncio "${ad.title}" (${formatPriceBRL(ad.priceCents)}). Está disponível? ${pageUrl}`;
-
-  // normaliza telefone para somente dígitos (o WhatsApp aceita apenas dígitos no parâmetro phone)
-  const phoneDigits = (ad.sellerPhone ?? "").replace(/\D/g, "");
-  const phoneOk = phoneDigits.length >= 10; // regra mínima razoável
-
-  // usa api.whatsapp.com (mais tolerante que wa.me)
-  const waHref = phoneOk
-    ? `https://api.whatsapp.com/send?phone=${phoneDigits}&text=${encodeURIComponent(waMsg)}`
-    : `https://api.whatsapp.com/send?text=${encodeURIComponent(`${shareTitle}\n${pageUrl}`)}`;
+  // URL do WhatsApp (contato direto se houver telefone válido)
+  const waHref = buildWhatsAppUrl({
+    phoneRaw: ad.sellerPhone ?? null,
+    title: ad.title,
+    adUrl: pageUrl,
+  });
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -147,17 +122,15 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 <img
                   src={ad.imageUrl}
                   alt={ad.title}
-                  className="h-80 w-full object-cover md:h-[28rem]"
+                  className="h-auto w-full object-cover"
                 />
               ) : (
-                <div className="flex h-80 items-center justify-center text-muted-foreground">
-                  (Sem imagem)
-                </div>
+                <div className="aspect-video w-full bg-white/5" />
               )}
             </div>
           </div>
 
-          {/* Informações */}
+          {/* Info */}
           <div className="space-y-4">
             <h1 className="text-2xl font-bold leading-tight">{ad.title}</h1>
             <div className="text-emerald-400 text-2xl font-extrabold">
@@ -174,37 +147,43 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               </p>
             )}
 
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <a
-                href={waHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex w-full items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
-              >
-                Falar no WhatsApp
-              </a>
+            <div className="grid grid-cols-1 gap-3 pt-2 sm:grid-cols-2">
+              <WhatsAppButton
+                sellerPhone={ad.sellerPhone ?? null}
+                title={ad.title}
+                adUrl={pageUrl}
+              />
 
               <ShareButton
                 url={pageUrl}
                 title={shareTitle}
                 text={shareText}
-                className="inline-flex w-full items-center justify-center rounded-md border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
               />
             </div>
 
-            {center && (
+            {ad.city && ad.uf && (
               <div className="pt-2 text-xs text-muted-foreground">
-                {ad.city && ad.uf ? `${ad.city} - ${ad.uf}` : null}
+                {ad.city && ad.uf ? `${ad.city}/${ad.uf}` : null}
               </div>
             )}
           </div>
         </div>
 
-        {center ? (
-          <div className="mt-8">
-            <AdMap center={center} radiusKm={ad.radiusKm ?? 5} />
+        {/* Mapa */}
+        {ad.centerLat && ad.centerLng && ad.radiusKm ? (
+          <div className="mt-10">
+            <AdMap
+              center={{ lat: ad.centerLat, lng: ad.centerLng }}
+              radiusKm={ad.radiusKm}
+              marker={ad.lat && ad.lng ? { lat: ad.lat, lng: ad.lng } : null}
+            />
           </div>
         ) : null}
+
+        <div className="mt-8">
+          <Link href="/" className="underline">← Voltar para a Home</Link>
+        </div>
       </div>
     </main>
   );
