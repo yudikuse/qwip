@@ -1,27 +1,23 @@
 // src/app/api/ads/[id]/route.ts
-// GET /api/ads/[id]
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
 /**
- * Ajuste estes nomes de campos conforme seu schema real.
- * Pressupostos comuns:
- * - Ad tem relação seller -> User (chave sellerId).
- * - User possui phoneE164 (string) e phoneVerifiedAt (Date|null) ou isPhoneVerified (boolean).
- *
- * Se no seu schema os nomes divergirem, basta trocar nos selects/ifs abaixo.
+ * Ajuste os nomes de relação/campos abaixo conforme seu schema:
+ * - relação do anúncio com o usuário: "seller" (se o seu for "user", troque).
+ * - campos de telefone/verificação no usuário:
+ *   - phoneE164 (string)
+ *   - phoneVerifiedAt (Date|null)  OU  isPhoneVerified (boolean)
  */
-
 export async function GET(
   _req: Request,
-  { params }: { params: { id: string } }
+  ctx: { params: Promise<{ id: string }> } // ✅ Next 15: params é Promise
 ) {
   try {
-    const { id } = params;
+    const { id } = await ctx.params; // ✅ precisa dar await
 
-    // Busca anúncio + vendedor
     const ad = await prisma.ad.findUnique({
       where: { id },
       select: {
@@ -40,13 +36,12 @@ export async function GET(
         createdAt: true,
         expiresAt: true,
 
-        // relação com o vendedor (ajuste o nome "seller" se for "user" no seu schema)
+        // ⬇️ Se no seu schema for "user" em vez de "seller", troque aqui e nas linhas mais abaixo.
         seller: {
           select: {
             phoneE164: true,
-            // use UM dos dois abaixo conforme existir no seu schema:
-            phoneVerifiedAt: true,     // Date | null
-            isPhoneVerified: true,     // boolean | undefined
+            phoneVerifiedAt: true,  // se não existir, deixe só isPhoneVerified
+            isPhoneVerified: true,  // se não existir, deixe só phoneVerifiedAt
           },
         },
       },
@@ -56,30 +51,30 @@ export async function GET(
       return NextResponse.json({ ad: null }, { status: 404 });
     }
 
-    // Deriva o telefone do vendedor apenas se estiver verificado
+    // Deriva sellerPhone somente se verificado
     let sellerPhone: string | null = null;
-    if (ad.seller) {
-      const verified =
-        (typeof ad.seller.isPhoneVerified === "boolean" && ad.seller.isPhoneVerified) ||
-        (ad.seller.phoneVerifiedAt != null);
+    if ((ad as any).seller) {
+      const s = (ad as any).seller as {
+        phoneE164?: string | null;
+        phoneVerifiedAt?: Date | null;
+        isPhoneVerified?: boolean;
+      };
 
-      if (verified && ad.seller.phoneE164) {
-        // Garante E.164 puro (só dígitos e + no começo)
-        const digits = ad.seller.phoneE164.replace(/[^\d+]/g, "");
-        sellerPhone = digits.startsWith("+") ? digits : `+${digits}`;
+      const verified =
+        (typeof s.isPhoneVerified === "boolean" && s.isPhoneVerified) ||
+        (s.phoneVerifiedAt != null);
+
+      if (verified && s.phoneE164) {
+        const norm = s.phoneE164.replace(/[^\d+]/g, "");
+        sellerPhone = norm.startsWith("+") ? norm : `+${norm}`;
       }
     }
 
-    // Remonta o payload sem vazar o objeto seller inteiro
-    const { seller, ...rest } = ad;
-    const payload = { ...rest, sellerPhone };
-
-    return NextResponse.json({ ad: payload }, { status: 200 });
+    // Remove o objeto seller do payload final
+    const { seller, ...rest } = ad as any;
+    return NextResponse.json({ ad: { ...rest, sellerPhone } }, { status: 200 });
   } catch (err) {
     console.error("GET /api/ads/[id] error:", err);
-    return NextResponse.json(
-      { error: "Failed to load ad" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to load ad" }, { status: 500 });
   }
 }
