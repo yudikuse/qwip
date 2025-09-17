@@ -1,20 +1,27 @@
 // src/app/api/ads/[id]/route.ts
-/**
- * GET /api/ads/:id
- * Compatível com Next.js 15: sem RouteContext e com contexto frouxo.
- */
+// GET /api/ads/[id]
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-export async function GET(_req: Request, context: any) {
-  try {
-    const id = context?.params?.id;
-    if (!id || typeof id !== "string") {
-      return NextResponse.json({ error: "invalid_id" }, { status: 400 });
-    }
+/**
+ * Ajuste estes nomes de campos conforme seu schema real.
+ * Pressupostos comuns:
+ * - Ad tem relação seller -> User (chave sellerId).
+ * - User possui phoneE164 (string) e phoneVerifiedAt (Date|null) ou isPhoneVerified (boolean).
+ *
+ * Se no seu schema os nomes divergirem, basta trocar nos selects/ifs abaixo.
+ */
 
+export async function GET(
+  _req: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params;
+
+    // Busca anúncio + vendedor
     const ad = await prisma.ad.findUnique({
       where: { id },
       select: {
@@ -30,26 +37,49 @@ export async function GET(_req: Request, context: any) {
         centerLng: true,
         radiusKm: true,
         imageUrl: true,
-        imageMime: true,
         createdAt: true,
-        // seller: { select: { phoneE164: true } }, // habilite quando existir no schema
+        expiresAt: true,
+
+        // relação com o vendedor (ajuste o nome "seller" se for "user" no seu schema)
+        seller: {
+          select: {
+            phoneE164: true,
+            // use UM dos dois abaixo conforme existir no seu schema:
+            phoneVerifiedAt: true,     // Date | null
+            isPhoneVerified: true,     // boolean | undefined
+          },
+        },
       },
     });
 
     if (!ad) {
-      return NextResponse.json({ error: "not_found" }, { status: 404 });
+      return NextResponse.json({ ad: null }, { status: 404 });
     }
 
-    const payload = {
-      ...ad,
-      // expira em 24h
-      expiresAt: new Date(ad.createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
-      // sellerPhone: ad.seller?.phoneE164 ?? null,
-    };
+    // Deriva o telefone do vendedor apenas se estiver verificado
+    let sellerPhone: string | null = null;
+    if (ad.seller) {
+      const verified =
+        (typeof ad.seller.isPhoneVerified === "boolean" && ad.seller.isPhoneVerified) ||
+        (ad.seller.phoneVerifiedAt != null);
 
-    return NextResponse.json({ ad: payload });
+      if (verified && ad.seller.phoneE164) {
+        // Garante E.164 puro (só dígitos e + no começo)
+        const digits = ad.seller.phoneE164.replace(/[^\d+]/g, "");
+        sellerPhone = digits.startsWith("+") ? digits : `+${digits}`;
+      }
+    }
+
+    // Remonta o payload sem vazar o objeto seller inteiro
+    const { seller, ...rest } = ad;
+    const payload = { ...rest, sellerPhone };
+
+    return NextResponse.json({ ad: payload }, { status: 200 });
   } catch (err) {
-    console.error("[/api/ads/:id][GET] error:", err);
-    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+    console.error("GET /api/ads/[id] error:", err);
+    return NextResponse.json(
+      { error: "Failed to load ad" },
+      { status: 500 }
+    );
   }
 }
