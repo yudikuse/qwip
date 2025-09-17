@@ -1,27 +1,34 @@
 // src/lib/whatsapp.ts
+/**
+ * Mantém apenas dígitos.
+ */
+export function onlyDigits(s: string | null | undefined): string {
+  return String(s ?? "").replace(/\D/g, "");
+}
 
-/** Converte qualquer telefone BR em E.164 (somente dígitos, com DDI 55). */
-export function toE164BR(rawPhone: string | null | undefined): string | null {
-  const digits = String(rawPhone ?? "").replace(/\D/g, "");
+/**
+ * Normaliza telefone BR para E.164 sem o símbolo "+" (WhatsApp aceita apenas dígitos).
+ * Regras:
+ *  - Remove tudo que não for dígito
+ *  - Se não iniciar com 55, prefixa 55
+ *  - Retorna null se ficar muito curto (< 12 dígitos: 55 + DDD(2) + número(8-9))
+ */
+export function toBrazilE164(raw: string | null | undefined): string | null {
+  const digits = onlyDigits(raw);
   if (!digits) return null;
+
   const withCountry = digits.startsWith("55") ? digits : `55${digits}`;
-  // Regra mínima razoável: DDI(2) + DDD(2) + 9 dígitos = 13+ dígitos
-  if (withCountry.length < 12) return null;
+  if (withCountry.length < 12) return null; // evita links inválidos
   return withCountry;
 }
 
-/** Monta a URL para abrir conversa direta com o número do vendedor (WhatsApp). */
-export function buildWhatsAppUrl(opts: {
-  phoneRaw: string | null | undefined; // telefone como foi salvo no banco (pode ter máscara)
-  title: string;                        // título do anúncio
-  adUrl: string;                        // URL absoluta do anúncio
-}) {
-  const phoneE164 = toE164BR(opts.phoneRaw);
-  const message = `Olá! Tenho interesse em: ${opts.title} ${opts.adUrl}`;
-  const encoded = encodeURIComponent(message);
-
-  // Se tiver telefone válido -> conversa direta; senão cai no “share” (ainda abre WhatsApp)
-  return phoneE164
-    ? `https://api.whatsapp.com/send?phone=${phoneE164}&text=${encoded}`
-    : `https://api.whatsapp.com/send?text=${encoded}`;
+/**
+ * Monta URL para abrir conversa no WhatsApp com mensagem pré-preenchida.
+ * Usa api.whatsapp.com, que é mais tolerante que wa.me em desktop/mobile.
+ */
+export function buildWhatsAppUrl(phoneRaw: string, message: string): string | null {
+  const e164 = toBrazilE164(phoneRaw);
+  if (!e164) return null;
+  const text = encodeURIComponent(message);
+  return `https://api.whatsapp.com/send?phone=${e164}&text=${text}`;
 }
