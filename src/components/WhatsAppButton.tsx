@@ -2,42 +2,60 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { buildWhatsAppUrl } from "@/lib/whatsapp";
+import { buildWhatsAppUrl, toBrazilE164 } from "@/lib/whatsapp";
 
 type Props = {
-  /** Telefone do vendedor como foi salvo (com ou sem máscara). */
-  sellerPhone?: string | null;
-  /** Título do anúncio. */
-  title: string;
-  /** URL absoluta da página do anúncio. */
-  adUrl: string;
-  /** Classe opcional para estilização. */
+  sellerPhone: string | null | undefined; // telefone do vendedor (qualquer formato)
+  title: string;                          // título do anúncio
+  priceCents: number;                     // preço em centavos
+  adUrl: string;                          // URL absoluta do anúncio
   className?: string;
 };
+
+function formatBRL(cents: number) {
+  return (cents / 100).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+  });
+}
 
 export default function WhatsAppButton({
   sellerPhone,
   title,
+  priceCents,
   adUrl,
   className,
 }: Props) {
-  const href = useMemo(() => {
-    return buildWhatsAppUrl({
-      phoneRaw: sellerPhone ?? null,
-      title,
-      adUrl,
-    });
-  }, [sellerPhone, title, adUrl]);
+  const { href, disabled } = useMemo(() => {
+    const price = formatBRL(priceCents);
+    const msg = `Olá! Tenho interesse no anúncio: ${title} - ${price}. Está disponível? ${adUrl}`;
+    const normalized = toBrazilE164(sellerPhone ?? "");
+    const link = normalized ? buildWhatsAppUrl(normalized, msg) : null;
+
+    return {
+      href: link ?? "",
+      disabled: !link,
+    };
+  }, [sellerPhone, title, priceCents, adUrl]);
 
   return (
     <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
+      href={disabled ? undefined : href}
+      target={disabled ? undefined : "_blank"}
+      rel={disabled ? undefined : "noopener noreferrer"}
+      aria-disabled={disabled}
       className={
         className ??
-        "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-3 py-2 text-sm font-semibold text-[#0F1115] hover:bg-emerald-500"
+        "inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold " +
+          (disabled
+            ? "cursor-not-allowed bg-gray-400/40 text-gray-500"
+            : "bg-emerald-400 text-[#0F1115] hover:bg-emerald-500")
       }
+      onClick={(e) => {
+        if (disabled) e.preventDefault();
+      }}
+      title={disabled ? "Telefone do vendedor não informado" : "Falar no WhatsApp"}
     >
       Falar no WhatsApp
     </a>
