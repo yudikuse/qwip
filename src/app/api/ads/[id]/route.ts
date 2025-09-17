@@ -5,7 +5,37 @@ import { onlyDigits } from "@/lib/whatsapp";
 
 const prisma = new PrismaClient();
 
-// Tipagem simples do ctx para evitar ruído em Next 15
+/** Pega o 1º telefone válido que encontrar em campos/relacionamentos comuns. */
+function extractPhoneFromAd(ad: any): string | null {
+  const candidates: Array<string | null | undefined> = [
+    // relacionamento mais comum
+    ad?.seller?.phoneE164,
+    ad?.seller?.whatsapp,
+    ad?.seller?.phone,
+
+    // no próprio anúncio
+    ad?.sellerPhone,
+    ad?.contactPhone,
+    ad?.whatsapp,
+    ad?.phone,
+    ad?.phoneE164,
+
+    // outros relacionamentos que alguns esquemas usam
+    ad?.owner?.phone,
+    ad?.ownerPhone,
+    ad?.user?.phone,
+    ad?.createdBy?.phone,
+  ];
+
+  for (const c of candidates) {
+    if (!c) continue;
+    let digits = onlyDigits(c);
+    if (digits.startsWith("00")) digits = digits.slice(2); // às vezes exporta com 00
+    if (digits.length >= 10) return digits; // DDD + número
+  }
+  return null;
+}
+
 export async function GET(_req: Request, ctx: any) {
   try {
     const id: string | undefined = ctx?.params?.id;
@@ -13,7 +43,8 @@ export async function GET(_req: Request, ctx: any) {
       return NextResponse.json({ ok: false, error: "MISSING_ID" }, { status: 400 });
     }
 
-    const ad = await prisma.ad.findUnique({
+    // Inclui 'seller' (mais provável) — se não existir, não falha.
+    const ad: any = await prisma.ad.findUnique({
       where: { id },
       include: { seller: true },
     });
@@ -22,20 +53,7 @@ export async function GET(_req: Request, ctx: any) {
       return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
     }
 
-    // tenta extrair um telefone do vendedor
-    const rawSellerPhone: string | null =
-      (ad as any)?.seller?.phoneE164 ??
-      (ad as any)?.seller?.whatsapp ??
-      (ad as any)?.seller?.phone ??
-      null;
-
-    let sellerPhone: string | null = null;
-    if (rawSellerPhone) {
-      let digits = onlyDigits(rawSellerPhone);
-      if (digits.startsWith("00")) digits = digits.slice(2); // alguns exports vêm com 00
-      // não forço 55 aqui; o componente faz a decisão final.
-      if (digits.length >= 10) sellerPhone = digits;
-    }
+    const sellerPhone: string | null = extractPhoneFromAd(ad);
 
     const payload = {
       id: ad.id,
@@ -46,13 +64,13 @@ export async function GET(_req: Request, ctx: any) {
       uf: ad.uf,
       lat: ad.lat,
       lng: ad.lng,
-      centerLat: (ad as any).centerLat ?? null,
-      centerLng: (ad as any).centerLng ?? null,
-      radiusKm: (ad as any).radiusKm ?? null,
-      imageUrl: (ad as any).imageUrl ?? null,
-      createdAt: (ad.createdAt as any)?.toISOString?.() ?? ad.createdAt,
-      expiresAt: (ad.expiresAt as any)?.toISOString?.() ?? ad.expiresAt ?? null,
-      sellerPhone, // <- usado pelo botão
+      centerLat: ad.centerLat ?? null,
+      centerLng: ad.centerLng ?? null,
+      radiusKm: ad.radiusKm ?? null,
+      imageUrl: ad.imageUrl ?? null,
+      createdAt: ad.createdAt?.toISOString?.() ?? ad.createdAt,
+      expiresAt: ad.expiresAt?.toISOString?.() ?? ad.expiresAt ?? null,
+      sellerPhone, // <- agora deve vir preenchido
     };
 
     return NextResponse.json({ ok: true, ad: payload });
