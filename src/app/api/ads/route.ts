@@ -1,4 +1,3 @@
-// src/app/api/ads/route.ts
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { put } from "@vercel/blob";
@@ -38,12 +37,6 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
 
 // ===========================================
 // GET /api/ads  -> lista anúncios (últimas 24h)
-// Query params:
-// - page (1..N) [default 1]
-// - pageSize (8..50) [default 12]
-// - uf (ex: "SP") [opcional]
-// - city (string) [opcional]
-// - lat, lng, radiusKm (para filtro por raio) [opcional]
 // ===========================================
 export async function GET(req: Request) {
   try {
@@ -141,14 +134,16 @@ export async function GET(req: Request) {
 }
 
 // ===========================================
-// POST /api/ads  -> criação (mantida do MVP)
+// POST /api/ads  -> criação (agora copia telefone verificado)
 // ===========================================
 export async function POST(req: Request) {
   try {
     // 1) Autorização básica por cookie (telefone verificado no frontend)
     const jar = await cookies();
-    const phoneCookie = jar.get("qwip_phone_e164")?.value;
-    if (!phoneCookie) {
+    const rawCookie = jar.get("qwip_phone_e164")?.value || "";
+    const phoneE164 = rawCookie ? decodeURIComponent(rawCookie) : "";
+
+    if (!phoneE164) {
       return NextResponse.json(
         { error: "Autenticação necessária (verifique seu telefone)." },
         { status: 401 }
@@ -216,7 +211,15 @@ export async function POST(req: Request) {
       token: process.env.BLOB_READ_WRITE_TOKEN,
     });
 
-    // 8) Persistência
+    // 8) Dono do anúncio (fonte única: telefone verificado)
+    const user = await prisma.user.upsert({
+      where: { phoneE164 },
+      update: { phoneE164 },
+      create: { phoneE164, phoneVerifiedAt: new Date() },
+      select: { id: true, phoneE164: true },
+    });
+
+    // 9) Persistência do anúncio + vínculo + cópia do telefone
     const ad = await prisma.ad.create({
       data: {
         title,
@@ -232,6 +235,10 @@ export async function POST(req: Request) {
         imageUrl: putRes.url,
         imageMime: image.type,
         imageSha256: sha,
+
+        // >>>>>>> NOVO: liga ao usuário e grava o telefone do vendedor
+        sellerId: user.id,
+        sellerPhone: user.phoneE164,
       },
       select: { id: true },
     });
