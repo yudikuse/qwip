@@ -8,19 +8,16 @@ const prisma = new PrismaClient();
 /** Pega o 1º telefone válido que encontrar em campos/relacionamentos comuns. */
 function extractPhoneFromAd(ad: any): string | null {
   const candidates: Array<string | null | undefined> = [
-    // relacionamento mais comum
     ad?.seller?.phoneE164,
     ad?.seller?.whatsapp,
     ad?.seller?.phone,
 
-    // no próprio anúncio
     ad?.sellerPhone,
     ad?.contactPhone,
     ad?.whatsapp,
     ad?.phone,
     ad?.phoneE164,
 
-    // outros relacionamentos que alguns esquemas usam
     ad?.owner?.phone,
     ad?.ownerPhone,
     ad?.user?.phone,
@@ -30,7 +27,7 @@ function extractPhoneFromAd(ad: any): string | null {
   for (const c of candidates) {
     if (!c) continue;
     let digits = onlyDigits(c);
-    if (digits.startsWith("00")) digits = digits.slice(2); // às vezes exporta com 00
+    if (digits.startsWith("00")) digits = digits.slice(2); // alguns exports vêm com 00
     if (digits.length >= 10) return digits; // DDD + número
   }
   return null;
@@ -43,7 +40,6 @@ export async function GET(_req: Request, ctx: any) {
       return NextResponse.json({ ok: false, error: "MISSING_ID" }, { status: 400 });
     }
 
-    // Inclui 'seller' (mais provável) — se não existir, não falha.
     const ad: any = await prisma.ad.findUnique({
       where: { id },
       include: { seller: true },
@@ -70,7 +66,7 @@ export async function GET(_req: Request, ctx: any) {
       imageUrl: ad.imageUrl ?? null,
       createdAt: ad.createdAt?.toISOString?.() ?? ad.createdAt,
       expiresAt: ad.expiresAt?.toISOString?.() ?? ad.expiresAt ?? null,
-      sellerPhone, // <- agora deve vir preenchido
+      sellerPhone, // usado no botão
     };
 
     return NextResponse.json({ ok: true, ad: payload });
