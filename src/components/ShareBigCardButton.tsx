@@ -1,43 +1,48 @@
 "use client";
 
 type Props = {
-  imageUrl: string;   // URL da imagem (use a nossa /opengraph-image)
+  imageUrl: string;   // use /anuncio/[id]/opengraph-image
   caption: string;    // legenda (inclua o link do anúncio)
   className?: string;
 };
 
 export default function ShareBigCardButton({ imageUrl, caption, className = "" }: Props) {
   const handleClick = async () => {
+    // Fallback simples: abre wa.me só com o texto
+    const openWaTextOnly = () =>
+      window.open(`https://wa.me/?text=${encodeURIComponent(caption)}`, "_blank");
+
     try {
-      // Fallback simples: se Web Share c/ arquivos não existir, manda só o texto
-      const goTextOnly = () =>
-        window.open(`https://wa.me/?text=${encodeURIComponent(caption)}`, "_blank");
+      // checa suporte à Web Share API
+      const navAny: any = typeof navigator !== "undefined" ? (navigator as any) : undefined;
+      const hasShareAPI = !!navAny?.share;
 
-      // @ts-expect-error canShare não está no TS de todos os targets
-      const canShare = typeof navigator !== "undefined" && navigator?.canShare;
-      const canUseShare = typeof navigator !== "undefined" && "share" in navigator;
+      if (!hasShareAPI) return openWaTextOnly();
 
-      if (!canUseShare || !canShare) {
-        return goTextOnly();
-      }
-
-      // baixa a imagem e anexa como arquivo
+      // baixa a imagem OG e prepara arquivo
       const res = await fetch(imageUrl, { cache: "no-store" });
-      if (!res.ok) return goTextOnly();
+      if (!res.ok) return openWaTextOnly();
+
       const blob = await res.blob();
       const file = new File([blob], "anuncio.png", { type: blob.type || "image/png" });
 
-      // @ts-expect-error Web Share Level 2
-      if (navigator.canShare?.({ files: [file] })) {
-        // @ts-expect-error Web Share Level 2
-        await navigator.share({ files: [file], text: caption });
+      // Se o navegador suporta compartilhar arquivos, envia imagem + legenda
+      const canShareFiles =
+        typeof navAny.canShare === "function" && navAny.canShare({ files: [file] });
+
+      if (canShareFiles) {
+        await navAny.share({ files: [file], text: caption });
         return;
       }
 
-      return goTextOnly();
+      // Caso só suporte texto/URL, tenta share(text) e cai no fallback se falhar
+      try {
+        await navAny.share({ text: caption });
+      } catch {
+        openWaTextOnly();
+      }
     } catch {
-      // último fallback
-      window.open(`https://wa.me/?text=${encodeURIComponent(caption)}`, "_blank");
+      openWaTextOnly();
     }
   };
 
