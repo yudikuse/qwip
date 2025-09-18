@@ -21,8 +21,8 @@ type Ad = {
   centerLng: number | null;
   radiusKm: number | null;
   imageUrl: string | null;
-  createdAt: string;
-  expiresAt: string | null;
+  createdAt: string;       // ISO
+  expiresAt: string | null; // ISO (pode vir null e calculamos fallback)
 };
 
 function formatPriceBRL(cents: number) {
@@ -57,6 +57,8 @@ export async function generateMetadata(
 
   const title = ad ? `${ad.title} - ${formatPriceBRL(ad.priceCents)}` : "Anúncio";
   const description = ad?.description?.slice(0, 160) ?? "Veja este anúncio no Qwip.";
+
+  // 👉 imagem OG dinâmica desta rota (1200x630)
   const ogImage = `${base}/anuncio/${id}/opengraph-image`;
   const url = `${base}/anuncio/${id}`;
   const amount = ad ? (ad.priceCents / 100).toFixed(2) : undefined;
@@ -138,6 +140,13 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const shareTitle = `${ad.title} - ${formatPriceBRL(ad.priceCents)}`;
   const shareText = ad.description?.slice(0, 160) ?? "";
 
+  // ✅ Calcula expiresAt quando a API não setar (24h após criação)
+  const expiresAtIso =
+    ad.expiresAt ??
+    (Number.isFinite(Date.parse(ad.createdAt))
+      ? new Date(Date.parse(ad.createdAt) + 24 * 60 * 60 * 1000).toISOString()
+      : null);
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="container mx-auto max-w-5xl px-4 py-8">
@@ -168,13 +177,15 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               {formatPriceBRL(ad.priceCents)}
             </div>
 
-            {/* Temporizador de expiração */}
-            <div className="mt-2">
-              <ExpiryTimer expiresAt={ad.expiresAt} />
-            </div>
+            {/* Badge de expiração */}
+            {expiresAtIso ? (
+              <div className="mt-2">
+                <ExpiryTimer expiresAt={expiresAtIso} />
+              </div>
+            ) : null}
 
             {ad.description && (
-              <p className="mt-3 text-sm text-muted-foreground whitespace-pre-line">
+              <p className="mt-3 whitespace-pre-line text-sm text-muted-foreground">
                 {ad.description}
               </p>
             )}
@@ -189,7 +200,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 adUrl={pageUrl}
               />
 
-              {/* Criar anúncio (fluxo normal); ajuste a rota se for diferente */}
+              {/* Criar anúncio (fluxo normal) */}
               <Link
                 href="/"
                 className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
@@ -198,7 +209,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               </Link>
             </div>
 
-            {/* Compartilhar (fica abaixo, como estava) */}
+            {/* Compartilhar (abaixo) */}
             <div className="pt-3">
               <ShareButton
                 url={pageUrl}
