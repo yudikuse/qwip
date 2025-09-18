@@ -55,7 +55,7 @@ export async function generateMetadata(
   const title = ad ? `${ad.title} - ${formatPriceBRL(ad.priceCents)}` : "Anúncio";
   const description = ad?.description?.slice(0, 160) ?? "Veja este anúncio no Qwip.";
 
-  // 👉 use a imagem OG dinâmica desta página (1200x630)
+  // 👉 imagem OG dinâmica desta rota (1200x630)
   const ogImage = `${base}/anuncio/${id}/opengraph-image`;
   const url = `${base}/anuncio/${id}`;
   const amount = ad ? (ad.priceCents / 100).toFixed(2) : undefined;
@@ -69,9 +69,8 @@ export async function generateMetadata(
       url,
       siteName: new URL(base).hostname.toUpperCase(),
       images: [{ url: ogImage, width: 1200, height: 630 }],
-      // manteremos o tipo padrão aqui e forçamos og:type via `other` abaixo
     },
-    // forçamos metatags extras que o WhatsApp/Facebook usam para o cartão grande
+    // Metatags extras que ajudam o scraper do WhatsApp a usar o cartão grande
     other: {
       "og:type": "product",
       ...(amount ? { "product:price:amount": amount } : {}),
@@ -117,7 +116,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     );
   }
 
-  // Lê o telefone verificado do cookie (fonte única no MVP sem schema)
+  // Telefone verificado do cookie
   const jar = await cookies();
   const rawCookie = jar.get("qwip_phone_e164")?.value || "";
   let sellerPhone: string | null = null;
@@ -176,7 +175,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
             <div className="grid grid-cols-2 gap-3 pt-4">
               <WhatsAppButton
-                sellerPhone={sellerPhone} // <- vem do cookie OTP
+                sellerPhone={sellerPhone}
                 title={ad.title}
                 priceCents={ad.priceCents}
                 adUrl={pageUrl}
