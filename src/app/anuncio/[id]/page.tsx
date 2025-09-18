@@ -54,8 +54,11 @@ export async function generateMetadata(
 
   const title = ad ? `${ad.title} - ${formatPriceBRL(ad.priceCents)}` : "Anúncio";
   const description = ad?.description?.slice(0, 160) ?? "Veja este anúncio no Qwip.";
-  const ogImage = ad?.imageUrl ?? `${base}/og-default.jpg`;
+
+  // 👉 use a imagem OG dinâmica desta página (1200x630)
+  const ogImage = `${base}/anuncio/${id}/opengraph-image`;
   const url = `${base}/anuncio/${id}`;
+  const amount = ad ? (ad.priceCents / 100).toFixed(2) : undefined;
 
   return {
     title,
@@ -64,8 +67,17 @@ export async function generateMetadata(
       title,
       description,
       url,
+      siteName: new URL(base).hostname.toUpperCase(),
       images: [{ url: ogImage, width: 1200, height: 630 }],
-      type: "article",
+      // manteremos o tipo padrão aqui e forçamos og:type via `other` abaixo
+    },
+    // forçamos metatags extras que o WhatsApp/Facebook usam para o cartão grande
+    other: {
+      "og:type": "product",
+      ...(amount ? { "product:price:amount": amount } : {}),
+      "product:price:currency": "BRL",
+      "og:image:width": "1200",
+      "og:image:height": "630",
     },
     twitter: {
       card: "summary_large_image",
@@ -164,7 +176,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
             <div className="grid grid-cols-2 gap-3 pt-4">
               <WhatsAppButton
-                sellerPhone={sellerPhone}         // <- vem do cookie OTP
+                sellerPhone={sellerPhone} // <- vem do cookie OTP
                 title={ad.title}
                 priceCents={ad.priceCents}
                 adUrl={pageUrl}
