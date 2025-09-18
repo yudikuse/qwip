@@ -4,7 +4,6 @@ import type { Metadata } from "next";
 import AdMap from "@/components/AdMap";
 import ShareButton from "@/components/ShareButtons";
 import WhatsAppButton from "@/components/WhatsAppButton";
-import ShareBigCardButton from "@/components/ShareBigCardButton";
 
 export const dynamic = "force-dynamic";
 
@@ -117,7 +116,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     );
   }
 
-  // telefone verificado (não interfere no preview; deixamos)
+  // Telefone do cookie (no MVP, vendedor precisa ter validado via SMS para anunciar)
   const jar = await cookies();
   const rawCookie = jar.get("qwip_phone_e164")?.value || "";
   let sellerPhone: string | null = null;
@@ -134,11 +133,9 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
     null;
 
-  const pageUrl   = `${base}/anuncio/${ad.id}`;
-  const ogCardUrl = `${base}/anuncio/${ad.id}/opengraph-image`;
+  const pageUrl = `${base}/anuncio/${ad.id}`;
   const shareTitle = `${ad.title} - ${formatPriceBRL(ad.priceCents)}`;
-  const shareText  = ad.description?.slice(0, 160) ?? "";
-  const bigCaption = `${ad.title} - ${formatPriceBRL(ad.priceCents)}\n${pageUrl}`;
+  const shareText = ad.description?.slice(0, 160) ?? "";
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -176,24 +173,27 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               </p>
             )}
 
+            {/* Linha de ações principal */}
             <div className="grid grid-cols-2 gap-3 pt-4">
-              {/* 1) Link puro (melhor chance de preview padrão do WhatsApp) */}
+              {/* WhatsApp direto com vendedor (mensagem + link) */}
               <WhatsAppButton
                 sellerPhone={sellerPhone}
                 title={ad.title}
                 priceCents={ad.priceCents}
                 adUrl={pageUrl}
-                linkOnly
+                /* não passamos linkOnly -> envia texto + link direto pro vendedor */
               />
 
-              {/* 2) “Cartão grande” via Web Share (imagem + legenda com link) */}
-              <ShareBigCardButton
-                imageUrl={ogCardUrl}
-                caption={bigCaption}
-              />
+              {/* Criar anúncio (fluxo normal); ajuste a rota se for diferente */}
+              <Link
+                href="/"
+                className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
+              >
+                Criar seu anúncio
+              </Link>
             </div>
 
-            {/* Botão de compartilhar nativo do navegador (texto + link) */}
+            {/* Compartilhar (fica abaixo, como estava) */}
             <div className="pt-3">
               <ShareButton
                 url={pageUrl}
