@@ -21,8 +21,8 @@ type Ad = {
   centerLng: number | null;
   radiusKm: number | null;
   imageUrl: string | null;
-  createdAt: string;       // ISO
-  expiresAt: string | null; // ISO (pode vir null e calculamos fallback)
+  createdAt: string;        // ISO
+  expiresAt: string | null; // ISO (pode vir null; usamos fallback 24h)
 };
 
 function formatPriceBRL(cents: number) {
@@ -55,18 +55,29 @@ export async function generateMetadata(
   const base = baseEnv ?? (await getBaseFromHeaders());
   const ad = await fetchAd(base, id);
 
-  const title = ad ? `${ad.title} - ${formatPriceBRL(ad.priceCents)}` : "Anúncio";
+  const titleBase = ad ? `${ad.title} - ${formatPriceBRL(ad.priceCents)}` : "Anúncio";
   const description = ad?.description?.slice(0, 160) ?? "Veja este anúncio no Qwip.";
 
-  // 👉 imagem OG dinâmica desta rota (1200x630)
+  // OG dinâmico (1200x630) – sua rota /anuncio/[id]/opengraph-image
   const ogImage = `${base}/anuncio/${id}/opengraph-image`;
   const url = `${base}/anuncio/${id}`;
   const amount = ad ? (ad.priceCents / 100).toFixed(2) : undefined;
+
+  // Calcula expiração também aqui para SEO
+  const expiresAtIso =
+    ad?.expiresAt ??
+    (ad?.createdAt
+      ? new Date(Date.parse(ad.createdAt) + 24 * 60 * 60 * 1000).toISOString()
+      : null);
+  const isExpired = !!(expiresAtIso && Date.now() >= Date.parse(expiresAtIso));
+
+  const title = isExpired ? `[Expirado] ${titleBase}` : titleBase;
 
   return {
     metadataBase: new URL(base),
     title,
     description,
+    robots: isExpired ? { index: false, follow: false } : undefined,
     openGraph: {
       title,
       description,
@@ -146,6 +157,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     (Number.isFinite(Date.parse(ad.createdAt))
       ? new Date(Date.parse(ad.createdAt) + 24 * 60 * 60 * 1000).toISOString()
       : null);
+  const isExpired = !!(expiresAtIso && Date.now() >= Date.parse(expiresAtIso));
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -171,14 +183,22 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
           {/* Detalhes */}
           <div>
-            <h1 className="text-2xl font-bold">{ad.title}</h1>
+            <div className="flex items-start gap-3">
+              <h1 className="text-2xl font-bold">{ad.title}</h1>
+
+              {isExpired ? (
+                <span className="rounded-full bg-red-500/15 px-2 py-1 text-xs font-medium text-red-300">
+                  Expirado
+                </span>
+              ) : null}
+            </div>
 
             <div className="mt-1 text-lg text-emerald-400">
               {formatPriceBRL(ad.priceCents)}
             </div>
 
-            {/* Badge de expiração */}
-            {expiresAtIso ? (
+            {/* Timer enquanto não expirou */}
+            {!isExpired && expiresAtIso ? (
               <div className="mt-2">
                 <ExpiryTimer expiresAt={expiresAtIso} />
               </div>
@@ -190,33 +210,59 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               </p>
             )}
 
-            {/* Linha de ações principal */}
-            <div className="grid grid-cols-2 gap-3 pt-4">
-              {/* WhatsApp direto com vendedor (mensagem + link) */}
-              <WhatsAppButton
-                sellerPhone={sellerPhone}
-                title={ad.title}
-                priceCents={ad.priceCents}
-                adUrl={pageUrl}
-              />
+            {/* Ações */}
+            <div className="pt-4">
+              {isExpired ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    disabled
+                    className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl bg-white/5 px-3 py-2 text-sm font-semibold text-muted-foreground"
+                    title="Anúncio expirado"
+                  >
+                    Falar no WhatsApp
+                  </button>
 
-              {/* Criar anúncio (fluxo normal) */}
-              <Link
-                href="/"
-                className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
-              >
-                Criar seu anúncio
-              </Link>
-            </div>
+                  <Link
+                    href="/"
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
+                  >
+                    Renovar anúncio
+                  </Link>
 
-            {/* Compartilhar (abaixo) */}
-            <div className="pt-3">
-              <ShareButton
-                url={pageUrl}
-                title={shareTitle}
-                text={shareText}
-                className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
-              />
+                  <button
+                    disabled
+                    className="col-span-2 inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-muted-foreground"
+                    title="Anúncio expirado"
+                  >
+                    Compartilhar
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <WhatsAppButton
+                      sellerPhone={sellerPhone}
+                      title={ad.title}
+                      priceCents={ad.priceCents}
+                      adUrl={pageUrl}
+                    />
+                    <Link
+                      href="/"
+                      className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
+                    >
+                      Criar seu anúncio
+                    </Link>
+                  </div>
+                  <div className="pt-3">
+                    <ShareButton
+                      url={pageUrl}
+                      title={shareTitle}
+                      text={shareText}
+                      className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
