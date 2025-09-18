@@ -60,12 +60,11 @@ export default function ConfigurarPage() {
 
       const rawCfg = sessionStorage.getItem('qwip_config_ad');
       if (rawCfg) {
-        setCfg({ ...cfg, ...(JSON.parse(rawCfg) as Partial<Config>) });
+        setCfg((prev) => ({ ...prev, ...(JSON.parse(rawCfg) as Partial<Config>) }));
       }
     } catch {
       router.replace('/anunciar');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   // persiste config conforme o usuário mexe
@@ -88,8 +87,7 @@ export default function ConfigurarPage() {
   // ações -------------------------------------------------------
 
   function handleContinue() {
-    // Por enquanto só segue para a página “confirmar/compartilhar”.
-    // No próximo passo ligamos aqui a publicação real -> salva id/url e empurra pra confirmar.
+    // Próximo passo: página de confirmação/compartilhamento
     router.push('/anunciar/confirmar');
   }
 
