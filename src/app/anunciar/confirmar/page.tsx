@@ -14,12 +14,12 @@ type Draft = {
 };
 
 function formatCentsBRL(cents: number) {
+  // ✅ currency aparece só uma vez (erro do build era chave duplicada)
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
     minimumFractionDigits: 2,
     currencyDisplay: 'symbol',
-    currency: 'BRL',
   }).format(cents / 100);
 }
 
@@ -81,7 +81,6 @@ export default function ConfirmarPublicadoPage() {
   }
 
   if (!draft) {
-    // Mesmo sem draft, ainda mostramos um esqueleto com o link
     return (
       <main className="min-h-screen bg-background text-foreground">
         <div className="container mx-auto max-w-5xl px-4 py-10">
@@ -129,7 +128,7 @@ export default function ConfirmarPublicadoPage() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-[1.3fr,1fr]">
-          {/* Coluna esquerda – cartão/preview simples + mensagem */}
+          {/* Coluna esquerda – cartão/preview + mensagem */}
           <div className="rounded-2xl border border-white/10 p-4">
             <div className="overflow-hidden rounded-xl border border-white/10">
               {draft.imageDataUrl ? (
