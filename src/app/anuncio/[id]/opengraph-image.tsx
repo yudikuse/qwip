@@ -52,7 +52,6 @@ export default async function OpengraphImage({
           fontFamily: "Inter, Arial, sans-serif",
         }}
       >
-        {/* fundo = foto do anúncio */}
         <img
           src={img}
           style={{
@@ -63,7 +62,6 @@ export default async function OpengraphImage({
             objectFit: "cover",
           }}
         />
-        {/* gradiente para legibilidade */}
         <div
           style={{
             position: "absolute",
@@ -73,7 +71,6 @@ export default async function OpengraphImage({
           }}
         />
 
-        {/* badge opcional de expiração */}
         {badge && (
           <div
             style={{
@@ -93,7 +90,6 @@ export default async function OpengraphImage({
           </div>
         )}
 
-        {/* textos */}
         <div style={{ position: "relative", padding: "48px 60px" }}>
           <div
             style={{
