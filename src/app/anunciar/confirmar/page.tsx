@@ -1,13 +1,10 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
 
-// Evita SSG aqui (opcional, mas ajuda no preview/CSR)
 export const dynamic = 'force-dynamic';
 
-// ---------- Tipos ----------
 type Draft = {
   title: string;
   priceDigits: string;
@@ -16,346 +13,293 @@ type Draft = {
   createdAt: string;
 };
 
-type Ad = {
-  id: string;
-  title: string;
-  description: string | null;
-  priceCents: number;
-  imageUrl: string | null;
-  createdAt: string;
-  expiresAt: string | null;
-};
-
-// ---------- Utils ----------
 function formatCentsBRL(cents: number) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
     minimumFractionDigits: 2,
     currencyDisplay: 'symbol',
+    currency: 'BRL',
   }).format(cents / 100);
 }
 
-// ---------- Shell com Suspense (exigência do Next 15) ----------
-export default function ConfirmarPage() {
-  return (
-    <Suspense fallback={<PageSkeleton />}>
-      <ConfirmarInner />
-    </Suspense>
-  );
-}
-
-// Skeleton simples pro fallback
-function PageSkeleton() {
-  return (
-    <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto w-full max-w-6xl px-4 py-10">
-        <div className="mb-8 h-6 w-64 animate-pulse rounded bg-white/10" />
-        <div className="grid gap-6 md:grid-cols-12">
-          <div className="md:col-span-7">
-            <div className="h-72 animate-pulse rounded-2xl bg-white/5" />
-            <div className="mt-6 h-40 animate-pulse rounded-2xl bg-white/5" />
-          </div>
-          <div className="md:col-span-5">
-            <div className="h-64 animate-pulse rounded-2xl bg-white/5" />
-          </div>
-        </div>
-      </div>
-    </main>
-  );
-}
-
-// ---------- Componente real (usa useSearchParams) ----------
-function ConfirmarInner() {
-  const router = useRouter();
-  const qs = useSearchParams();
-
+export default function ConfirmarPublicadoPage() {
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [ad, setAd] = useState<Ad | null>(null);
-  const [origin, setOrigin] = useState<string>('');
+  const [adUrl, setAdUrl] = useState<string>('');
 
   useEffect(() => {
-    if (typeof window !== 'undefined') setOrigin(window.location.origin);
-  }, []);
-
-  // Se vier ?id=..., usamos anúncio salvo; senão, rascunho do sessionStorage
-  const adId = qs.get('id');
-
-  useEffect(() => {
-    if (adId) {
-      fetch(`/api/ads/${adId}`, { cache: 'no-store' })
-        .then(r => (r.ok ? r.json() : null))
-        .then(data => setAd(data?.ad ?? null))
-        .catch(() => setAd(null));
-    } else {
-      const raw = sessionStorage.getItem('qwip_draft_ad');
-      if (!raw) {
-        router.replace('/anunciar');
-        return;
-      }
+    // 1) resgata o rascunho (apenas para desenhar o cartão)
+    const raw = sessionStorage.getItem('qwip_draft_ad');
+    if (raw) {
       try {
         setDraft(JSON.parse(raw) as Draft);
       } catch {
-        router.replace('/anunciar');
+        /* ignore */
       }
     }
-  }, [adId, router]);
 
-  // Dados unificados para exibir
-  const title = ad?.title ?? draft?.title ?? '';
-  const description = ad?.description ?? draft?.description ?? '';
-  const priceCents = ad?.priceCents ?? parseInt(draft?.priceDigits || '0', 10);
-  const displayImage = ad?.imageUrl ?? draft?.imageDataUrl ?? '';
+    // 2) tenta descobrir o link REAL já publicado
+    const u1 = sessionStorage.getItem('qwip_last_ad_url');
+    const u2 = sessionStorage.getItem('qwip_published_ad_url');
+    const id = sessionStorage.getItem('qwip_last_ad_id');
 
-  const shareUrl = ad ? `${origin}/anuncio/${ad.id}` : 'Será gerado após publicar.';
+    let url = u1 || u2 || '';
+    if (!url && id && typeof window !== 'undefined') {
+      url = `${location.origin}/anuncio/${id}`;
+    }
+    setAdUrl(url);
+  }, []);
+
+  const cents = useMemo(
+    () => (draft ? parseInt(draft.priceDigits || '0', 10) : 0),
+    [draft]
+  );
 
   const caption = useMemo(() => {
+    if (!draft) return '';
+    const price = formatCentsBRL(parseInt(draft.priceDigits || '0', 10));
     const lines = [
-      '🔥 Tô vendendo! Olha que oferta boa! 📣',
+      `🔥 Tô vendendo! Olha que oferta boa!`,
       '',
-      title,
-      formatCentsBRL(priceCents),
-      description ? `\n${description}` : '',
-      ad ? `\n${shareUrl}` : '',
+      `${draft.title}`,
+      `${price}`,
+      draft.description ? `\n${draft.description}` : '',
+      adUrl ? `\n${adUrl}` : '',
     ];
     return lines.join('\n');
-  }, [ad, description, priceCents, shareUrl, title]);
+  }, [draft, adUrl]);
 
-  function copy(text: string, okMsg: string) {
-    navigator.clipboard.writeText(text).then(
-      () => alert(okMsg),
-      () => alert('Não foi possível copiar. Copie manualmente.')
-    );
+  function copy(text: string) {
+    navigator.clipboard.writeText(text).catch(() => {
+      alert('Não foi possível copiar. Copie manualmente.');
+    });
   }
 
-  function openWhatsApp(text: string) {
-    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+  function openWhatsApp() {
+    const url = `https://wa.me/?text=${encodeURIComponent(caption)}`;
     window.open(url, '_blank');
   }
 
-  if (!title) return null;
+  if (!draft) {
+    // Mesmo sem draft, ainda mostramos um esqueleto com o link
+    return (
+      <main className="min-h-screen bg-background text-foreground">
+        <div className="container mx-auto max-w-5xl px-4 py-10">
+          <h1 className="text-2xl font-bold">Seu anúncio está pronto!</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Compartilhe o link do anúncio já publicado.
+          </p>
+
+          <div className="mt-6 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4">
+            <label className="block text-xs font-medium text-amber-300">
+              Link do seu anúncio
+            </label>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                readOnly
+                value={adUrl || '—'}
+                className="flex-1 rounded-xl border border-amber-400/30 bg-transparent px-3 py-2 text-sm"
+              />
+              <button
+                onClick={() => adUrl && copy(adUrl)}
+                className="rounded-xl border border-amber-400/40 px-3 py-2 text-sm font-semibold hover:bg-amber-400/10 disabled:opacity-50"
+                disabled={!adUrl}
+              >
+                Copiar
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto w-full max-w-6xl px-4 py-10">
-        {/* Header com hierarquia visual */}
-        <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-3 rounded-full bg-emerald-500/15 p-3 ring-1 ring-emerald-400/40">
-            <svg className="h-6 w-6 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
+      <div className="container mx-auto max-w-6xl px-4 py-10">
+        {/* cabeçalho com feedback visual */}
+        <div className="mx-auto mb-6 flex max-w-3xl items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3">
+          <div className="h-3 w-3 animate-pulse rounded-full bg-emerald-400" />
+          <div>
+            <h1 className="text-lg font-semibold">Seu anúncio está pronto!</h1>
+            <p className="text-sm text-muted-foreground">
+              Agora é só compartilhar. Seu anúncio já está publicado e otimizado.
+            </p>
           </div>
-          <h1 className="text-2xl font-bold">Seu anúncio está pronto!</h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Agora é só compartilhar e começar a vender. Esta é a página de confirmação pós-publicação.
-          </p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-12">
-          {/* Coluna esquerda */}
-          <section className="md:col-span-7">
-            {/* Card visual do produto */}
-            <div className="overflow-hidden rounded-2xl border border-white/10">
-              {displayImage ? (
+        <div className="grid gap-6 md:grid-cols-[1.3fr,1fr]">
+          {/* Coluna esquerda – cartão/preview simples + mensagem */}
+          <div className="rounded-2xl border border-white/10 p-4">
+            <div className="overflow-hidden rounded-xl border border-white/10">
+              {draft.imageDataUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={displayImage} alt={title} className="h-64 w-full object-cover md:h-72" />
+                <img
+                  src={draft.imageDataUrl}
+                  alt={draft.title}
+                  className="h-64 w-full object-cover md:h-72"
+                />
               ) : (
-                <div className="flex h-64 w-full items-center justify-center text-sm text-muted-foreground md:h-72">
+                <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
                   (Sem imagem)
                 </div>
               )}
-
-              <div className="space-y-3 p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-md bg-emerald-500/15 px-2 py-1 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-400/30">
-                    {formatCentsBRL(priceCents)}
-                  </span>
-                  <span className="rounded-md bg-white/5 px-2 py-1 text-xs text-muted-foreground ring-1 ring-white/10">
-                    Alcance local
-                  </span>
-                  <span className="rounded-md bg-white/5 px-2 py-1 text-xs text-muted-foreground ring-1 ring-white/10">
-                    Válido por 24h
-                  </span>
-                </div>
-
-                <h2 className="text-lg font-semibold">{title}</h2>
-                {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
-              </div>
             </div>
 
-            {/* Mensagem */}
-            <div className="mt-6">
-              <label className="mb-2 block text-sm font-medium">Mensagem a ser enviada</label>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="inline-flex rounded-md bg-emerald-600/20 px-2 py-0.5 text-xs font-semibold text-emerald-400">
+                {formatCentsBRL(cents)}
+              </span>
+              <span className="inline-flex rounded-md border border-white/10 px-2 py-0.5 text-xs text-muted-foreground">
+                Alcance local
+              </span>
+              <span className="inline-flex rounded-md border border-white/10 px-2 py-0.5 text-xs text-muted-foreground">
+                Válido por 24h
+              </span>
+            </div>
+
+            <h2 className="mt-2 text-xl font-semibold">{draft.title}</h2>
+            {draft.description ? (
+              <p className="mt-1 text-sm text-muted-foreground">{draft.description}</p>
+            ) : null}
+
+            <div className="mt-5">
+              <label className="mb-2 block text-sm font-medium">
+                Mensagem a ser enviada
+              </label>
               <textarea
                 readOnly
-                rows={9}
-                className="min-h-[180px] w-full rounded-xl border border-white/15 bg-transparent px-3 py-2 text-sm outline-none"
+                rows={8}
+                className="w-full rounded-xl border border-white/15 bg-transparent px-3 py-2 text-sm outline-none"
                 value={caption}
               />
             </div>
 
-            {/* Ações principais (hierarquia) */}
-            <div className="mt-4 flex flex-wrap gap-3">
-              {/* Primário */}
+            <div className="mt-4 grid grid-cols-2 gap-3">
               <button
-                onClick={() => openWhatsApp(caption)}
-                className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold shadow-sm shadow-emerald-600/20 hover:bg-emerald-500"
+                onClick={openWhatsApp}
+                className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold hover:bg-emerald-500"
+              >
+                Abrir no WhatsApp
+              </button>
+              <button
+                onClick={() => copy(caption)}
+                className="inline-flex items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
+              >
+                Copiar mensagem
+              </button>
+            </div>
+
+            <div className="mt-4 flex gap-3">
+              <Link
+                href="/anunciar"
+                className="inline-flex items-center justify-center rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold hover:bg-white/5"
+              >
+                Criar outro anúncio
+              </Link>
+              {adUrl ? (
+                <Link
+                  href={adUrl}
+                  target="_blank"
+                  className="inline-flex items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-400/20"
+                >
+                  Ver anúncio completo
+                </Link>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Coluna direita – próximos passos + métricas + link + dicas */}
+          <aside className="space-y-6">
+            <div className="rounded-2xl border border-white/10 p-4">
+              <p className="mb-3 text-sm font-medium">Próximos passos</p>
+
+              {adUrl ? (
+                <Link
+                  href={adUrl}
+                  target="_blank"
+                  className="mb-2 block rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-center text-sm font-semibold text-emerald-200 hover:bg-emerald-400/20"
+                >
+                  Ver anúncio completo
+                </Link>
+              ) : null}
+
+              <button
+                onClick={openWhatsApp}
+                className="mb-2 block w-full rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold hover:bg-emerald-500"
               >
                 Abrir no WhatsApp
               </button>
 
-              {/* Secundário */}
               <button
-                onClick={() => openWhatsApp(caption)}
-                className="inline-flex items-center justify-center rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold hover:bg-white/5"
+                onClick={() => copy(caption)}
+                className="mb-2 block w-full rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
               >
                 Compartilhar em Grupo
               </button>
 
-              {/* Terciário */}
               <button
-                onClick={() => copy(caption, 'Mensagem copiada!')}
-                className="inline-flex items-center justify-center rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-muted-foreground hover:bg-white/5"
+                onClick={() => adUrl && copy(adUrl)}
+                className="block w-full rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5 disabled:opacity-50"
+                disabled={!adUrl}
               >
-                Copiar mensagem
+                Copiar Link
               </button>
-
-              <div className="ml-auto flex gap-3">
-                <Link
-                  href="/anunciar"
-                  className="inline-flex items-center justify-center rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold hover:bg-white/5"
-                >
-                  Voltar e editar
-                </Link>
-                <button
-                  disabled
-                  aria-disabled="true"
-                  className="inline-flex cursor-not-allowed items-center justify-center rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-muted-foreground"
-                >
-                  Publicar (em breve)
-                </button>
-              </div>
             </div>
-          </section>
 
-          {/* Coluna direita */}
-          <aside className="md:col-span-5 md:pl-2">
-            {/* Próximos passos */}
             <div className="rounded-2xl border border-white/10 p-4">
-              <p className="mb-3 text-sm font-semibold text-muted-foreground">Próximos passos</p>
-
-              <div className="space-y-3">
-                <Link
-                  href={ad ? `/anuncio/${ad.id}` : '#'}
-                  aria-disabled={!ad}
-                  className={
-                    ad
-                      ? 'flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5'
-                      : 'flex w-full cursor-not-allowed items-center justify-center rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-muted-foreground'
-                  }
-                >
-                  Ver anúncio completo
-                </Link>
-
-                <button
-                  onClick={() => openWhatsApp(caption)}
-                  className="flex w-full items-center justify-center rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold shadow-sm shadow-emerald-600/20 hover:bg-emerald-500"
-                >
-                  Abrir no WhatsApp
-                </button>
-
-                <button
-                  onClick={() => openWhatsApp(caption)}
-                  className="flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
-                >
-                  Compartilhar em Grupo
-                </button>
-
-                <button
-                  onClick={() => copy(shareUrl, 'Link copiado!')}
-                  className="flex w-full items-center justify-center rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-white/5"
-                >
-                  Copiar Link
-                </button>
-              </div>
-            </div>
-
-            {/* Estatísticas */}
-            <div className="mt-4 rounded-2xl border border-white/10 p-4">
-              <p className="mb-3 text-sm font-semibold text-emerald-400">Estatísticas previstas</p>
-              <div className="grid grid-cols-2 gap-3">
+              <p className="mb-3 text-sm font-medium">Estatísticas previstas</p>
+              <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-xl border border-white/10 p-3">
-                  <p className="text-xs text-muted-foreground">Visualizações esperadas</p>
-                  <p className="mt-1 text-sm font-semibold">150–300/dia</p>
+                  <p className="text-muted-foreground">Visualizações esperadas</p>
+                  <p className="mt-1 font-semibold">150–300/dia</p>
                 </div>
                 <div className="rounded-xl border border-white/10 p-3">
-                  <p className="text-xs text-muted-foreground">Taxa de conversão</p>
-                  <p className="mt-1 text-sm font-semibold">8–15%</p>
+                  <p className="text-muted-foreground">Taxa de conversão</p>
+                  <p className="mt-1 font-semibold">8–15%</p>
                 </div>
                 <div className="rounded-xl border border-white/10 p-3">
-                  <p className="text-xs text-muted-foreground">Tempo médio no site</p>
-                  <p className="mt-1 text-sm font-semibold">2m 30s</p>
+                  <p className="text-muted-foreground">Tempo médio no site</p>
+                  <p className="mt-1 font-semibold">2m 30s</p>
                 </div>
                 <div className="rounded-xl border border-white/10 p-3">
-                  <p className="text-xs text-muted-foreground">Alcance local</p>
-                  <p className="mt-1 text-sm font-semibold">&gt; 5 km</p>
+                  <p className="text-muted-foreground">Alcance local</p>
+                  <p className="mt-1 font-semibold">&gt; 5 km</p>
                 </div>
               </div>
             </div>
 
-            {/* Link + máscara âmbar */}
-            <div className="mt-4 rounded-2xl border border-amber-300/40 bg-amber-500/[0.06] p-4 relative overflow-hidden">
-              <div
-                className="pointer-events-none absolute inset-0 -z-10"
-                style={{
-                  background:
-                    'radial-gradient(1100px 320px at 20% -10%, rgba(245, 158, 11, 0.22), transparent 62%)',
-                }}
-              />
-              <p className="mb-3 text-sm font-semibold">Link do seu anúncio</p>
+            {/* Link com "máscara" amarela */}
+            <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4">
+              <p className="mb-2 text-sm font-medium">Link do seu anúncio</p>
               <div className="flex items-center gap-2">
                 <input
                   readOnly
-                  value={shareUrl}
-                  className="flex-1 rounded-xl border border-amber-300/50 bg-amber-500/10 px-3 py-2 text-sm outline-none"
+                  value={adUrl || 'Será gerado após publicar.'}
+                  className="flex-1 rounded-xl border border-amber-400/30 bg-transparent px-3 py-2 text-sm"
                 />
                 <button
-                  onClick={() => copy(shareUrl, 'Link copiado!')}
-                  className="rounded-xl border border-amber-300/60 bg-amber-500/20 px-3 py-2 text-sm font-semibold hover:bg-amber-500/30"
+                  onClick={() => adUrl && copy(adUrl)}
+                  className="rounded-xl border border-amber-400/40 px-3 py-2 text-sm font-semibold hover:bg-amber-400/10 disabled:opacity-50"
+                  disabled={!adUrl}
                 >
                   Copiar
                 </button>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
+              <p className="mt-2 text-xs text-amber-200/80">
                 Este link funciona em qualquer dispositivo e é otimizado para mecanismos de busca.
               </p>
             </div>
 
-            {/* Dicas + máscara âmbar */}
-            <div className="mt-4 rounded-2xl border border-amber-300/40 bg-amber-500/[0.07] p-4 relative overflow-hidden">
-              <div
-                className="pointer-events-none absolute inset-0 -z-10"
-                style={{
-                  background:
-                    'radial-gradient(1200px 360px at 10% -10%, rgba(245, 158, 11, 0.26), transparent 64%)',
-                }}
-              />
-              <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-400/25 text-amber-300 ring-1 ring-amber-300/40">
-                  ⚡
-                </span>
-                Dicas para vender mais rápido
+            {/* Dicas – caixa amarela */}
+            <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4">
+              <p className="mb-2 text-sm font-semibold text-amber-200">
+                ⚡ Dicas para vender mais rápido
               </p>
-              <ul className="space-y-2 text-sm">
-                <li className="list-inside list-disc">
-                  Responda em até <strong>5 minutos</strong> para aumentar as chances de venda.
-                </li>
-                <li className="list-inside list-disc">
-                  Mostre detalhes importantes nas fotos (defeitos, medidas, etc.).
-                </li>
-                <li className="list-inside list-disc">
-                  Seja flexível nos meios de pagamento e no local de encontro.
-                </li>
+              <ul className="list-disc space-y-2 pl-5 text-sm text-amber-100/90">
+                <li>Responda em até 5 minutos para aumentar as chances de venda.</li>
+                <li>Mostre detalhes importantes nas fotos (defeitos, medidas, etc.).</li>
+                <li>Seja flexível nos meios de pagamento e no local de encontro.</li>
               </ul>
             </div>
           </aside>
