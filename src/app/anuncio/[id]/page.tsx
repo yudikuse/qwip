@@ -5,6 +5,7 @@ import AdMap from "@/components/AdMap";
 import ShareButton from "@/components/ShareButtons";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import ExpiryTimer from "@/components/ExpiryTimer";
+import AdChips from "@/components/AdChips";
 
 export const dynamic = "force-dynamic";
 
@@ -58,12 +59,12 @@ export async function generateMetadata(
   const titleBase = ad ? `${ad.title} - ${formatPriceBRL(ad.priceCents)}` : "Anúncio";
   const description = ad?.description?.slice(0, 160) ?? "Veja este anúncio no Qwip.";
 
-  // OG dinâmico (1200x630) – sua rota /anuncio/[id]/opengraph-image
+  // OG dinâmico (1200x630)
   const ogImage = `${base}/anuncio/${id}/opengraph-image`;
   const url = `${base}/anuncio/${id}`;
   const amount = ad ? (ad.priceCents / 100).toFixed(2) : undefined;
 
-  // Calcula expiração também aqui para SEO
+  // Expiração (fallback 24h após criação)
   const expiresAtIso =
     ad?.expiresAt ??
     (ad?.createdAt
@@ -151,7 +152,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const shareTitle = `${ad.title} - ${formatPriceBRL(ad.priceCents)}`;
   const shareText = ad.description?.slice(0, 160) ?? "";
 
-  // ✅ Calcula expiresAt quando a API não setar (24h após criação)
+  // Expiração (fallback 24h após criação)
   const expiresAtIso =
     ad.expiresAt ??
     (Number.isFinite(Date.parse(ad.createdAt))
@@ -203,6 +204,14 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 <ExpiryTimer expiresAt={expiresAtIso} />
               </div>
             ) : null}
+
+            {/* Chips de contexto: Cidade/UF • Raio • Publicado há … */}
+            <AdChips
+              city={ad.city}
+              uf={ad.uf}
+              radiusKm={ad.radiusKm ?? null}
+              createdAtISO={ad.createdAt}
+            />
 
             {ad.description && (
               <p className="mt-3 whitespace-pre-line text-sm text-muted-foreground">
