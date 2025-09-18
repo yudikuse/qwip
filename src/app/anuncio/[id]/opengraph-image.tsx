@@ -1,7 +1,8 @@
+// src/app/anuncio/[id]/opengraph-image.tsx
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
-export const dynamic = "force-dynamic"; // evita cache agressivo do runtime
+export const dynamic = "force-dynamic";
 export const contentType = "image/png";
 export const size = { width: 1200, height: 630 };
 
@@ -23,14 +24,11 @@ function timeLeftLabel(expiresAt?: string | null) {
   return d > 0 ? `Expira em ${d}d ${h}h` : `Expira em ${h}h`;
 }
 
-// util p/ converter ArrayBuffer -> base64 no Edge runtime
+// ArrayBuffer -> base64 (Edge runtime)
 function toBase64(u8: Uint8Array) {
   let s = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < u8.length; i += chunk) {
-    s += String.fromCharCode(...u8.subarray(i, i + chunk));
-  }
-  // btoa existe no Edge runtime
+  const CHUNK = 0x8000;
+  for (let i = 0; i < u8.length; i += CHUNK) s += String.fromCharCode(...u8.subarray(i, i + CHUNK));
   // eslint-disable-next-line no-undef
   return btoa(s);
 }
@@ -41,18 +39,13 @@ async function asDataUrl(url: string): Promise<string | null> {
     if (!res.ok) return null;
     const buf = new Uint8Array(await res.arrayBuffer());
     const ct = res.headers.get("content-type") || "image/jpeg";
-    const base64 = toBase64(buf);
-    return `data:${ct};base64,${base64}`;
+    return `data:${ct};base64,${toBase64(buf)}`;
   } catch {
     return null;
   }
 }
 
-export default async function OpengraphImage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function OpengraphImage({ params }: { params: { id: string } }) {
   const base = process.env.NEXT_PUBLIC_SITE_URL || "https://qwip.pro";
 
   // carrega o anúncio (sem cache)
@@ -67,7 +60,7 @@ export default async function OpengraphImage({
   const rawImg = ad?.imageUrl ?? `${base}/og-default.jpg`;
   const badge = timeLeftLabel(ad?.expiresAt);
 
-  // 👉 embute a imagem como data:URL para evitar CORS/proxy
+  // embute a imagem como data:URL (evita CORS)
   const img = (await asDataUrl(rawImg)) ?? `${base}/og-fallback.png`;
 
   return new ImageResponse(
@@ -84,7 +77,7 @@ export default async function OpengraphImage({
           fontFamily: "Inter, Arial, sans-serif",
         }}
       >
-        {/* fundo = foto do anúncio (embutida) */}
+        {/* fundo = foto do anúncio */}
         <img
           src={img}
           style={{
@@ -95,13 +88,13 @@ export default async function OpengraphImage({
             objectFit: "cover",
           }}
         />
-        {/* gradiente p/ legibilidade */}
+
+        {/* gradiente para legibilidade */}
         <div
           style={{
             position: "absolute",
             inset: 0,
-            background:
-              "linear-gradient(180deg, rgba(0,0,0,0.12) 20%, rgba(0,0,0,0.78) 100%)",
+            background: "linear-gradient(180deg, rgba(0,0,0,0.12) 20%, rgba(0,0,0,0.78) 100%)",
           }}
         />
 
@@ -125,8 +118,15 @@ export default async function OpengraphImage({
           </div>
         )}
 
-        {/* textos */}
-        <div style={{ position: "relative", padding: "48px 60px" }}>
+        {/* wrapper dos textos -> PRECISA SER FLEX pq tem vários filhos */}
+        <div
+          style={{
+            position: "relative",
+            padding: "48px 60px",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
           <div
             style={{
               fontSize: 54,
