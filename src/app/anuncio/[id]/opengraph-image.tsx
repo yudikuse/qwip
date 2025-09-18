@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
+export const dynamic = "force-dynamic"; // evita cache agressivo do runtime
 export const contentType = "image/png";
 export const size = { width: 1200, height: 630 };
 
@@ -22,11 +23,39 @@ function timeLeftLabel(expiresAt?: string | null) {
   return d > 0 ? `Expira em ${d}d ${h}h` : `Expira em ${h}h`;
 }
 
+// util p/ converter ArrayBuffer -> base64 no Edge runtime
+function toBase64(u8: Uint8Array) {
+  let s = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < u8.length; i += chunk) {
+    s += String.fromCharCode(...u8.subarray(i, i + chunk));
+  }
+  // btoa existe no Edge runtime
+  // eslint-disable-next-line no-undef
+  return btoa(s);
+}
+
+async function asDataUrl(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const buf = new Uint8Array(await res.arrayBuffer());
+    const ct = res.headers.get("content-type") || "image/jpeg";
+    const base64 = toBase64(buf);
+    return `data:${ct};base64,${base64}`;
+  } catch {
+    return null;
+  }
+}
+
 export default async function OpengraphImage({
   params,
-}: { params: { id: string } }) {
+}: {
+  params: { id: string };
+}) {
   const base = process.env.NEXT_PUBLIC_SITE_URL || "https://qwip.pro";
 
+  // carrega o anúncio (sem cache)
   let ad: any = null;
   try {
     const r = await fetch(`${base}/api/ads/${params.id}`, { cache: "no-store" });
@@ -35,8 +64,11 @@ export default async function OpengraphImage({
 
   const title = ad?.title ?? "Anúncio";
   const price = brl(ad?.priceCents ?? 0);
-  const img = ad?.imageUrl ?? `${base}/og-default.jpg`;
+  const rawImg = ad?.imageUrl ?? `${base}/og-default.jpg`;
   const badge = timeLeftLabel(ad?.expiresAt);
+
+  // 👉 embute a imagem como data:URL para evitar CORS/proxy
+  const img = (await asDataUrl(rawImg)) ?? `${base}/og-fallback.png`;
 
   return new ImageResponse(
     (
@@ -52,6 +84,7 @@ export default async function OpengraphImage({
           fontFamily: "Inter, Arial, sans-serif",
         }}
       >
+        {/* fundo = foto do anúncio (embutida) */}
         <img
           src={img}
           style={{
@@ -62,6 +95,7 @@ export default async function OpengraphImage({
             objectFit: "cover",
           }}
         />
+        {/* gradiente p/ legibilidade */}
         <div
           style={{
             position: "absolute",
@@ -71,6 +105,7 @@ export default async function OpengraphImage({
           }}
         />
 
+        {/* badge opcional */}
         {badge && (
           <div
             style={{
@@ -90,6 +125,7 @@ export default async function OpengraphImage({
           </div>
         )}
 
+        {/* textos */}
         <div style={{ position: "relative", padding: "48px 60px" }}>
           <div
             style={{
