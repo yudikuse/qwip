@@ -97,7 +97,7 @@ export default function ConfirmarPage() {
           </div>
           <h1 className="text-2xl font-bold">Seu anúncio está pronto!</h1>
           <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Agora é só compartilhar o link e começar a vender. Esta é a confirmação pré-publicação.
+            Esta é a confirmação pré-publicação.
             No próximo passo faremos o upload da imagem e geraremos o link final.
           </p>
         </div>
