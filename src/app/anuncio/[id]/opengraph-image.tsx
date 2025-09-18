@@ -1,4 +1,3 @@
-// src/app/anuncio/[id]/opengraph-image.tsx
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
@@ -13,14 +12,21 @@ function brl(cents: number) {
   });
 }
 
+function timeLeftLabel(expiresAt?: string | null) {
+  if (!expiresAt) return null;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (ms <= 0) return "Expirado";
+  const hours = Math.floor(ms / 3_600_000);
+  const d = Math.floor(hours / 24);
+  const h = hours % 24;
+  return d > 0 ? `Expira em ${d}d ${h}h` : `Expira em ${h}h`;
+}
+
 export default async function OpengraphImage({
   params,
-}: {
-  params: { id: string };
-}) {
+}: { params: { id: string } }) {
   const base = process.env.NEXT_PUBLIC_SITE_URL || "https://qwip.pro";
 
-  // carrega o anúncio (sem cache)
   let ad: any = null;
   try {
     const r = await fetch(`${base}/api/ads/${params.id}`, { cache: "no-store" });
@@ -30,6 +36,7 @@ export default async function OpengraphImage({
   const title = ad?.title ?? "Anúncio";
   const price = brl(ad?.priceCents ?? 0);
   const img = ad?.imageUrl ?? `${base}/og-default.jpg`;
+  const badge = timeLeftLabel(ad?.expiresAt);
 
   return new ImageResponse(
     (
@@ -45,7 +52,7 @@ export default async function OpengraphImage({
           fontFamily: "Inter, Arial, sans-serif",
         }}
       >
-        {/* background = foto do anúncio */}
+        {/* fundo = foto do anúncio */}
         <img
           src={img}
           style={{
@@ -62,10 +69,31 @@ export default async function OpengraphImage({
             position: "absolute",
             inset: 0,
             background:
-              "linear-gradient(180deg, rgba(0,0,0,0.15) 20%, rgba(0,0,0,0.75) 100%)",
+              "linear-gradient(180deg, rgba(0,0,0,0.12) 20%, rgba(0,0,0,0.78) 100%)",
           }}
         />
-        {/* texto */}
+
+        {/* badge opcional de expiração */}
+        {badge && (
+          <div
+            style={{
+              position: "absolute",
+              top: 24,
+              left: 24,
+              padding: "10px 16px",
+              borderRadius: 999,
+              fontSize: 24,
+              fontWeight: 700,
+              backgroundColor: "rgba(0,0,0,0.65)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.12)",
+            }}
+          >
+            {badge}
+          </div>
+        )}
+
+        {/* textos */}
         <div style={{ position: "relative", padding: "48px 60px" }}>
           <div
             style={{
@@ -92,7 +120,7 @@ export default async function OpengraphImage({
             {price}
           </div>
           <div style={{ marginTop: 8, fontSize: 24, color: "#e5e7eb" }}>
-            qwip.pro
+            {new URL(base).hostname.toUpperCase()}
           </div>
         </div>
       </div>
