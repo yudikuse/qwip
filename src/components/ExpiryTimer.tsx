@@ -1,51 +1,74 @@
-// src/components/ExpiryTimer.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-/**
- * Exibe uma contagem regressiva para a data de expiração.
- * Quando não houver expiresAt ou já tiver passado, não mostra nada.
- */
-export default function ExpiryTimer({ expiresAt }: { expiresAt: string | null | undefined }) {
-  if (!expiresAt) return null;
+type Props = {
+  /** ISO string, ex.: "2025-09-18T18:00:00.000Z" */
+  expiresAt?: string | null;
+  className?: string;
+  /** Dispara 1x quando expirar */
+  onExpired?: () => void;
+  /** Texto antes do tempo, ex.: "Expira em" */
+  prefix?: string;
+};
 
-  const [timeLeft, setTimeLeft] = useState<string | null>(null);
+function pad(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+export default function ExpiryTimer({
+  expiresAt,
+  className,
+  onExpired,
+  prefix = "Expira em",
+}: Props) {
+  // ✅ Hooks sempre no topo e na mesma ordem
+  const [now, setNow] = useState<number>(() => Date.now());
 
   useEffect(() => {
-    const expiryDate = new Date(expiresAt);
-    if (isNaN(expiryDate.getTime())) {
-      setTimeLeft(null);
-      return;
-    }
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
-    const updateTimeLeft = () => {
-      const now = new Date();
-      const diffMs = expiryDate.getTime() - now.getTime();
-      if (diffMs <= 0) {
-        setTimeLeft(null);
-        return;
-      }
-      const totalSeconds = Math.floor(diffMs / 1000);
-      const days = Math.floor(totalSeconds / 86400);
-      const hours = Math.floor((totalSeconds % 86400) / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      const parts: string[] = [];
-      if (days > 0) parts.push(`${days}d`);
-      parts.push(`${hours}h`);
-      parts.push(`${minutes}m`);
-      setTimeLeft(parts.join(" "));
-    };
-
-    updateTimeLeft();
-    const interval = setInterval(updateTimeLeft, 60 * 1000); // atualiza a cada minuto
-    return () => clearInterval(interval);
+  const expiresAtMs = useMemo(() => {
+    const ms = expiresAt ? Date.parse(expiresAt) : NaN;
+    return Number.isFinite(ms) ? ms : NaN;
   }, [expiresAt]);
 
-  if (!timeLeft) return null;
+  const { remainMs, label } = useMemo(() => {
+    if (!Number.isFinite(expiresAtMs)) return { remainMs: NaN, label: "" };
+    const ms = Math.max(0, expiresAtMs - now);
+    const totalSec = Math.floor(ms / 1000);
+    const hh = Math.floor(totalSec / 3600);
+    const mm = Math.floor((totalSec % 3600) / 60);
+    const ss = totalSec % 60;
+    const lbl = hh > 0 ? `${pad(hh)}:${pad(mm)}:${pad(ss)}` : `${pad(mm)}:${pad(ss)}`;
+    return { remainMs: ms, label: lbl };
+  }, [expiresAtMs, now]);
+
+  // Dispara callback quando expirar
+  useEffect(() => {
+    if (Number.isFinite(expiresAtMs) && expiresAtMs - now <= 0) {
+      onExpired?.();
+    }
+  }, [expiresAtMs, now, onExpired]);
+
+  // Sem data válida -> não renderiza (hooks já foram chamados)
+  if (!Number.isFinite(expiresAtMs)) return null;
+
+  const isExpired = remainMs <= 0;
+
   return (
-    <div className="inline-block rounded-md bg-yellow-500/10 px-3 py-1 text-sm font-semibold text-yellow-500 dark:text-yellow-400">
-      Oferta expira em {timeLeft}
+    <div className={className}>
+      {isExpired ? (
+        <span className="inline-flex items-center rounded-md bg-red-500/10 px-2 py-1 text-xs font-medium text-red-400 ring-1 ring-inset ring-red-500/20">
+          Expirado
+        </span>
+      ) : (
+        <span className="inline-flex items-center rounded-md bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-400 ring-1 ring-inset ring-amber-500/20">
+          {prefix} {label}
+        </span>
+      )}
     </div>
   );
 }
