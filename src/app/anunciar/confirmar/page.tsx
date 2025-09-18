@@ -1,10 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-// ---- Tipos ----
+// Evita SSG aqui (opcional, mas ajuda no preview/CSR)
+export const dynamic = 'force-dynamic';
+
+// ---------- Tipos ----------
 type Draft = {
   title: string;
   priceDigits: string;
@@ -23,7 +26,7 @@ type Ad = {
   expiresAt: string | null;
 };
 
-// ---- Utils ----
+// ---------- Utils ----------
 function formatCentsBRL(cents: number) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
@@ -33,7 +36,37 @@ function formatCentsBRL(cents: number) {
   }).format(cents / 100);
 }
 
+// ---------- Shell com Suspense (exigência do Next 15) ----------
 export default function ConfirmarPage() {
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <ConfirmarInner />
+    </Suspense>
+  );
+}
+
+// Skeleton simples pro fallback
+function PageSkeleton() {
+  return (
+    <main className="min-h-screen bg-background text-foreground">
+      <div className="mx-auto w-full max-w-6xl px-4 py-10">
+        <div className="mb-8 h-6 w-64 animate-pulse rounded bg-white/10" />
+        <div className="grid gap-6 md:grid-cols-12">
+          <div className="md:col-span-7">
+            <div className="h-72 animate-pulse rounded-2xl bg-white/5" />
+            <div className="mt-6 h-40 animate-pulse rounded-2xl bg-white/5" />
+          </div>
+          <div className="md:col-span-5">
+            <div className="h-64 animate-pulse rounded-2xl bg-white/5" />
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+// ---------- Componente real (usa useSearchParams) ----------
+function ConfirmarInner() {
   const router = useRouter();
   const qs = useSearchParams();
 
@@ -41,12 +74,11 @@ export default function ConfirmarPage() {
   const [ad, setAd] = useState<Ad | null>(null);
   const [origin, setOrigin] = useState<string>('');
 
-  // Captura a origem para montar links absolutos
   useEffect(() => {
     if (typeof window !== 'undefined') setOrigin(window.location.origin);
   }, []);
 
-  // Se veio ?id=..., buscamos o anúncio publicado; senão usamos o rascunho
+  // Se vier ?id=..., usamos anúncio salvo; senão, rascunho do sessionStorage
   const adId = qs.get('id');
 
   useEffect(() => {
@@ -62,22 +94,18 @@ export default function ConfirmarPage() {
         return;
       }
       try {
-        const d = JSON.parse(raw) as Draft;
-        setDraft(d);
+        setDraft(JSON.parse(raw) as Draft);
       } catch {
         router.replace('/anunciar');
       }
     }
   }, [adId, router]);
 
-  // Dados de exibição unificados (published vs draft)
+  // Dados unificados para exibir
   const title = ad?.title ?? draft?.title ?? '';
   const description = ad?.description ?? draft?.description ?? '';
   const priceCents = ad?.priceCents ?? parseInt(draft?.priceDigits || '0', 10);
-  const displayImage =
-    ad?.imageUrl ??
-    draft?.imageDataUrl ??
-    ''; // pode ficar vazio (mostramos placeholder)
+  const displayImage = ad?.imageUrl ?? draft?.imageDataUrl ?? '';
 
   const shareUrl = ad ? `${origin}/anuncio/${ad.id}` : 'Será gerado após publicar.';
 
@@ -88,7 +116,7 @@ export default function ConfirmarPage() {
       title,
       formatCentsBRL(priceCents),
       description ? `\n${description}` : '',
-      ad ? `\n${shareUrl}` : '', // só inclui link se for anúncio publicado
+      ad ? `\n${shareUrl}` : '',
     ];
     return lines.join('\n');
   }, [ad, description, priceCents, shareUrl, title]);
@@ -107,19 +135,13 @@ export default function ConfirmarPage() {
 
   if (!title) return null;
 
-  // ---- UI ----
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto w-full max-w-6xl px-4 py-10">
-        {/* Header */}
+        {/* Header com hierarquia visual */}
         <div className="mb-8 flex flex-col items-center text-center">
           <div className="mb-3 rounded-full bg-emerald-500/15 p-3 ring-1 ring-emerald-400/40">
-            <svg
-              className="h-6 w-6 text-emerald-400"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-            >
+            <svg className="h-6 w-6 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
@@ -130,17 +152,13 @@ export default function ConfirmarPage() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-12">
-          {/* Esquerda */}
+          {/* Coluna esquerda */}
           <section className="md:col-span-7">
-            {/* Card visual */}
+            {/* Card visual do produto */}
             <div className="overflow-hidden rounded-2xl border border-white/10">
               {displayImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={displayImage}
-                  alt={title}
-                  className="h-64 w-full object-cover md:h-72"
-                />
+                <img src={displayImage} alt={title} className="h-64 w-full object-cover md:h-72" />
               ) : (
                 <div className="flex h-64 w-full items-center justify-center text-sm text-muted-foreground md:h-72">
                   (Sem imagem)
@@ -161,9 +179,7 @@ export default function ConfirmarPage() {
                 </div>
 
                 <h2 className="text-lg font-semibold">{title}</h2>
-                {description ? (
-                  <p className="text-sm text-muted-foreground">{description}</p>
-                ) : null}
+                {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
               </div>
             </div>
 
@@ -178,7 +194,7 @@ export default function ConfirmarPage() {
               />
             </div>
 
-            {/* Ações principais */}
+            {/* Ações principais (hierarquia) */}
             <div className="mt-4 flex flex-wrap gap-3">
               {/* Primário */}
               <button
@@ -196,7 +212,7 @@ export default function ConfirmarPage() {
                 Compartilhar em Grupo
               </button>
 
-              {/* Tertiário */}
+              {/* Terciário */}
               <button
                 onClick={() => copy(caption, 'Mensagem copiada!')}
                 className="inline-flex items-center justify-center rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-muted-foreground hover:bg-white/5"
@@ -211,7 +227,6 @@ export default function ConfirmarPage() {
                 >
                   Voltar e editar
                 </Link>
-
                 <button
                   disabled
                   aria-disabled="true"
@@ -223,7 +238,7 @@ export default function ConfirmarPage() {
             </div>
           </section>
 
-          {/* Direita */}
+          {/* Coluna direita */}
           <aside className="md:col-span-5 md:pl-2">
             {/* Próximos passos */}
             <div className="rounded-2xl border border-white/10 p-4">
