@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import AdMap from "@/components/AdMap";
 import ShareButton from "@/components/ShareButtons";
 import WhatsAppButton from "@/components/WhatsAppButton";
+import ExpiryTimer from "@/components/ExpiryTimer";
 
 export const dynamic = "force-dynamic";
 
@@ -167,6 +168,11 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               {formatPriceBRL(ad.priceCents)}
             </div>
 
+            {/* Temporizador de expiração */}
+            <div className="mt-2">
+              <ExpiryTimer expiresAt={ad.expiresAt} />
+            </div>
+
             {ad.description && (
               <p className="mt-3 text-sm text-muted-foreground whitespace-pre-line">
                 {ad.description}
@@ -181,7 +187,6 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 title={ad.title}
                 priceCents={ad.priceCents}
                 adUrl={pageUrl}
-                /* não passamos linkOnly -> envia texto + link direto pro vendedor */
               />
 
               {/* Criar anúncio (fluxo normal); ajuste a rota se for diferente */}
