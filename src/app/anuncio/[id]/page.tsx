@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import AdMap from "@/components/AdMap";
 import ShareButton from "@/components/ShareButtons";
 import WhatsAppButton from "@/components/WhatsAppButton";
+import ShareBigCardButton from "@/components/ShareBigCardButton";
 
 export const dynamic = "force-dynamic";
 
@@ -116,7 +117,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     );
   }
 
-  // Telefone verificado do cookie (não usamos aqui; o preview grande depende do "link-only")
+  // telefone verificado (não interfere no preview; deixamos)
   const jar = await cookies();
   const rawCookie = jar.get("qwip_phone_e164")?.value || "";
   let sellerPhone: string | null = null;
@@ -133,9 +134,11 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     (ad.lat != null && ad.lng != null && { lat: ad.lat, lng: ad.lng }) ||
     null;
 
-  const pageUrl = `${base}/anuncio/${ad.id}`;
+  const pageUrl   = `${base}/anuncio/${ad.id}`;
+  const ogCardUrl = `${base}/anuncio/${ad.id}/opengraph-image`;
   const shareTitle = `${ad.title} - ${formatPriceBRL(ad.priceCents)}`;
-  const shareText = ad.description?.slice(0, 160) ?? "";
+  const shareText  = ad.description?.slice(0, 160) ?? "";
+  const bigCaption = `${ad.title} - ${formatPriceBRL(ad.priceCents)}\n${pageUrl}`;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -174,7 +177,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
             )}
 
             <div className="grid grid-cols-2 gap-3 pt-4">
-              {/* Para forçar preview grande no WhatsApp, enviamos SÓ o link */}
+              {/* 1) Link puro (melhor chance de preview padrão do WhatsApp) */}
               <WhatsAppButton
                 sellerPhone={sellerPhone}
                 title={ad.title}
@@ -183,6 +186,15 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 linkOnly
               />
 
+              {/* 2) “Cartão grande” via Web Share (imagem + legenda com link) */}
+              <ShareBigCardButton
+                imageUrl={ogCardUrl}
+                caption={bigCaption}
+              />
+            </div>
+
+            {/* Botão de compartilhar nativo do navegador (texto + link) */}
+            <div className="pt-3">
               <ShareButton
                 url={pageUrl}
                 title={shareTitle}
