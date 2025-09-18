@@ -18,7 +18,6 @@ function formatCentsBRL(cents: number) {
     currency: 'BRL',
     minimumFractionDigits: 2,
     currencyDisplay: 'symbol',
-    currency: 'BRL',
   }).format(cents / 100);
 }
 
@@ -67,7 +66,6 @@ export default function ConfirmarPage() {
     );
   }
 
-  // Botão “Copiar link” (por enquanto, só placeholder)
   function handleCopyLink() {
     navigator.clipboard.writeText('Será gerado após publicar.').then(
       () => alert('Link copiado (placeholder).'),
@@ -82,11 +80,10 @@ export default function ConfirmarPage() {
 
   if (!draft) return null;
 
-  // —————————————————— UI ——————————————————
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto w-full max-w-6xl px-4 py-10">
-        {/* Header “sucesso” */}
+        {/* Header */}
         <div className="mb-8 flex flex-col items-center text-center">
           <div className="mb-3 rounded-full bg-emerald-500/15 p-3 ring-1 ring-emerald-400/40">
             <svg
@@ -105,13 +102,12 @@ export default function ConfirmarPage() {
           </p>
         </div>
 
-        {/* Grid principal: anúncio + lateral */}
+        {/* Grid principal */}
         <div className="grid gap-6 md:grid-cols-12">
-          {/* Coluna esquerda */}
+          {/* Esquerda */}
           <section className="md:col-span-7">
-            {/* Card do anúncio (visual) */}
+            {/* Card do anúncio */}
             <div className="overflow-hidden rounded-2xl border border-white/10">
-              {/* Imagem */}
               <div className="relative">
                 {draft.imageDataUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -127,9 +123,7 @@ export default function ConfirmarPage() {
                 )}
               </div>
 
-              {/* Conteúdo do card */}
               <div className="space-y-3 p-4">
-                {/* Chips */}
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-md bg-emerald-500/15 px-2 py-1 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-400/30">
                     {formatCentsBRL(cents)}
@@ -143,14 +137,13 @@ export default function ConfirmarPage() {
                 </div>
 
                 <h2 className="text-lg font-semibold">{draft.title}</h2>
-
                 {draft.description ? (
                   <p className="text-sm text-muted-foreground">{draft.description}</p>
                 ) : null}
               </div>
             </div>
 
-            {/* Mensagem a ser enviada */}
+            {/* Mensagem */}
             <div className="mt-6">
               <label className="mb-2 block text-sm font-medium">Mensagem a ser enviada</label>
               <textarea
@@ -161,61 +154,78 @@ export default function ConfirmarPage() {
               />
             </div>
 
-            {/* Ações (abaixo do texto) */}
+            {/* Ações */}
             <div className="mt-4 flex flex-wrap gap-3">
+              {/* Primário */}
               <button
                 onClick={() => openWhatsApp()}
-                className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold hover:bg-emerald-500"
+                className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold shadow-sm shadow-emerald-600/20 hover:bg-emerald-500"
               >
                 Abrir no WhatsApp
               </button>
 
+              {/* Secundário */}
+              <button
+                onClick={() => openWhatsApp(caption)}
+                className="inline-flex items-center justify-center rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold hover:bg-white/5"
+              >
+                Compartilhar em Grupo
+              </button>
+
+              {/* Tertiário */}
               <button
                 onClick={handleCopyMessage}
-                className="inline-flex items-center justify-center rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold hover:bg-white/5"
+                className="inline-flex items-center justify-center rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-muted-foreground hover:bg-white/5"
               >
                 Copiar mensagem
               </button>
 
-              <Link
-                href="/anunciar"
-                className="ml-auto inline-flex items-center justify-center rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold hover:bg-white/5"
-              >
-                Voltar e editar
-              </Link>
+              <div className="ml-auto flex gap-3">
+                <Link
+                  href="/anunciar"
+                  className="inline-flex items-center justify-center rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold hover:bg-white/5"
+                >
+                  Voltar e editar
+                </Link>
 
-              <button
-                disabled
-                title="Publicação virá no próximo passo (upload + salvar)."
-                className="inline-flex cursor-not-allowed items-center justify-center rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-muted-foreground"
-              >
-                Publicar (em breve)
-              </button>
+                <button
+                  disabled
+                  aria-disabled="true"
+                  title="Publicação virá no próximo passo (upload + salvar)."
+                  className="inline-flex cursor-not-allowed items-center justify-center rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-muted-foreground"
+                >
+                  Publicar (em breve)
+                </button>
+              </div>
             </div>
           </section>
 
-          {/* Coluna direita (sticky) */}
+          {/* Direita */}
           <aside className="md:col-span-5 md:pl-2">
             {/* Próximos passos */}
             <div className="rounded-2xl border border-white/10 p-4">
               <p className="mb-3 text-sm font-semibold text-muted-foreground">Próximos passos</p>
 
               <div className="space-y-3">
+                {/* Desabilitado / ghost */}
                 <button
                   disabled
+                  aria-disabled="true"
                   title="Disponível após publicar."
-                  className="flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-muted-foreground"
+                  className="flex w-full items-center justify-center rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-muted-foreground"
                 >
                   Ver anúncio completo
                 </button>
 
+                {/* Primário (reforçado) */}
                 <button
                   onClick={() => openWhatsApp()}
-                  className="flex w-full items-center justify-center rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold hover:bg-emerald-500"
+                  className="flex w-full items-center justify-center rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold shadow-sm shadow-emerald-600/20 hover:bg-emerald-500"
                 >
                   Abrir no WhatsApp
                 </button>
 
+                {/* Secundário */}
                 <button
                   onClick={() => openWhatsApp(caption)}
                   className="flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
@@ -223,16 +233,17 @@ export default function ConfirmarPage() {
                   Compartilhar em Grupo
                 </button>
 
+                {/* Terciário */}
                 <button
                   onClick={handleCopyLink}
-                  className="flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/5"
+                  className="flex w-full items-center justify-center rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-white/5"
                 >
                   Copiar Link
                 </button>
               </div>
             </div>
 
-            {/* Estatísticas previstas */}
+            {/* Estatísticas */}
             <div className="mt-4 rounded-2xl border border-white/10 p-4">
               <p className="mb-3 text-sm font-semibold text-emerald-400">
                 Estatísticas previstas
@@ -261,14 +272,13 @@ export default function ConfirmarPage() {
               </div>
             </div>
 
-            {/* Link do anúncio — com “máscara” amarela */}
-            <div className="mt-4 rounded-2xl border border-white/10 p-4 relative overflow-hidden">
-              {/* Máscara amarela sutil */}
+            {/* Link do anúncio — máscara âmbar mais intensa */}
+            <div className="mt-4 rounded-2xl border border-amber-300/40 bg-amber-500/[0.06] p-4 relative overflow-hidden">
               <div
                 className="pointer-events-none absolute inset-0 -z-10"
                 style={{
                   background:
-                    'radial-gradient(1200px 300px at 20% -10%, rgba(245, 158, 11, 0.12), transparent 60%)',
+                    'radial-gradient(1100px 320px at 20% -10%, rgba(245, 158, 11, 0.22), transparent 62%)',
                 }}
               />
               <p className="mb-3 text-sm font-semibold">Link do seu anúncio</p>
@@ -277,11 +287,11 @@ export default function ConfirmarPage() {
                 <input
                   readOnly
                   value="Será gerado após publicar."
-                  className="flex-1 rounded-xl border border-amber-300/30 bg-amber-500/5 px-3 py-2 text-sm outline-none placeholder:text-muted-foreground"
+                  className="flex-1 rounded-xl border border-amber-300/50 bg-amber-500/10 px-3 py-2 text-sm outline-none placeholder:text-muted-foreground"
                 />
                 <button
                   onClick={handleCopyLink}
-                  className="rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-sm font-semibold hover:bg-amber-500/20"
+                  className="rounded-xl border border-amber-300/60 bg-amber-500/20 px-3 py-2 text-sm font-semibold hover:bg-amber-500/30"
                 >
                   Copiar
                 </button>
@@ -292,18 +302,17 @@ export default function ConfirmarPage() {
               </p>
             </div>
 
-            {/* Dicas — com “máscara” amarela */}
-            <div className="mt-4 rounded-2xl border border-amber-300/30 bg-amber-500/5 p-4 relative overflow-hidden">
-              {/* Máscara amarela mais visível */}
+            {/* Dicas — máscara âmbar reforçada */}
+            <div className="mt-4 rounded-2xl border border-amber-300/40 bg-amber-500/[0.07] p-4 relative overflow-hidden">
               <div
                 className="pointer-events-none absolute inset-0 -z-10"
                 style={{
                   background:
-                    'radial-gradient(1300px 360px at 10% -10%, rgba(245, 158, 11, 0.16), transparent 60%)',
+                    'radial-gradient(1200px 360px at 10% -10%, rgba(245, 158, 11, 0.26), transparent 64%)',
                 }}
               />
               <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-400/20 text-amber-300 ring-1 ring-amber-300/30">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-400/25 text-amber-300 ring-1 ring-amber-300/40">
                   ⚡
                 </span>
                 Dicas para vender mais rápido
