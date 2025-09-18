@@ -1,18 +1,16 @@
-// src/components/WhatsAppButton.tsx
 "use client";
 
-import React, { useMemo } from "react";
-import { buildWhatsAppUrl, toBrazilE164 } from "@/lib/whatsapp";
-
 type Props = {
-  sellerPhone: string | null | undefined; // telefone do vendedor (qualquer formato)
-  title: string;                          // título do anúncio
-  priceCents: number;                     // preço em centavos
-  adUrl: string;                          // URL absoluta do anúncio
+  sellerPhone: string | null;
+  title: string;
+  priceCents: number;
+  adUrl: string;
+  /** Quando true, envia apenas o link (necessário para preview grande do WhatsApp) */
+  linkOnly?: boolean;
   className?: string;
 };
 
-function formatBRL(cents: number) {
+function formatPriceBRL(cents: number) {
   return (cents / 100).toLocaleString("pt-BR", {
     style: "currency",
     currency: "BRL",
@@ -20,46 +18,42 @@ function formatBRL(cents: number) {
   });
 }
 
+function onlyDigits(s: string) {
+  return s.replace(/\D+/g, "");
+}
+
 export default function WhatsAppButton({
   sellerPhone,
   title,
   priceCents,
   adUrl,
-  className,
+  linkOnly = false,
+  className = "",
 }: Props) {
-  const { href, disabled } = useMemo(() => {
-    const price = formatBRL(priceCents);
-    const msg = `Olá! Tenho interesse no anúncio: ${title} - ${price}. Está disponível? ${adUrl}`;
-    const normalized = toBrazilE164(sellerPhone ?? "");
-    const link = normalized ? buildWhatsAppUrl(normalized, msg) : null;
+  const phone = sellerPhone ? onlyDigits(sellerPhone) : null;
 
-    return {
-      href: link ?? "",
-      disabled: !link,
-    };
-  }, [sellerPhone, title, priceCents, adUrl]);
+  const defaultMsg =
+    `Olá! Tenho interesse no anúncio: ${title} - ${formatPriceBRL(priceCents)}.` +
+    ` Está disponível?\n${adUrl}`;
+
+  // Para o preview grande, a mensagem precisa conter apenas o link
+  const text = linkOnly ? adUrl : defaultMsg;
+
+  const href = phone
+    ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+    : `https://wa.me/?text=${encodeURIComponent(text)}`;
 
   return (
     <a
-      href={disabled ? undefined : href}
-      target={disabled ? undefined : "_blank"}
-      rel={disabled ? undefined : "noopener noreferrer"}
-      aria-disabled={disabled}
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
       className={
-        className ??
-        "inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold " +
-          (disabled
-            ? "cursor-not-allowed bg-gray-400/40 text-gray-500"
-            : "bg-emerald-400 text-[#0F1115] hover:bg-emerald-500")
+        "inline-flex w-full items-center justify-center rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 " +
+        className
       }
-      onClick={(e) => {
-        if (disabled) e.preventDefault();
-      }}
-      title={disabled ? "Telefone do vendedor não informado" : "Falar no WhatsApp"}
     >
       Falar no WhatsApp
     </a>
   );
 }
-
-
