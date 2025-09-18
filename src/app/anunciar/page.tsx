@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 type Preview = {
@@ -22,7 +23,6 @@ function formatCentsBRL(cents: number) {
 }
 
 function digitsToMaskedBRL(digits: string) {
-  // "1850" -> "18,50" | "5" -> "0,05"
   const clean = digits.replace(/\D/g, '');
   const s = clean.padStart(3, '0');
   const int = s.slice(0, -2).replace(/^0+(?=\d)/, '');
@@ -34,30 +34,65 @@ function maskedToDigits(masked: string) {
   return masked.replace(/\D/g, '');
 }
 
+// transforma File -> dataURL (para pré-publicação)
+async function fileToDataURL(file: File): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function AnunciarPage() {
+  const router = useRouter();
   const [data, setData] = useState<Preview>({
     title: '',
     priceDigits: '',
     description: '',
     imageFile: null,
   });
-
   const [imageError, setImageError] = useState<string | null>(null);
-  const previewUrl = useMemo(() => {
-    if (!data.imageFile) return '';
-    return URL.createObjectURL(data.imageFile);
-  }, [data.imageFile]);
-
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
 
   const cents = useMemo(
     () => parseInt(data.priceDigits || '0', 10),
     [data.priceDigits]
   );
+
+  async function handleContinue() {
+    // validações básicas
+    if (!data.title.trim()) {
+      alert('Informe um título.');
+      return;
+    }
+    if (!cents) {
+      alert('Informe um preço válido.');
+      return;
+    }
+
+    // gera dataURL da imagem (por enquanto, antes do upload real)
+    let imageDataUrl = '';
+    if (data.imageFile) {
+      try {
+        imageDataUrl = await fileToDataURL(data.imageFile);
+      } catch {
+        alert('Falha ao ler a imagem. Tente outra.');
+        return;
+      }
+    }
+
+    // salva rascunho para a página /anunciar/confirmar
+    const draft = {
+      title: data.title,
+      priceDigits: data.priceDigits,
+      description: data.description,
+      imageDataUrl,
+      createdAt: new Date().toISOString(),
+    };
+    sessionStorage.setItem('qwip_draft_ad', JSON.stringify(draft));
+
+    router.push('/anunciar/confirmar');
+  }
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -111,7 +146,7 @@ export default function AnunciarPage() {
               />
             </div>
 
-            {/* Foto (upload local com preview) */}
+            {/* Foto (upload local com preview futuro) */}
             <div>
               <label className="mb-1 block text-sm font-medium">
                 Foto do anúncio (JPEG/PNG/WEBP, máx. 4MB)
@@ -152,11 +187,7 @@ export default function AnunciarPage() {
               <button
                 className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold hover:bg-emerald-500"
                 type="button"
-                onClick={() =>
-                  alert(
-                    'Perfeito! No próximo passo vamos salvar os dados, fazer o upload para o Blob e abrir a tela de confirmação/compartilhamento.'
-                  )
-                }
+                onClick={handleContinue}
               >
                 Continuar
               </button>
@@ -170,60 +201,85 @@ export default function AnunciarPage() {
             </div>
           </div>
 
-          {/* Coluna direita — preview do anúncio */}
-          <div>
-            <div className="rounded-2xl border border-white/10 p-4">
-              <div className="overflow-hidden rounded-xl border border-white/10">
-                {previewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={previewUrl}
-                    alt={data.title || 'Prévia da imagem'}
-                    className="h-64 w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-64 w-full items-center justify-center text-sm text-muted-foreground">
-                    (Prévia da imagem)
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-4">
-                <h2 className="text-lg font-semibold">
-                  {data.title || 'Título do anúncio'}
-                </h2>
-                <div className="mt-1 text-emerald-400">
-                  {formatCentsBRL(cents)}
-                </div>
-                <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
-                  {data.description || 'Descrição breve aparecerá aqui.'}
-                </p>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <button
-                  disabled
-                  className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl bg-white/5 px-3 py-2 text-sm font-semibold text-muted-foreground"
-                  title="Habilitaremos após publicar"
-                >
-                  Falar no WhatsApp
-                </button>
-                <button
-                  disabled
-                  className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-muted-foreground"
-                  title="Habilitaremos após publicar"
-                >
-                  Compartilhar
-                </button>
-              </div>
-            </div>
-
-            <p className="mt-3 text-center text-xs text-muted-foreground">
-              Prévia visual. Na próxima etapa aparece a tela de confirmação com o cartão grande do WhatsApp.
-            </p>
-          </div>
+          {/* Coluna direita — preview simples (visual) */}
+          <RightPreview
+            title={data.title}
+            cents={cents}
+            description={data.description}
+            file={data.imageFile}
+          />
         </div>
       </div>
     </main>
+  );
+}
+
+function RightPreview({
+  title,
+  cents,
+  description,
+  file,
+}: {
+  title: string;
+  cents: number;
+  description: string;
+  file: File | null;
+}) {
+  const [url, setUrl] = useState<string>('');
+
+  useEffect(() => {
+    if (!file) {
+      setUrl('');
+      return;
+    }
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [file]);
+
+  return (
+    <div>
+      <div className="rounded-2xl border border-white/10 p-4">
+        <div className="overflow-hidden rounded-xl border border-white/10">
+          {url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={url} alt={title || 'Prévia da imagem'} className="h-64 w-full object-cover" />
+          ) : (
+            <div className="flex h-64 w-full items-center justify-center text-sm text-muted-foreground">
+              (Prévia da imagem)
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4">
+          <h2 className="text-lg font-semibold">{title || 'Título do anúncio'}</h2>
+          <div className="mt-1 text-emerald-400">{formatCentsBRL(cents)}</div>
+          <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
+            {description || 'Descrição breve aparecerá aqui.'}
+          </p>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <button
+            disabled
+            className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl bg-white/5 px-3 py-2 text-sm font-semibold text-muted-foreground"
+            title="Habilitaremos após publicar"
+          >
+            Falar no WhatsApp
+          </button>
+          <button
+            disabled
+            className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-muted-foreground"
+            title="Habilitaremos após publicar"
+          >
+            Compartilhar
+          </button>
+        </div>
+      </div>
+
+      <p className="mt-3 text-center text-xs text-muted-foreground">
+        Prévia visual. Na próxima etapa abriremos a confirmação com o cartão grande do WhatsApp.
+      </p>
+    </div>
   );
 }
