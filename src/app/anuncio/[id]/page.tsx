@@ -5,6 +5,8 @@ import AdMap from "@/components/AdMap";
 import ShareButton from "@/components/ShareButtons";
 import WhatsAppButton from "@/components/WhatsAppButton";
 
+export const dynamic = "force-dynamic";
+
 type Ad = {
   id: string;
   title: string;
@@ -61,6 +63,7 @@ export async function generateMetadata(
   const amount = ad ? (ad.priceCents / 100).toFixed(2) : undefined;
 
   return {
+    metadataBase: new URL(base),
     title,
     description,
     openGraph: {
