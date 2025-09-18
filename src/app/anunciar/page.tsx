@@ -91,7 +91,7 @@ export default function AnunciarPage() {
     };
     sessionStorage.setItem('qwip_draft_ad', JSON.stringify(draft));
 
-    router.push('/anunciar/confirmar');
+    router.push('/anunciar/configurar');
   }
 
   return (
