@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 
-// Carrega o mapa somente no cliente
+// Carrega o mapa apenas no cliente
 const MapPreview = dynamic(() => import('@/components/MapPreview'), { ssr: false });
 
 type Draft = {
@@ -12,7 +12,7 @@ type Draft = {
   priceDigits: string;          // "1850" => R$ 18,50
   description: string;
   imageDataUrl: string;         // data:image/...
-  createdAt: string;            // ISO
+  createdAt: string;
   city?: string;
   uf?: string;
   lat?: number;
@@ -20,7 +20,8 @@ type Draft = {
   radiusKm?: number;
 };
 
-// Helpers ----------------------------------------------------
+// ---- helpers ----------------------------------------------------
+
 function formatCentsBRL(cents: number) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
@@ -29,13 +30,22 @@ function formatCentsBRL(cents: number) {
   }).format((cents || 0) / 100);
 }
 
-// Página -----------------------------------------------------
+// máscara “R$ 0,00” usando somente dígitos internos
+function maskBRLFromDigits(digits: string) {
+  const clean = (digits || '').replace(/\D/g, '');
+  const withMin = clean.replace(/^0+/, '') || '0';
+  const cents = parseInt(withMin, 10);
+  return formatCentsBRL(cents);
+}
+
+// ----------------------------------------------------------------
+
 export default function CriarAnuncioPage() {
   const router = useRouter();
 
-  // formulário
+  // form
   const [title, setTitle] = useState('');
-  const [priceDigits, setPriceDigits] = useState(''); // só dígitos
+  const [priceDigits, setPriceDigits] = useState(''); // só dígitos; input exibe máscara
   const [description, setDescription] = useState('');
   const [imageDataUrl, setImageDataUrl] = useState<string>('');
 
@@ -44,9 +54,9 @@ export default function CriarAnuncioPage() {
   const [lng, setLng] = useState<number | null>(null);
   const [city, setCity] = useState<string>('');
   const [uf, setUf] = useState<string>('');
-  const [radiusKm, setRadiusKm] = useState<number>(8); // default “figma”
+  const [radiusKm, setRadiusKm] = useState<number>(8);
 
-  // rascunho (quando o usuário volta de outra tela)
+  // rascunho (quando volta da próxima tela)
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem('qwip_draft_ad');
@@ -62,14 +72,12 @@ export default function CriarAnuncioPage() {
         if (d.uf) setUf(d.uf);
         if (typeof d.radiusKm === 'number') setRadiusKm(d.radiusKm);
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, []);
 
-  // tenta geolocalização automática ao montar
+  // geolocalização automática
   useEffect(() => {
-    if (lat !== null && lng !== null) return; // já temos
+    if (lat !== null && lng !== null) return;
     if (!navigator.geolocation) return;
 
     navigator.geolocation.getCurrentPosition(
@@ -77,7 +85,6 @@ export default function CriarAnuncioPage() {
         const { latitude, longitude } = pos.coords;
         setLat(latitude);
         setLng(longitude);
-        // placeholder até termos reverse-geocode real
         if (!city) setCity('Rio Verde');
         if (!uf) setUf('GO');
       },
@@ -88,8 +95,7 @@ export default function CriarAnuncioPage() {
     );
   }, [lat, lng, city, uf]);
 
-  // preview do preço
-  const cents = useMemo(() => parseInt(priceDigits || '0', 10) || 0, [priceDigits]);
+  const cents = useMemo(() => parseInt((priceDigits || '0').replace(/\D/g, ''), 10) || 0, [priceDigits]);
 
   // upload local (apenas dataURL)
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -113,7 +119,7 @@ export default function CriarAnuncioPage() {
     reader.readAsDataURL(f);
   }
 
-  // botão “Usar minha localização” (fallback manual)
+  // usar localização manualmente
   function handleAskLocation() {
     if (!navigator.geolocation) {
       alert('Seu navegador não suporta geolocalização.');
@@ -131,7 +137,6 @@ export default function CriarAnuncioPage() {
     );
   }
 
-  // continuar para a etapa de configurar
   function handleContinue() {
     if (!title.trim() || !priceDigits) {
       alert('Preencha título e preço.');
@@ -140,7 +145,7 @@ export default function CriarAnuncioPage() {
 
     const draft: Draft = {
       title: title.trim(),
-      priceDigits,
+      priceDigits: (priceDigits || '').replace(/\D/g, ''),
       description: description.trim(),
       imageDataUrl,
       createdAt: new Date().toISOString(),
@@ -165,6 +170,20 @@ export default function CriarAnuncioPage() {
   const centerTuple: [number, number] =
     lat !== null && lng !== null ? [lat, lng] : [-17.792, -50.918]; // fallback Rio Verde
 
+  // estilos curtos para botões/chips (Tailwind util-only)
+  const btnPrimary =
+    'inline-flex items-center justify-center rounded-xl bg-[#25d366] px-4 py-2 font-semibold text-black/90 ' +
+    'shadow-sm hover:bg-[#1fd05f] transition';
+  const btnOutline =
+    'inline-flex items-center justify-center rounded-xl border border-white/15 px-4 py-2 font-semibold ' +
+    'text-foreground hover:bg-white/5 transition';
+
+  const chipYellow =
+    'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ' +
+    'bg-[#ffc857]/20 border-[#ffc857]/40 text-[#ffc857]';
+  const chipNeutral =
+    'inline-flex items-center rounded-md border border-white/15 px-2 py-0.5 text-xs text-muted-foreground';
+
   return (
     <main className="min-h-screen">
       <div className="container mx-auto max-w-6xl px-4 py-8">
@@ -176,7 +195,7 @@ export default function CriarAnuncioPage() {
 
         <div className="mt-6 grid gap-6 md:grid-cols-[1.25fr,1fr]">
           {/* COLUNA ESQUERDA — formulário */}
-          <section className="card p-4">
+          <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
             <div className="space-y-5">
               {/* Foto */}
               <div>
@@ -187,9 +206,9 @@ export default function CriarAnuncioPage() {
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   onChange={onFileChange}
-                  className="block w-full cursor-pointer rounded-xl border border-border bg-input px-3 py-2 text-sm
-                             file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-2
-                             file:text-primary-foreground file:font-semibold hover:file:opacity-95"
+                  className="block w-full cursor-pointer rounded-xl border border-white/15 bg-[#0f1115] px-3 py-2 text-sm
+                             file:mr-3 file:rounded-lg file:border-0 file:bg-[#25d366] file:px-3 file:py-2
+                             file:text-black/90 file:font-semibold hover:file:opacity-95"
                 />
               </div>
 
@@ -199,20 +218,20 @@ export default function CriarAnuncioPage() {
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value.slice(0, 80))}
-                  className="w-full rounded-xl border border-border bg-input px-3 py-2 text-sm outline-none"
+                  className="w-full rounded-xl border border-white/15 bg-[#0f1115] px-3 py-2 text-sm outline-none"
                   placeholder="Ex.: Marmita Caseira com Entrega"
                 />
                 <p className="mt-1 text-xs text-muted-foreground">{title.length}/80 caracteres</p>
               </div>
 
-              {/* Preço */}
+              {/* Preço com máscara */}
               <div>
                 <label className="mb-1 block text-sm font-medium">Preço (R$) *</label>
                 <input
                   inputMode="numeric"
-                  value={priceDigits}
+                  value={maskBRLFromDigits(priceDigits)}
                   onChange={(e) => setPriceDigits((e.target.value || '').replace(/\D/g, ''))}
-                  className="w-full rounded-xl border border-border bg-input px-3 py-2 text-sm outline-none"
+                  className="w-full rounded-xl border border-white/15 bg-[#0f1115] px-3 py-2 text-sm outline-none"
                   placeholder="Ex.: 18,50"
                 />
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -227,7 +246,7 @@ export default function CriarAnuncioPage() {
                   rows={6}
                   value={description}
                   onChange={(e) => setDescription(e.target.value.slice(0, 500))}
-                  className="w-full rounded-xl border border-border bg-input px-3 py-2 text-sm outline-none"
+                  className="w-full rounded-xl border border-white/15 bg-[#0f1115] px-3 py-2 text-sm outline-none"
                   placeholder="Conte os detalhes importantes do produto/serviço..."
                 />
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -250,14 +269,14 @@ export default function CriarAnuncioPage() {
               </div>
 
               {/* Localização */}
-              <div className="rounded-xl border border-border p-3">
+              <div className="rounded-xl border border-white/15 p-3">
                 <p className="text-sm font-medium">Localização</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Usaremos sua posição atual. Se negar, informe seu CEP.
                 </p>
 
                 <div className="mt-2 flex items-center gap-3">
-                  <button className="btn-primary" type="button" onClick={handleAskLocation}>
+                  <button className={btnPrimary} type="button" onClick={handleAskLocation}>
                     Usar minha localização
                   </button>
                   <span className="text-sm text-muted-foreground">
@@ -267,7 +286,7 @@ export default function CriarAnuncioPage() {
               </div>
 
               <div className="pt-2">
-                <button onClick={handleContinue} className="btn-primary">
+                <button onClick={handleContinue} className={btnPrimary}>
                   Continuar
                 </button>
               </div>
@@ -275,8 +294,8 @@ export default function CriarAnuncioPage() {
           </section>
 
           {/* COLUNA DIREITA — prévia */}
-          <aside className="card p-4">
-            <div className="mb-3 h-56 overflow-hidden rounded-xl border border-border">
+          <aside className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            <div className="mb-3 h-56 overflow-hidden rounded-xl border border-white/10">
               {imageDataUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -291,10 +310,10 @@ export default function CriarAnuncioPage() {
               )}
             </div>
 
-            {/* Chips */}
+            {/* Chips visíveis no dark */}
             <div className="mb-2 flex flex-wrap gap-2">
-              <span className="badge badge-accent">Expira em 24h</span>
-              <span className="badge badge-neutral">alcança {radiusKm} km</span>
+              <span className={chipYellow}>Expira em 24h</span>
+              <span className={chipNeutral}>alcança {radiusKm} km</span>
             </div>
 
             <h3 className="text-lg font-semibold">{title || 'Título do anúncio'}</h3>
@@ -310,8 +329,8 @@ export default function CriarAnuncioPage() {
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <button className="btn-primary" type="button">WhatsApp</button>
-              <button className="btn-outline" type="button">Compartilhar</button>
+              <button className={btnPrimary} type="button">WhatsApp</button>
+              <button className={btnOutline} type="button">Compartilhar</button>
             </div>
 
             <p className="mt-3 text-xs text-muted-foreground">
@@ -321,13 +340,13 @@ export default function CriarAnuncioPage() {
         </div>
 
         {/* Mapa grande com o raio */}
-        <section className="card mt-6 p-4">
+        <section className="rounded-2xl border border-white/10 bg-black/20 p-4 mt-6">
           <div className="text-sm font-medium">Área no mapa</div>
           <div className="mt-3">
             <MapPreview center={centerTuple} radiusKm={radiusKm} />
           </div>
           <div className="mt-2 text-right">
-            <span className="badge badge-neutral">Raio atual: {radiusKm} km</span>
+            <span className={chipNeutral}>Raio atual: {radiusKm} km</span>
           </div>
         </section>
       </div>
