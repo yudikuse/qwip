@@ -12,13 +12,14 @@ type Draft = {
 };
 
 function formatCentsBRL(cents: number) {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
     minimumFractionDigits: 2,
-    currencyDisplay: 'symbol',
+    currencyDisplay: "symbol",
   }).format(cents / 100);
 }
+
 
 export default function ConfirmarPage() {
   const [draft, setDraft] = useState<Draft | null>(null);
