@@ -236,3 +236,13 @@ select:focus-visible {
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
+/* ===== Tailwind v4 CSS-var utility shims ===== */
+.bg-background { background-color: var(--background) !important; }
+.bg-card { background-color: var(--card) !important; }
+.bg-popover { background-color: var(--popover) !important; }
+
+.text-foreground { color: var(--foreground) !important; }
+.text-muted-foreground { color: var(--muted-foreground) !important; }
+
+.border-border { border-color: var(--border) !important; }
+.border-input { border-color: var(--input) !important; }
