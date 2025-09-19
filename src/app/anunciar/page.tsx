@@ -3,6 +3,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
+import 'leaflet/dist/leaflet.css';
 
 // ===== Tipos =====
 type Draft = {
@@ -32,7 +34,6 @@ function formatCentsBRL(cents: number) {
   }).format(cents / 100);
 }
 
-// UF por nome de estado (para reverse geocode)
 const STATE_TO_UF: Record<string, string> = {
   Acre: 'AC', Alagoas: 'AL', Amapá: 'AP', Amazonas: 'AM',
   Bahia: 'BA', Ceará: 'CE', 'Distrito Federal': 'DF', 'Espírito Santo': 'ES',
@@ -42,6 +43,55 @@ const STATE_TO_UF: Record<string, string> = {
   'Rio Grande do Sul': 'RS', Rondônia: 'RO', Roraima: 'RR', 'Santa Catarina': 'SC',
   'São Paulo': 'SP', Sergipe: 'SE', Tocantins: 'TO',
 };
+
+// ===== Mapa (Leaflet) – carregado só no client =====
+const MapPreview = dynamic(async () => {
+  const RL = await import('react-leaflet');
+  const { MapContainer, TileLayer, Circle } = RL;
+
+  // componente real do mapa
+  const Comp = ({
+    center,
+    radiusKm,
+  }: {
+    center: [number, number];
+    radiusKm: number;
+  }) => {
+    return (
+      <div className="relative">
+        <MapContainer
+          center={center}
+          zoom={13}
+          scrollWheelZoom={false}
+          style={{ height: 320, width: '100%', borderRadius: 12, overflow: 'hidden' }}
+        >
+          <TileLayer
+            attribution="&copy; OpenStreetMap"
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          {/* pontinho do centro */}
+          <Circle
+            center={center}
+            radius={60}
+            pathOptions={{ color: '#1d4ed8', fillColor: '#1d4ed8', fillOpacity: 0.95 }}
+          />
+          {/* raio principal */}
+          <Circle
+            center={center}
+            radius={Math.max(200, radiusKm * 1000)}
+            pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.12 }}
+          />
+        </MapContainer>
+
+        <div className="pointer-events-none absolute right-3 top-3 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-white">
+          Raio atual: {radiusKm} km
+        </div>
+      </div>
+    );
+  };
+
+  return Comp as any;
+}, { ssr: false });
 
 // ===== Página =====
 export default function CriarAnuncioPage() {
@@ -77,6 +127,9 @@ export default function CriarAnuncioPage() {
       if (rawCfg) {
         const c = JSON.parse(rawCfg) as Partial<Config>;
         if (typeof c.radiusKm === 'number') setRadiusKm(c.radiusKm);
+        if (c.city) setCity(c.city);
+        if (c.uf) setUF(c.uf);
+        if (c.lat && c.lng) setCoords({ lat: c.lat, lng: c.lng });
       }
     } catch {}
   }, []);
@@ -98,7 +151,7 @@ export default function CriarAnuncioPage() {
     );
   }, []);
 
-  // Botão “Usar minha localização” (re-tentar)
+  // Botão “Usar minha localização”
   function askGeolocationAgain() {
     if (!('geolocation' in navigator)) return;
     setTriedGeo(true);
@@ -115,7 +168,7 @@ export default function CriarAnuncioPage() {
     );
   }
 
-  // Descobre Cidade/UF a partir do GPS (reverse geocode — Nominatim)
+  // Descobre Cidade/UF a partir do GPS
   useEffect(() => {
     let cancel = false;
     (async () => {
@@ -147,7 +200,7 @@ export default function CriarAnuncioPage() {
         setCity(nomeCidade);
         setUF(ufGuess || undefined);
       } catch {
-        // silencia — não bloqueia fluxo
+        /* silencioso */
       }
     })();
     return () => {
@@ -155,7 +208,7 @@ export default function CriarAnuncioPage() {
     };
   }, [coords]);
 
-  // CEP → coordenadas (3 tentativas como no antigo)
+  // CEP → coordenadas (3 tentativas)
   async function locateByCEP() {
     const digits = (cep || '').replace(/\D/g, '');
     if (digits.length !== 8) {
@@ -163,7 +216,7 @@ export default function CriarAnuncioPage() {
       return;
     }
 
-    // 1) BrasilAPI (tem coordenadas)
+    // 1) BrasilAPI
     try {
       const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${digits}`, { cache: 'no-store' });
       if (r.ok) {
@@ -180,7 +233,7 @@ export default function CriarAnuncioPage() {
       }
     } catch {}
 
-    // 2) ViaCEP + Nominatim (monta consulta por rua/bairro + cidade + UF)
+    // 2) ViaCEP + Nominatim
     try {
       const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`, { cache: 'no-store' });
       if (r.ok) {
@@ -232,6 +285,7 @@ export default function CriarAnuncioPage() {
           const lng = parseFloat(arr[0].lon);
           if (Number.isFinite(lat) && Number.isFinite(lng)) {
             setCoords({ lat, lng });
+            // melhor esforço pra cidade/UF
             const display = String(arr[0].display_name || '');
             const parts = display.split(',').map((s) => s.trim());
             let cidadeGuess: string | undefined;
@@ -307,6 +361,9 @@ export default function CriarAnuncioPage() {
 
     router.push('/anunciar/configurar');
   }
+
+  const centerTuple: [number, number] | null =
+    coords ? [coords.lat, coords.lng] : null;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -387,7 +444,7 @@ export default function CriarAnuncioPage() {
                 />
               </div>
 
-              {/* Localização */}
+              {/* Localização + CEP fallback */}
               <div className="rounded-xl border border-white/10 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
@@ -411,7 +468,6 @@ export default function CriarAnuncioPage() {
                   </button>
                 </div>
 
-                {/* CEP só aparece se negou/errou o GPS */}
                 {showCEP ? (
                   <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
                     <input
@@ -430,6 +486,14 @@ export default function CriarAnuncioPage() {
                   </div>
                 ) : null}
               </div>
+
+              {/* Área no mapa (quando tiver coords) */}
+              {centerTuple ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Área no mapa</div>
+                  <MapPreview center={centerTuple} radiusKm={radiusKm} />
+                </div>
+              ) : null}
 
               <div className="pt-2">
                 <button
