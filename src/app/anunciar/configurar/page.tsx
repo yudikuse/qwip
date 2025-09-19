@@ -22,14 +22,14 @@ type Config = {
 };
 
 function formatCentsBRL(cents: number) {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
     minimumFractionDigits: 2,
-    currencyDisplay: 'symbol',
-    currency: 'BRL',
+    currencyDisplay: "symbol",
   }).format(cents / 100);
 }
+
 
 function classNames(...xs: Array<string | false | undefined>) {
   return xs.filter(Boolean).join(' ');
