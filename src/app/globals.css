@@ -1,7 +1,5 @@
 /* src/app/globals.css */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 /* =========
    Design tokens (CSS Variables)
@@ -56,7 +54,58 @@
   --radius: 14px; /* controla os rounded-xl em tailwind.config */
 }
 
-/* Modo dark via classe (mantém os mesmos valores, mas deixei separado para fácil override futuramente) */
+/* =========
+   Tailwind v4 tokens -> utilitários
+   =========
+   Mapeia variáveis CSS para tokens do Tailwind.
+   A partir daqui, você pode usar:
+   bg-background, text-foreground, border-border, bg-card, etc.
+*/
+@theme {
+  /* Cores principais */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Também expõe os da sidebar se quiser usar como utilitários */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Radius como token */
+  --radius: 14px;
+}
+
+/* Modo dark via classe (mantém os mesmos valores, mas separado para override futuro) */
 .dark {
   --background: #0b0f14;
   --foreground: #e6e6e6;
@@ -103,11 +152,8 @@
 /* =========
    Base resets
    ========= */
-
-/* ❗️Alteração pra evitar o erro do Tailwind:
-   antes: * { @apply border-border; }  */
 * {
-  border-color: var(--border);
+  @apply border-border;
 }
 
 html {
@@ -236,13 +282,3 @@ select:focus-visible {
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
-/* ===== Tailwind v4 CSS-var utility shims ===== */
-.bg-background { background-color: var(--background) !important; }
-.bg-card { background-color: var(--card) !important; }
-.bg-popover { background-color: var(--popover) !important; }
-
-.text-foreground { color: var(--foreground) !important; }
-.text-muted-foreground { color: var(--muted-foreground) !important; }
-
-.border-border { border-color: var(--border) !important; }
-.border-input { border-color: var(--input) !important; }
