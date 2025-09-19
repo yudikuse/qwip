@@ -1,3 +1,4 @@
+// app/anunciar/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -6,6 +7,9 @@ import dynamic from 'next/dynamic';
 
 // Carrega o mapa apenas no cliente
 const MapPreview = dynamic(() => import('@/components/MapPreview'), { ssr: false });
+
+// ⬇️ NOVO: carrega o editor de foto só no cliente
+const PhotoEditor = dynamic(() => import('@/components/PhotoEditor'), { ssr: false });
 
 type Draft = {
   title: string;
@@ -48,6 +52,9 @@ export default function CriarAnuncioPage() {
   const [priceDigits, setPriceDigits] = useState(''); // só dígitos; input exibe máscara
   const [description, setDescription] = useState('');
   const [imageDataUrl, setImageDataUrl] = useState<string>('');
+
+  // ⬇️ NOVO: controla o modal do editor
+  const [showEditor, setShowEditor] = useState(false);
 
   // localização
   const [lat, setLat] = useState<number | null>(null);
@@ -210,6 +217,19 @@ export default function CriarAnuncioPage() {
                              file:mr-3 file:rounded-lg file:border-0 file:bg-[#25d366] file:px-3 file:py-2
                              file:text-black/90 file:font-semibold hover:file:opacity-95"
                 />
+
+                {/* ⬇️ NOVO: botão para abrir o editor, só aparece se já há imagem */}
+                {imageDataUrl && (
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowEditor(true)}
+                      className="rounded-xl border border-white/15 px-3 py-2 text-sm hover:bg-white/5"
+                    >
+                      Editar foto (Beta)
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Título */}
@@ -349,6 +369,18 @@ export default function CriarAnuncioPage() {
             <span className={chipNeutral}>Raio atual: {radiusKm} km</span>
           </div>
         </section>
+
+        {/* ⬇️ NOVO: modal do editor (fora do grid, mas dentro do <main>) */}
+        {showEditor && imageDataUrl && (
+          <PhotoEditor
+            srcDataUrl={imageDataUrl}
+            onCancel={() => setShowEditor(false)}
+            onApply={(edited) => {
+              setImageDataUrl(edited);
+              setShowEditor(false);
+            }}
+          />
+        )}
       </div>
     </main>
   );
