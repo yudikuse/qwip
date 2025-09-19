@@ -6,7 +6,7 @@ import * as ort from 'onnxruntime-web';
 type PhotoEditorProps = {
   /** dataURL da imagem vinda do input de arquivo */
   srcDataUrl: string;
-  /** callback com o resultado final como dataURL */
+  /** callback com o resultado final como dataURL (PNG) */
   onApply?: (dataUrl: string) => void;
   /** fecha modal/painel, se a tela pai quiser */
   onCancel?: () => void;
@@ -24,30 +24,36 @@ export default function PhotoEditor({
 }: PhotoEditorProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const ctxRef = React.useRef<CanvasRenderingContext2D | null>(null);
+  const imgRef = React.useRef<HTMLImageElement | null>(null);
 
+  // filtros
   const [brightness, setBrightness] = React.useState(100);
   const [contrast, setContrast] = React.useState(100);
   const [saturation, setSaturation] = React.useState(100);
 
+  // onnx
   const sessionRef = React.useRef<ort.InferenceSession | null>(null);
   const [loadingBg, setLoadingBg] = React.useState(false);
   const [modelReady, setModelReady] = React.useState(false);
 
-  const drawWithFilters = React.useCallback((img: HTMLImageElement) => {
+  // desenha imagem com filtros
+  const drawWithFilters = React.useCallback(() => {
+    const img = imgRef.current;
     const ctx = ctxRef.current;
     const canvas = canvasRef.current;
-    if (!ctx || !canvas) return;
+    if (!img || !ctx || !canvas) return;
 
     const cssFilter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
-    // usa filter com cast para evitar erro de TS
-    (ctx as any).filter = cssFilter || 'none';
+    (ctx as any).filter = cssFilter;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     (ctx as any).filter = 'none';
   }, [brightness, contrast, saturation]);
 
+  // carrega a imagem
   React.useEffect(() => {
     if (!srcDataUrl) return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -58,12 +64,25 @@ export default function PhotoEditor({
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      canvas.width = img.width;
-      canvas.height = img.height;
-      drawWithFilters(img);
+      imgRef.current = img;
+      // tamanho do preview: limita pra não explodir layout,
+      // mas mantém proporção (máx 900px de largura)
+      const maxW = 900;
+      const scale = img.width > maxW ? maxW / img.width : 1;
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      drawWithFilters();
+    };
+    img.onerror = () => {
+      alert('Falha ao carregar a imagem.');
     };
     img.src = srcDataUrl;
   }, [srcDataUrl, drawWithFilters]);
+
+  // redesenha quando mexe no filtro
+  React.useEffect(() => {
+    drawWithFilters();
+  }, [drawWithFilters]);
 
   async function ensureModel() {
     if (sessionRef.current) return sessionRef.current;
@@ -76,26 +95,38 @@ export default function PhotoEditor({
   }
 
   async function handleRemoveBackground() {
-    if (!srcDataUrl) return;
     const canvas = canvasRef.current;
-    const ctx = ctxRef.current;
-    if (!canvas || !ctx) return;
+    const img = imgRef.current;
+    if (!canvas || !img) return;
 
     setLoadingBg(true);
     try {
       const session = await ensureModel();
 
-      const img = await loadImage(srcDataUrl);
-      const { inputTensor, resizedW, resizedH } = imageToTensor(img, 320, 320);
+      // 1) Pré-processa (320x320 NCHW [0..1])
+      const { inputTensor, W, H } = imageToTensor(img, 320, 320);
 
-      const outputs = await session.run({ input: inputTensor });
-      const first = outputs[Object.keys(outputs)[0]];
-      const mask = tensorToMask(first, resizedW, resizedH);
+      // 2) Descobre nome da entrada/saída do modelo
+      const inputName = Object.keys(session.inputMetadata)[0];
+      const outputName = Object.keys(session.outputMetadata)[0];
 
-      applyMaskToCanvas(img, mask, canvas);
-    } catch (e) {
+      // 3) Inference
+      const outputs = await session.run({ [inputName]: inputTensor });
+      const out = outputs[outputName];
+
+      // 4) Pós-processa -> máscara 0..255 e escala para o tamanho do canvas atual
+      const smallMask = tensorToMask(out as ort.Tensor, W, H);
+      const maskForCanvas = scaleMaskNearest(smallMask, W, H, canvas.width, canvas.height);
+
+      // 5) Aplica no preview
+      applyAlphaMaskOnCanvas(canvas, maskForCanvas);
+    } catch (e: any) {
       console.error('remove-bg error:', e);
-      alert('Não foi possível remover o fundo agora. Tente novamente em instantes.');
+      const msg =
+        typeof e?.message === 'string'
+          ? e.message
+          : 'Não foi possível remover o fundo agora. Tente novamente em instantes.';
+      alert(msg);
     } finally {
       setLoadingBg(false);
     }
@@ -110,97 +141,101 @@ export default function PhotoEditor({
 
   return (
     <div className={className}>
-      <div className="mb-3 flex items-center gap-3 text-sm">
-        <label className="w-40">Brilho: {brightness}%</label>
-        <input
-          type="range"
-          min={50}
-          max={150}
-          value={brightness}
-          onChange={(e) => setBrightness(Number(e.target.value))}
-          className="w-full"
-        />
-      </div>
+      {/* GRID: controles à esquerda, preview à direita (no desktop) */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[360px_1fr]">
+        {/* Painel de controles */}
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div className="mb-4">
+            <label className="mb-1 block text-sm font-medium">
+              Brilho: {brightness}%
+            </label>
+            <input
+              type="range"
+              min={50}
+              max={150}
+              value={brightness}
+              onChange={(e) => setBrightness(Number(e.target.value))}
+              className="w-full"
+            />
+          </div>
 
-      <div className="mb-3 flex items-center gap-3 text-sm">
-        <label className="w-40">Contraste: {contrast}%</label>
-        <input
-          type="range"
-          min={50}
-          max={150}
-          value={contrast}
-          onChange={(e) => setContrast(Number(e.target.value))}
-          className="w-full"
-        />
-      </div>
+          <div className="mb-4">
+            <label className="mb-1 block text-sm font-medium">
+              Contraste: {contrast}%
+            </label>
+            <input
+              type="range"
+              min={50}
+              max={150}
+              value={contrast}
+              onChange={(e) => setContrast(Number(e.target.value))}
+              className="w-full"
+            />
+          </div>
 
-      <div className="mb-4 flex items-center gap-3 text-sm">
-        <label className="w-40">Saturação: {saturation}%</label>
-        <input
-          type="range"
-          min={0}
-          max={200}
-          value={saturation}
-          onChange={(e) => setSaturation(Number(e.target.value))}
-          className="w-full"
-        />
-      </div>
+          <div className="mb-6">
+            <label className="mb-1 block text-sm font-medium">
+              Saturação: {saturation}%
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={200}
+              value={saturation}
+              onChange={(e) => setSaturation(Number(e.target.value))}
+              className="w-full"
+            />
+          </div>
 
-      <div className="mb-3 overflow-hidden rounded-xl border border-white/10 bg-black/10">
-        <canvas ref={canvasRef} className="block w-full" />
-      </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={handleRemoveBackground}
+              className="inline-flex items-center rounded-xl bg-[#25d366] px-4 py-2 font-semibold text-black/90 shadow-sm transition hover:bg-[#1fd05f] disabled:opacity-60"
+              disabled={loadingBg}
+            >
+              {loadingBg ? 'Removendo fundo…' : 'Remover fundo (beta)'}
+            </button>
 
-      <div className="flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={handleRemoveBackground}
-          className="inline-flex items-center rounded-xl bg-[#25d366] px-4 py-2 font-semibold text-black/90 shadow-sm hover:bg-[#1fd05f] transition disabled:opacity-60"
-          disabled={loadingBg}
-        >
-          {loadingBg ? 'Removendo fundo…' : 'Remover fundo (beta)'}
-        </button>
+            <button
+              type="button"
+              onClick={exportPng}
+              className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground transition hover:bg-white/5"
+            >
+              Exportar PNG
+            </button>
 
-        <button
-          type="button"
-          onClick={exportPng}
-          className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground hover:bg-white/5 transition"
-        >
-          Exportar PNG
-        </button>
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground transition hover:bg-white/5"
+              >
+                Cancelar
+              </button>
+            )}
+          </div>
 
-        {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground hover:bg-white/5 transition"
-          >
-            Cancelar
-          </button>
-        )}
+          {!modelReady && (
+            <p className="mt-3 text-xs text-[var(--muted-foreground)]">
+              O modelo carrega na 1ª vez que você clica em “Remover fundo”.
+            </p>
+          )}
+        </div>
 
-        {!modelReady && (
-          <span className="text-xs text-[var(--muted-foreground)]">
-            O modelo carrega na 1ª vez que você clica em “Remover fundo”.
-          </span>
-        )}
+        {/* Preview */}
+        <div className="rounded-2xl border border-white/10 bg-black/10 p-3">
+          <div className="overflow-auto">
+            <canvas ref={canvasRef} className="block max-w-full" />
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ---------------- helpers de imagem/onnx ---------------- */
+/* ---------------- helpers ---------------- */
 
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
-  });
-}
-
-// Converte imagem para tensor NCHW normalizado em 0..1, redimensionando para WxH
 function imageToTensor(img: HTMLImageElement, W: number, H: number) {
   const off = document.createElement('canvas');
   off.width = W;
@@ -216,7 +251,6 @@ function imageToTensor(img: HTMLImageElement, W: number, H: number) {
       const r = data[i] / 255;
       const g = data[i + 1] / 255;
       const b = data[i + 2] / 255;
-      // NCHW
       floatData[0 * W * H + y * W + x] = r;
       floatData[1 * W * H + y * W + x] = g;
       floatData[2 * W * H + y * W + x] = b;
@@ -224,74 +258,69 @@ function imageToTensor(img: HTMLImageElement, W: number, H: number) {
   }
 
   const inputTensor = new ort.Tensor('float32', floatData, [1, 3, H, W]);
-  return { inputTensor, resizedW: W, resizedH: H };
+  return { inputTensor, W, H };
 }
 
-// Converte a saída do modelo (1x1xHxW ou 1xHxW) em máscara 0..255 (Uint8ClampedArray)
 function tensorToMask(output: ort.Tensor, W: number, H: number) {
+  // U2Net costuma devolver 1x1xHxW ou 1xHxW
   const data = output.data as Float32Array | number[];
-  const out = new Uint8ClampedArray(W * H);
-  let min = Infinity;
-  let max = -Infinity;
-  for (let i = 0; i < data.length; i++) {
-    const v = Number(data[i]);
+  const flat = new Float32Array(W * H);
+
+  if (data.length === W * H) {
+    for (let i = 0; i < W * H; i++) flat[i] = Number(data[i]);
+  } else {
+    // assume 1x1xHxW
+    for (let i = 0; i < W * H; i++) flat[i] = Number(data[i]);
+  }
+
+  // normaliza 0..1 e converte para 0..255
+  let min = Infinity,
+    max = -Infinity;
+  for (let i = 0; i < flat.length; i++) {
+    const v = flat[i];
     if (v < min) min = v;
     if (v > max) max = v;
   }
   const rng = max - min || 1;
-  for (let i = 0; i < W * H; i++) {
-    const v = Number(data[i]);
-    const norm = (v - min) / rng;
-    out[i] = Math.round(norm * 255);
+
+  const out = new Uint8ClampedArray(W * H);
+  for (let i = 0; i < flat.length; i++) {
+    const norm = (flat[i] - min) / rng;
+    // leve suavização para matte
+    const v = Math.max(0, Math.min(1, norm));
+    out[i] = Math.round(v * 255);
   }
   return out;
 }
 
-function applyMaskToCanvas(img: HTMLImageElement, mask: Uint8ClampedArray, mainCanvas: HTMLCanvasElement) {
-  const W = img.width;
-  const H = img.height;
-
-  // 1) cria máscara 320x320 RGBA
-  const maskCanvas = document.createElement('canvas');
-  maskCanvas.width = 320;
-  maskCanvas.height = 320;
-  const mctx = maskCanvas.getContext('2d')!;
-  const tmp = mctx.createImageData(320, 320);
-  for (let i = 0; i < 320 * 320; i++) {
-    tmp.data[i * 4 + 0] = mask[i];
-    tmp.data[i * 4 + 1] = mask[i];
-    tmp.data[i * 4 + 2] = mask[i];
-    tmp.data[i * 4 + 3] = 255;
+function scaleMaskNearest(
+  src: Uint8ClampedArray,
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number
+) {
+  const dst = new Uint8ClampedArray(dstW * dstH);
+  for (let y = 0; y < dstH; y++) {
+    const sy = Math.floor((y / dstH) * srcH);
+    for (let x = 0; x < dstW; x++) {
+      const sx = Math.floor((x / dstW) * srcW);
+      dst[y * dstW + x] = src[sy * srcW + sx];
+    }
   }
-  mctx.putImageData(tmp, 0, 0);
-
-  // 2) escala a máscara para WxH
-  const maskBig = document.createElement('canvas');
-  maskBig.width = W;
-  maskBig.height = H;
-  const mbctx = maskBig.getContext('2d')!;
-  mbctx.drawImage(maskCanvas, 0, 0, 320, 320, 0, 0, W, H);
-  const maskImgData = mbctx.getImageData(0, 0, W, H).data;
-
-  // 3) aplica alpha sobre a imagem
-  const work = document.createElement('canvas');
-  work.width = W;
-  work.height = H;
-  const wctx = work.getContext('2d')!;
-  wctx.drawImage(img, 0, 0, W, H);
-  const imgData = wctx.getImageData(0, 0, W, H);
-  const src = imgData.data;
-
-  for (let i = 0; i < W * H; i++) {
-    src[i * 4 + 3] = maskImgData[i * 4]; // usa canal R como alpha
-  }
-  wctx.putImageData(imgData, 0, 0);
-
-  // 4) desenha no canvas principal
-  const mainCtx = mainCanvas.getContext('2d')!;
-  mainCanvas.width = W;
-  mainCanvas.height = H;
-  mainCtx.clearRect(0, 0, W, H);
-  mainCtx.drawImage(work, 0, 0);
+  return dst;
 }
 
+function applyAlphaMaskOnCanvas(canvas: HTMLCanvasElement, mask: Uint8ClampedArray) {
+  const ctx = canvas.getContext('2d')!;
+  const { width: W, height: H } = canvas;
+  const imgData = ctx.getImageData(0, 0, W, H);
+  const data = imgData.data;
+
+  for (let i = 0; i < W * H; i++) {
+    // usa máscara como alpha
+    data[i * 4 + 3] = mask[i];
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+}
