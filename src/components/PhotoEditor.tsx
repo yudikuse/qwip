@@ -8,9 +8,8 @@ type PhotoEditorProps = {
   srcDataUrl: string;
   /** callback com o resultado final como dataURL (compat) */
   onExport?: (dataUrl: string) => void;
-  /** callback usado pela tela que chama o editor (igual ao onExport) */
+  /** compat com página que usa onApply/onCancel */
   onApply?: (dataUrl: string) => void;
-  /** fecha/cancela o editor */
   onCancel?: () => void;
   className?: string;
 };
@@ -25,17 +24,13 @@ export default function PhotoEditor({
   onCancel,
   className,
 }: PhotoEditorProps) {
-  // refs mutáveis
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const ctxRef = React.useRef<CanvasRenderingContext2D | null>(null);
-  const imgRef = React.useRef<HTMLImageElement | null>(null);
 
-  // filtros
   const [brightness, setBrightness] = React.useState(100);
   const [contrast, setContrast] = React.useState(100);
   const [saturation, setSaturation] = React.useState(100);
 
-  // ONNX
   const sessionRef = React.useRef<ort.InferenceSession | null>(null);
   const [loadingBg, setLoadingBg] = React.useState(false);
   const [modelReady, setModelReady] = React.useState(false);
@@ -46,18 +41,16 @@ export default function PhotoEditor({
     if (!ctx || !canvas) return;
 
     const cssFilter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
-    // @ts-expect-error: ctx.filter é suportado nos browsers modernos
-    ctx.filter = cssFilter || 'none';
+
+    // Canvas 2D moderno tem ctx.filter — cast simples pra evitar erro de tipo
+    (ctx as CanvasRenderingContext2D & { filter?: string }).filter = cssFilter || 'none';
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    // @ts-expect-error
-    ctx.filter = 'none';
+    (ctx as CanvasRenderingContext2D & { filter?: string }).filter = 'none';
   }, [brightness, contrast, saturation]);
 
-  // carrega a imagem no canvas quando src ou filtros mudam
   React.useEffect(() => {
     if (!srcDataUrl) return;
-
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -68,7 +61,6 @@ export default function PhotoEditor({
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      imgRef.current = img;
       canvas.width = img.width;
       canvas.height = img.height;
       drawWithFilters(img);
@@ -86,27 +78,23 @@ export default function PhotoEditor({
     return session;
   }
 
-  // Remoção de fundo (beta)
   async function handleRemoveBackground() {
-    const baseImg = imgRef.current;
-    const mainCanvas = canvasRef.current;
-    if (!baseImg || !mainCanvas) return;
+    if (!srcDataUrl) return;
+    const canvas = canvasRef.current;
+    const ctx = ctxRef.current;
+    if (!canvas || !ctx) return;
 
     setLoadingBg(true);
     try {
       const session = await ensureModel();
+      const img = await loadImage(srcDataUrl);
+      const { inputTensor, resizedW, resizedH } = imageToTensor(img, 320, 320);
 
-      // tensor 320x320 NCHW 0..1
-      const { inputTensor, resizedW, resizedH } = imageToTensor(baseImg, 320, 320);
+      const outputs = await session.run({ input: inputTensor });
+      const first = outputs[Object.keys(outputs)[0]];
+      const mask = tensorToMask(first, resizedW, resizedH);
 
-      // nome dinâmico do input
-      const inputName = (session.inputNames && session.inputNames[0]) || 'input';
-      const outputs = await session.run({ [inputName]: inputTensor });
-      const firstOutput = outputs[Object.keys(outputs)[0]];
-      const mask = tensorToMask(firstOutput, resizedW, resizedH);
-
-      // aplica máscara no canvas principal (tamanho original)
-      applyMaskToCanvas(baseImg, mask, mainCanvas);
+      applyMaskToCanvas(img, mask);
     } catch (e) {
       console.error('remove-bg error:', e);
       alert('Não foi possível remover o fundo agora. Tente novamente em instantes.');
@@ -115,13 +103,12 @@ export default function PhotoEditor({
     }
   }
 
-  function doExport() {
+  function exportPng() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const data = canvas.toDataURL('image/png');
-    // prioriza onApply (usado na sua page)
-    if (onApply) onApply(data);
-    if (onExport) onExport(data);
+    onExport?.(data);
+    onApply?.(data); // compat com a página que espera onApply
   }
 
   return (
@@ -166,7 +153,7 @@ export default function PhotoEditor({
         <canvas ref={canvasRef} className="block w-full" />
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap gap-3">
         <button
           type="button"
           onClick={handleRemoveBackground}
@@ -178,7 +165,7 @@ export default function PhotoEditor({
 
         <button
           type="button"
-          onClick={doExport}
+          onClick={exportPng}
           className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground hover:bg-white/5 transition"
         >
           Aplicar / Exportar PNG
@@ -188,7 +175,7 @@ export default function PhotoEditor({
           <button
             type="button"
             onClick={onCancel}
-            className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground hover:bg-white/5 transition"
+            className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground/80 hover:bg-white/5 transition"
           >
             Cancelar
           </button>
@@ -204,7 +191,17 @@ export default function PhotoEditor({
   );
 }
 
-/* ---------------- helpers ---------------- */
+/* ---------------- helpers de imagem/onnx ---------------- */
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
 
 function imageToTensor(img: HTMLImageElement, W: number, H: number) {
   const off = document.createElement('canvas');
@@ -218,90 +215,80 @@ function imageToTensor(img: HTMLImageElement, W: number, H: number) {
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4;
-      floatData[0 * W * H + y * W + x] = data[i] / 255;     // R
-      floatData[1 * W * H + y * W + x] = data[i + 1] / 255; // G
-      floatData[2 * W * H + y * W + x] = data[i + 2] / 255; // B
+      const r = data[i] / 255;
+      const g = data[i + 1] / 255;
+      const b = data[i + 2] / 255;
+      floatData[0 * W * H + y * W + x] = r;
+      floatData[1 * W * H + y * W + x] = g;
+      floatData[2 * W * H + y * W + x] = b;
     }
   }
+
   const inputTensor = new ort.Tensor('float32', floatData, [1, 3, H, W]);
   return { inputTensor, resizedW: W, resizedH: H };
 }
 
 function tensorToMask(output: ort.Tensor, W: number, H: number) {
-  const raw = output.data as unknown as ArrayLike<number>;
-
-  const flat = new Float32Array(W * H);
-  for (let i = 0; i < W * H; i++) {
-    flat[i] = Number(raw[i]);
-  }
-
+  const data = output.data as Float32Array | number[];
+  const out = new Uint8ClampedArray(W * H);
   let min = Infinity;
   let max = -Infinity;
-  for (let i = 0; i < flat.length; i++) {
-    const v = flat[i];
+  for (let i = 0; i < data.length; i++) {
+    const v = Number(data[i]);
     if (v < min) min = v;
     if (v > max) max = v;
   }
   const rng = max - min || 1;
-
-  const out = new Uint8ClampedArray(W * H);
   for (let i = 0; i < W * H; i++) {
-    const norm = (flat[i] - min) / rng;
+    const v = Number(data[i]);
+    const norm = (v - min) / rng;
     out[i] = Math.round(norm * 255);
   }
-  return out; // 320x320 originalmente
+  return out;
 }
 
-function applyMaskToCanvas(
-  img: HTMLImageElement,
-  mask320: Uint8ClampedArray,
-  mainCanvas: HTMLCanvasElement
-) {
+function applyMaskToCanvas(img: HTMLImageElement, mask: Uint8ClampedArray) {
   const W = img.width;
   const H = img.height;
 
-  // imagem original
-  const srcCanvas = document.createElement('canvas');
-  srcCanvas.width = W;
-  srcCanvas.height = H;
-  const srcCtx = srcCanvas.getContext('2d')!;
-  srcCtx.drawImage(img, 0, 0, W, H);
-  const imgData = srcCtx.getImageData(0, 0, W, H);
+  const tmpCanvas = document.createElement('canvas');
+  tmpCanvas.width = 320;
+  tmpCanvas.height = 320;
+  const tctx = tmpCanvas.getContext('2d')!;
+  const tmpImg = tctx.createImageData(320, 320);
+  for (let i = 0; i < 320 * 320; i++) {
+    tmpImg.data[i * 4 + 0] = mask[i];
+    tmpImg.data[i * 4 + 1] = mask[i];
+    tmpImg.data[i * 4 + 2] = mask[i];
+    tmpImg.data[i * 4 + 3] = 255;
+  }
+  tctx.putImageData(tmpImg, 0, 0);
+
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = W;
+  maskCanvas.height = H;
+  maskCanvas.getContext('2d')!.drawImage(tmpCanvas, 0, 0, 320, 320, 0, 0, W, H);
+  const maskData = maskCanvas.getContext('2d')!.getImageData(0, 0, W, H).data;
+
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = W;
+  outCanvas.height = H;
+  const octx = outCanvas.getContext('2d')!;
+  octx.drawImage(img, 0, 0, W, H);
+  const imgData = octx.getImageData(0, 0, W, H);
   const src = imgData.data;
 
-  // máscara 320x320
-  const maskCanvas = document.createElement('canvas');
-  maskCanvas.width = 320;
-  maskCanvas.height = 320;
-  const mctx = maskCanvas.getContext('2d')!;
-  const tmp = mctx.createImageData(320, 320);
-  for (let i = 0; i < 320 * 320; i++) {
-    const v = mask320[i];
-    tmp.data[i * 4 + 0] = v;
-    tmp.data[i * 4 + 1] = v;
-    tmp.data[i * 4 + 2] = v;
-    tmp.data[i * 4 + 3] = 255;
-  }
-  mctx.putImageData(tmp, 0, 0);
-
-  // escala máscara para WxH
-  const maskBig = document.createElement('canvas');
-  maskBig.width = W;
-  maskBig.height = H;
-  const mbctx = maskBig.getContext('2d')!;
-  mbctx.drawImage(maskCanvas, 0, 0, 320, 320, 0, 0, W, H);
-  const maskImgData = mbctx.getImageData(0, 0, W, H).data;
-
-  // aplica alpha
   for (let i = 0; i < W * H; i++) {
-    src[i * 4 + 3] = maskImgData[i * 4]; // usa canal R como alpha
+    src[i * 4 + 3] = maskData[i * 4]; // canal R vira alpha
   }
-  srcCtx.putImageData(imgData, 0, 0);
+  octx.putImageData(imgData, 0, 0);
 
-  // desenha no canvas principal
-  mainCanvas.width = W;
-  mainCanvas.height = H;
-  const mainCtx = mainCanvas.getContext('2d')!;
-  mainCtx.clearRect(0, 0, W, H);
-  mainCtx.drawImage(srcCanvas, 0, 0, W, H);
+  const main = document.querySelector('canvas');
+  const mctx = main?.getContext('2d');
+  if (main && mctx) {
+    main.width = W;
+    main.height = H;
+    mctx.clearRect(0, 0, W, H);
+    mctx.drawImage(outCanvas, 0, 0);
+  }
 }
