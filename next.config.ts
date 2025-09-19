@@ -1,18 +1,13 @@
-// next.config.ts
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  images: {
-    remotePatterns: [
-      // Vercel Blob público
-      { protocol: "https", hostname: "public.blob.vercel-storage.com" },
-      { protocol: "https", hostname: "*.blob.vercel-storage.com" },
-      // (opcional) imgur/s3/etc se você usar
-    ],
-  },
-  experimental: {
-    serverActions: { allowedOrigins: ["*"] },
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  async redirects() {
+    return [
+      // Mata definitivamente o fluxo antigo:
+      { source: '/anuncio/novo', destination: '/anunciar', permanent: true },
+      { source: '/anuncio/criar', destination: '/anunciar', permanent: true },
+      { source: '/anunciar/novo', destination: '/anunciar', permanent: true },
+    ];
   },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
