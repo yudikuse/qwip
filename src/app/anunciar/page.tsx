@@ -4,16 +4,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 
-// carrega o mapa só no cliente
+// Carrega o mapa somente no cliente
 const MapPreview = dynamic(() => import('@/components/MapPreview'), { ssr: false });
 
 type Draft = {
   title: string;
-  priceDigits: string; // "1850" => R$ 18,50
+  priceDigits: string;          // "1850" => R$ 18,50
   description: string;
-  imageDataUrl: string; // data:image/...
-  createdAt: string;
-  // extras para a próxima etapa
+  imageDataUrl: string;         // data:image/...
+  createdAt: string;            // ISO
   city?: string;
   uf?: string;
   lat?: number;
@@ -21,7 +20,7 @@ type Draft = {
   radiusKm?: number;
 };
 
-// --- helpers
+// Helpers ----------------------------------------------------
 function formatCentsBRL(cents: number) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
@@ -30,10 +29,11 @@ function formatCentsBRL(cents: number) {
   }).format((cents || 0) / 100);
 }
 
+// Página -----------------------------------------------------
 export default function CriarAnuncioPage() {
   const router = useRouter();
 
-  // form
+  // formulário
   const [title, setTitle] = useState('');
   const [priceDigits, setPriceDigits] = useState(''); // só dígitos
   const [description, setDescription] = useState('');
@@ -46,7 +46,7 @@ export default function CriarAnuncioPage() {
   const [uf, setUf] = useState<string>('');
   const [radiusKm, setRadiusKm] = useState<number>(8); // default “figma”
 
-  // rascunho (volta de outra tela)
+  // rascunho (quando o usuário volta de outra tela)
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem('qwip_draft_ad');
@@ -56,18 +56,20 @@ export default function CriarAnuncioPage() {
         setPriceDigits(d.priceDigits ?? '');
         setDescription(d.description ?? '');
         setImageDataUrl(d.imageDataUrl ?? '');
-        if (d.lat) setLat(d.lat);
-        if (d.lng) setLng(d.lng);
+        if (typeof d.lat === 'number') setLat(d.lat);
+        if (typeof d.lng === 'number') setLng(d.lng);
         if (d.city) setCity(d.city);
         if (d.uf) setUf(d.uf);
-        if (d.radiusKm) setRadiusKm(d.radiusKm);
+        if (typeof d.radiusKm === 'number') setRadiusKm(d.radiusKm);
       }
-    } catch {}
+    } catch {
+      // ignore
+    }
   }, []);
 
-  // ao montar, tenta geolocalização imediatamente
+  // tenta geolocalização automática ao montar
   useEffect(() => {
-    if (lat !== null && lng !== null) return; // já tem
+    if (lat !== null && lng !== null) return; // já temos
     if (!navigator.geolocation) return;
 
     navigator.geolocation.getCurrentPosition(
@@ -75,21 +77,21 @@ export default function CriarAnuncioPage() {
         const { latitude, longitude } = pos.coords;
         setLat(latitude);
         setLng(longitude);
-        // city/uf ficam “Rio Verde, GO” até termos reverse geocode real
+        // placeholder até termos reverse-geocode real
         if (!city) setCity('Rio Verde');
         if (!uf) setUf('GO');
       },
       () => {
-        // Negou permissão: mantém lat/lng nulos, usuário pode seguir
+        // permissão negada: segue sem travar
       },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 120_000 }
     );
   }, [lat, lng, city, uf]);
 
-  // preview de preço
+  // preview do preço
   const cents = useMemo(() => parseInt(priceDigits || '0', 10) || 0, [priceDigits]);
 
-  // upload local (somente dataURL)
+  // upload local (apenas dataURL)
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -111,7 +113,7 @@ export default function CriarAnuncioPage() {
     reader.readAsDataURL(f);
   }
 
-  // botão “usar minha localização” manual (fallback)
+  // botão “Usar minha localização” (fallback manual)
   function handleAskLocation() {
     if (!navigator.geolocation) {
       alert('Seu navegador não suporta geolocalização.');
@@ -129,13 +131,13 @@ export default function CriarAnuncioPage() {
     );
   }
 
+  // continuar para a etapa de configurar
   function handleContinue() {
     if (!title.trim() || !priceDigits) {
       alert('Preencha título e preço.');
       return;
     }
 
-    // salva rascunho + config para a próxima etapa
     const draft: Draft = {
       title: title.trim(),
       priceDigits,
@@ -150,7 +152,6 @@ export default function CriarAnuncioPage() {
     };
     sessionStorage.setItem('qwip_draft_ad', JSON.stringify(draft));
 
-    // default de configuração (se ainda não existir)
     if (!sessionStorage.getItem('qwip_config_ad')) {
       sessionStorage.setItem(
         'qwip_config_ad',
@@ -169,15 +170,15 @@ export default function CriarAnuncioPage() {
       <div className="container mx-auto max-w-6xl px-4 py-8">
         <h1 className="text-2xl font-bold">Crie seu anúncio</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Versão inicial do passo de criação. Na próxima etapa ajustaremos os detalhes e faremos a
-          confirmação para compartilhar no WhatsApp.
+          Versão inicial do passo de criação. Na próxima etapa ajustaremos os detalhes e faremos a confirmação
+          para compartilhar no WhatsApp.
         </p>
 
         <div className="mt-6 grid gap-6 md:grid-cols-[1.25fr,1fr]">
-          {/* coluna esquerda — formulário */}
+          {/* COLUNA ESQUERDA — formulário */}
           <section className="card p-4">
             <div className="space-y-5">
-              {/* foto */}
+              {/* Foto */}
               <div>
                 <label className="mb-1 block text-sm font-medium">
                   Foto do anúncio (JPEG/PNG/WEBP, máx. 4MB)
@@ -192,7 +193,7 @@ export default function CriarAnuncioPage() {
                 />
               </div>
 
-              {/* título */}
+              {/* Título */}
               <div>
                 <label className="mb-1 block text-sm font-medium">Título *</label>
                 <input
@@ -204,7 +205,7 @@ export default function CriarAnuncioPage() {
                 <p className="mt-1 text-xs text-muted-foreground">{title.length}/80 caracteres</p>
               </div>
 
-              {/* preço */}
+              {/* Preço */}
               <div>
                 <label className="mb-1 block text-sm font-medium">Preço (R$) *</label>
                 <input
@@ -219,7 +220,7 @@ export default function CriarAnuncioPage() {
                 </p>
               </div>
 
-              {/* descrição */}
+              {/* Descrição */}
               <div>
                 <label className="mb-1 block text-sm font-medium">Descrição *</label>
                 <textarea
@@ -234,7 +235,7 @@ export default function CriarAnuncioPage() {
                 </p>
               </div>
 
-              {/* raio */}
+              {/* Raio */}
               <div>
                 <label className="mb-1 block text-sm font-medium">Área de alcance (km)</label>
                 <input
@@ -248,7 +249,7 @@ export default function CriarAnuncioPage() {
                 <p className="mt-1 text-xs text-muted-foreground">Raio atual: {radiusKm} km</p>
               </div>
 
-              {/* localização */}
+              {/* Localização */}
               <div className="rounded-xl border border-border p-3">
                 <p className="text-sm font-medium">Localização</p>
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -256,7 +257,7 @@ export default function CriarAnuncioPage() {
                 </p>
 
                 <div className="mt-2 flex items-center gap-3">
-                  <button className="btn" type="button" onClick={handleAskLocation}>
+                  <button className="btn-primary" type="button" onClick={handleAskLocation}>
                     Usar minha localização
                   </button>
                   <span className="text-sm text-muted-foreground">
@@ -266,14 +267,14 @@ export default function CriarAnuncioPage() {
               </div>
 
               <div className="pt-2">
-                <button onClick={handleContinue} className="btn">
+                <button onClick={handleContinue} className="btn-primary">
                   Continuar
                 </button>
               </div>
             </div>
           </section>
 
-          {/* coluna direita — prévia “cartão” */}
+          {/* COLUNA DIREITA — prévia */}
           <aside className="card p-4">
             <div className="mb-3 h-56 overflow-hidden rounded-xl border border-border">
               {imageDataUrl ? (
@@ -290,24 +291,27 @@ export default function CriarAnuncioPage() {
               )}
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <span className="chip bg-accent/20 text-accent-foreground border-accent/30">
-                Expira em 24h
-              </span>
-              <span className="chip">alcança {radiusKm} km</span>
+            {/* Chips */}
+            <div className="mb-2 flex flex-wrap gap-2">
+              <span className="badge badge-accent">Expira em 24h</span>
+              <span className="badge badge-neutral">alcança {radiusKm} km</span>
             </div>
 
-            <h3 className="mt-3 text-lg font-semibold">
-              {title || 'Título do anúncio'}
-            </h3>
-            <div className="text-primary font-semibold">{formatCentsBRL(cents)}</div>
-            <div className="text-sm text-muted-foreground">
+            <h3 className="text-lg font-semibold">{title || 'Título do anúncio'}</h3>
+            <div className="text-emerald-400 font-semibold">{formatCentsBRL(cents)}</div>
+
+            {/* Descrição na prévia */}
+            <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">
+              {description || 'Descrição breve aparecerá aqui.'}
+            </p>
+
+            <div className="mt-1 text-sm text-muted-foreground">
               {city && uf ? `${city}, ${uf}` : 'Defina sua localização'}
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <button className="btn">WhatsApp</button>
-              <button className="btn-secondary">Compartilhar</button>
+              <button className="btn-primary" type="button">WhatsApp</button>
+              <button className="btn-outline" type="button">Compartilhar</button>
             </div>
 
             <p className="mt-3 text-xs text-muted-foreground">
@@ -316,14 +320,14 @@ export default function CriarAnuncioPage() {
           </aside>
         </div>
 
-        {/* mapa grande com o raio */}
+        {/* Mapa grande com o raio */}
         <section className="card mt-6 p-4">
           <div className="text-sm font-medium">Área no mapa</div>
           <div className="mt-3">
             <MapPreview center={centerTuple} radiusKm={radiusKm} />
           </div>
           <div className="mt-2 text-right">
-            <span className="chip">Raio atual: {radiusKm} km</span>
+            <span className="badge badge-neutral">Raio atual: {radiusKm} km</span>
           </div>
         </section>
       </div>
