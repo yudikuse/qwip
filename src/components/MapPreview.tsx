@@ -1,57 +1,64 @@
 'use client';
 
-import { MapContainer, TileLayer, Circle, Marker } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Circle } from 'react-leaflet';
+import type { Map } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import { useMemo } from 'react';
 
-// Fix do ícone default do Leaflet em Next
-const markerIcon = new L.Icon({
-  iconUrl:
-    'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl:
-    'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl:
-    'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
+// Para o marker funcionar bonitinho no Next (sem ícone quebrado),
+// você já deve estar usando o default fix em outro ponto do app.
+// Se precisar, me avisa que mando o fix do ícone também.
 
 type Props = {
   center: [number, number]; // [lat, lng]
-  radiusKm: number;
-  className?: string;
+  radiusKm: number;         // raio em km
+  height?: number;          // opcional (px), default 340
 };
 
-export default function MapPreview({ center, radiusKm, className }: Props) {
-  const radiusMeters = useMemo(() => Math.max(200, radiusKm * 1000), [radiusKm]);
+export default function MapPreview({ center, radiusKm, height = 340 }: Props) {
+  const radiusMeters = Math.max(100, radiusKm * 1000); // mínimo 100m para visual
+
+  function handleCreated(map: Map) {
+    // Habilita scroll do mouse
+    map.scrollWheelZoom.enable();
+
+    // Ajusta sensibilidade do scroll (opção do Leaflet 1.9), mas os tipos não expõem:
+    // @ts-expect-error - propriedade existe no Leaflet, não nas typings do react-leaflet
+    map.options.wheelPxPerZoom = 80;
+
+    // Zoom/touch mais confortáveis
+    // @ts-expect-error - também não mapeado nas typings
+    map.options.touchZoom = 'center';
+
+    // Garantir que o mapa renderize com o center correto
+    map.setView(center);
+  }
 
   return (
-    <div className={className}>
+    <div className="w-full rounded-xl overflow-hidden border border-white/10">
       <MapContainer
         center={center}
         zoom={13}
         minZoom={3}
-        maxZoom={18}
+        maxZoom={19}
         zoomControl={true}
-        scrollWheelZoom={true}          // << mouse wheel habilitado
-        wheelPxPerZoom={80}
-        touchZoom={'center'}
-        style={{ height: 340, width: '100%', borderRadius: 12, overflow: 'hidden' }}
+        scrollWheelZoom={true}
+        whenCreated={handleCreated}
+        style={{ height, width: '100%' }}
       >
         <TileLayer
-          attribution="&copy; OpenStreetMap contributors"
+          // OSM default
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution="&copy; OpenStreetMap"
         />
-        <Marker position={center} icon={markerIcon} />
+        <Marker position={center} />
         <Circle
           center={center}
           radius={radiusMeters}
           pathOptions={{
-            color: 'rgba(37, 211, 102, 1)',     // borda verde marca
+            color: '#25d366',         // borda
             weight: 2,
-            fillColor: 'rgba(37, 211, 102, 0.25)',
-            fillOpacity: 0.35,
+            fillColor: '#25d366',     // fill
+            fillOpacity: 0.18,        // máscara verde clara
           }}
         />
       </MapContainer>
