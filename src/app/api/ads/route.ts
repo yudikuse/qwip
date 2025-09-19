@@ -37,12 +37,12 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
   return 2 * R * Math.asin(Math.sqrt(x));
 }
 
-// ======= Utils imagem (JSON) =======
+// ======= Utils imagem (para JSON dataURL) =======
 function parseDataUrl(dataUrl: string): { mime: string; buffer: Buffer } | null {
   // data:image/png;base64,AAAA...
   const m = dataUrl.match(/^data:(.+);base64,(.+)$/i);
   if (!m) return null;
-  const mime = m[1]?.toLowerCase() || "";
+  const mime = (m[1] || "").toLowerCase();
   const b64 = m[2] || "";
   try {
     const buffer = Buffer.from(b64, "base64");
@@ -60,10 +60,7 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
 
     const page = Math.max(1, toInt(searchParams.get("page") ?? "1", 1));
-    const pageSize = Math.min(
-      50,
-      Math.max(8, toInt(searchParams.get("pageSize") ?? "12", 12)),
-    );
+    const pageSize = Math.min(50, Math.max(8, toInt(searchParams.get("pageSize") ?? "12", 12)));
 
     const uf = (searchParams.get("uf") || "").trim().toUpperCase();
     const city = (searchParams.get("city") || "").trim();
@@ -74,16 +71,11 @@ export async function GET(req: Request) {
 
     const since = new Date(Date.now() - ONE_DAY_MS);
 
-    // Filtro base (últimas 24h)
-    const whereBase: any = {
-      createdAt: { gte: since },
-    };
-
+    const whereBase: any = { createdAt: { gte: since } };
     if (uf) whereBase.uf = uf;
     if (city) whereBase.city = { equals: city, mode: "insensitive" as const };
 
-    const fetchSize =
-      (lat && lng && radiusKm) ? Math.min(200, pageSize * 6) : pageSize;
+    const fetchSize = (lat && lng && radiusKm) ? Math.min(200, pageSize * 6) : pageSize;
 
     const itemsRaw = await prisma.ad.findMany({
       where: whereBase,
@@ -122,8 +114,7 @@ export async function GET(req: Request) {
           lng: (ad.centerLng ?? ad.lng) as number,
         };
         if (!Number.isFinite(center.lat) || !Number.isFinite(center.lng)) {
-          // se não tiver centro, não filtramos esse item por distância
-          return true;
+          return true; // sem centro definido, não filtra por distância
         }
         const d = haversineKm(origin, center);
         return d <= (ad.radiusKm || 0) || d <= radiusKm;
@@ -148,10 +139,7 @@ export async function GET(req: Request) {
     });
   } catch (err) {
     console.error("[/api/ads][GET] ERRO:", err);
-    return NextResponse.json(
-      { ok: false, error: "Falha ao listar anúncios." },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: "Falha ao listar anúncios." }, { status: 500 });
   }
 }
 
@@ -238,7 +226,7 @@ export async function POST(req: Request) {
       const ad = await prisma.ad.create({
         data: {
           title,
-          description: description || null,
+          description, // <-- string sempre
           priceCents,
           city,
           uf,
@@ -323,7 +311,7 @@ export async function POST(req: Request) {
     const ad = await prisma.ad.create({
       data: {
         title: String(title).trim(),
-        description: String(description || "").trim() || null,
+        description: String(description ?? "").trim(), // <-- string sempre
         priceCents: Number(priceCents) || 0,
         city: String(city).trim(),
         uf: String(uf).trim().toUpperCase(),
