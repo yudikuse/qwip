@@ -6,29 +6,53 @@ import * as ort from 'onnxruntime-web';
 type PhotoEditorProps = {
   /** dataURL da imagem vinda do input de arquivo */
   srcDataUrl: string;
-  /** callback com o resultado final como dataURL */
+  /** callback com o resultado final como dataURL (compat) */
   onExport?: (dataUrl: string) => void;
+  /** callback usado pela tela que chama o editor (igual ao onExport) */
+  onApply?: (dataUrl: string) => void;
+  /** fecha/cancela o editor */
+  onCancel?: () => void;
   className?: string;
 };
 
 const MODEL_URL =
   'https://huggingface.co/onnx/models/resolve/main/vision/segmentation/u2net/u2net.onnx';
 
-export default function PhotoEditor({ srcDataUrl, onExport, className }: PhotoEditorProps) {
+export default function PhotoEditor({
+  srcDataUrl,
+  onExport,
+  onApply,
+  onCancel,
+  className,
+}: PhotoEditorProps) {
   // refs mutáveis
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const ctxRef = React.useRef<CanvasRenderingContext2D | null>(null);
   const imgRef = React.useRef<HTMLImageElement | null>(null);
 
-  // controles de filtro
+  // filtros
   const [brightness, setBrightness] = React.useState(100);
   const [contrast, setContrast] = React.useState(100);
   const [saturation, setSaturation] = React.useState(100);
 
-  // sessão ONNX
+  // ONNX
   const sessionRef = React.useRef<ort.InferenceSession | null>(null);
   const [loadingBg, setLoadingBg] = React.useState(false);
   const [modelReady, setModelReady] = React.useState(false);
+
+  const drawWithFilters = React.useCallback((img: HTMLImageElement) => {
+    const ctx = ctxRef.current;
+    const canvas = canvasRef.current;
+    if (!ctx || !canvas) return;
+
+    const cssFilter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
+    // @ts-expect-error: ctx.filter é suportado nos browsers modernos
+    ctx.filter = cssFilter || 'none';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    // @ts-expect-error
+    ctx.filter = 'none';
+  }, [brightness, contrast, saturation]);
 
   // carrega a imagem no canvas quando src ou filtros mudam
   React.useEffect(() => {
@@ -50,21 +74,7 @@ export default function PhotoEditor({ srcDataUrl, onExport, className }: PhotoEd
       drawWithFilters(img);
     };
     img.src = srcDataUrl;
-  }, [srcDataUrl, brightness, contrast, saturation]);
-
-  function drawWithFilters(img: HTMLImageElement) {
-    const ctx = ctxRef.current;
-    const canvas = canvasRef.current;
-    if (!ctx || !canvas) return;
-
-    const cssFilter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
-    // @ts-expect-error: ctx.filter existe nos browsers modernos
-    ctx.filter = cssFilter || 'none';
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    // @ts-expect-error
-    ctx.filter = 'none';
-  }
+  }, [srcDataUrl, drawWithFilters]);
 
   async function ensureModel() {
     if (sessionRef.current) return sessionRef.current;
@@ -80,23 +90,22 @@ export default function PhotoEditor({ srcDataUrl, onExport, className }: PhotoEd
   async function handleRemoveBackground() {
     const baseImg = imgRef.current;
     const mainCanvas = canvasRef.current;
-    const mainCtx = ctxRef.current;
-    if (!baseImg || !mainCanvas || !mainCtx) return;
+    if (!baseImg || !mainCanvas) return;
 
     setLoadingBg(true);
     try {
       const session = await ensureModel();
 
-      // prepara tensor 320x320
+      // tensor 320x320 NCHW 0..1
       const { inputTensor, resizedW, resizedH } = imageToTensor(baseImg, 320, 320);
 
-      // descobre o nome do input/saída dinamicamente
-      const inputName = session.inputNames?.[0] ?? 'input';
+      // nome dinâmico do input
+      const inputName = (session.inputNames && session.inputNames[0]) || 'input';
       const outputs = await session.run({ [inputName]: inputTensor });
       const firstOutput = outputs[Object.keys(outputs)[0]];
       const mask = tensorToMask(firstOutput, resizedW, resizedH);
 
-      // aplica a máscara no canvas principal (tamanho original)
+      // aplica máscara no canvas principal (tamanho original)
       applyMaskToCanvas(baseImg, mask, mainCanvas);
     } catch (e) {
       console.error('remove-bg error:', e);
@@ -106,11 +115,13 @@ export default function PhotoEditor({ srcDataUrl, onExport, className }: PhotoEd
     }
   }
 
-  function exportPng() {
+  function doExport() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const data = canvas.toDataURL('image/png');
-    onExport?.(data);
+    // prioriza onApply (usado na sua page)
+    if (onApply) onApply(data);
+    if (onExport) onExport(data);
   }
 
   return (
@@ -155,7 +166,7 @@ export default function PhotoEditor({ srcDataUrl, onExport, className }: PhotoEd
         <canvas ref={canvasRef} className="block w-full" />
       </div>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={handleRemoveBackground}
@@ -167,11 +178,21 @@ export default function PhotoEditor({ srcDataUrl, onExport, className }: PhotoEd
 
         <button
           type="button"
-          onClick={exportPng}
+          onClick={doExport}
           className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground hover:bg-white/5 transition"
         >
-          Exportar PNG
+          Aplicar / Exportar PNG
         </button>
+
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground hover:bg-white/5 transition"
+          >
+            Cancelar
+          </button>
+        )}
 
         {!modelReady && (
           <span className="text-xs text-muted-foreground">
@@ -183,19 +204,8 @@ export default function PhotoEditor({ srcDataUrl, onExport, className }: PhotoEd
   );
 }
 
-/* ---------------- helpers de imagem/onnx ---------------- */
+/* ---------------- helpers ---------------- */
 
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
-  });
-}
-
-// Converte imagem para tensor NCHW normalizado em 0..1, redimensionando para WxH
 function imageToTensor(img: HTMLImageElement, W: number, H: number) {
   const off = document.createElement('canvas');
   off.width = W;
@@ -208,33 +218,23 @@ function imageToTensor(img: HTMLImageElement, W: number, H: number) {
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4;
-      const r = data[i] / 255;
-      const g = data[i + 1] / 255;
-      const b = data[i + 2] / 255;
-      // NCHW
-      floatData[0 * W * H + y * W + x] = r;
-      floatData[1 * W * H + y * W + x] = g;
-      floatData[2 * W * H + y * W + x] = b;
+      floatData[0 * W * H + y * W + x] = data[i] / 255;     // R
+      floatData[1 * W * H + y * W + x] = data[i + 1] / 255; // G
+      floatData[2 * W * H + y * W + x] = data[i + 2] / 255; // B
     }
   }
-
   const inputTensor = new ort.Tensor('float32', floatData, [1, 3, H, W]);
   return { inputTensor, resizedW: W, resizedH: H };
 }
 
-// Converte a saída do modelo (1x1xHxW ou 1xHxW) em máscara 0..255 (Uint8ClampedArray)
 function tensorToMask(output: ort.Tensor, W: number, H: number) {
   const raw = output.data as unknown as ArrayLike<number>;
 
-  // Flattens: tenta detectar se veio [1,1,H,W] ou [1,H,W]
-  // e posiciona os primeiros H*W elementos na ordem correta.
-  // Para U2Net, normalmente é 1x1xH x W com valores contínuos.
   const flat = new Float32Array(W * H);
   for (let i = 0; i < W * H; i++) {
     flat[i] = Number(raw[i]);
   }
 
-  // Normaliza 0..255
   let min = Infinity;
   let max = -Infinity;
   for (let i = 0; i < flat.length; i++) {
@@ -249,10 +249,9 @@ function tensorToMask(output: ort.Tensor, W: number, H: number) {
     const norm = (flat[i] - min) / rng;
     out[i] = Math.round(norm * 255);
   }
-  return out; // 8-bit alpha por pixel em 320x320
+  return out; // 320x320 originalmente
 }
 
-// Aplica a máscara na imagem base e desenha no canvas principal referenciado
 function applyMaskToCanvas(
   img: HTMLImageElement,
   mask320: Uint8ClampedArray,
@@ -261,7 +260,7 @@ function applyMaskToCanvas(
   const W = img.width;
   const H = img.height;
 
-  // 1) constrói um canvas com a imagem original
+  // imagem original
   const srcCanvas = document.createElement('canvas');
   srcCanvas.width = W;
   srcCanvas.height = H;
@@ -270,7 +269,7 @@ function applyMaskToCanvas(
   const imgData = srcCtx.getImageData(0, 0, W, H);
   const src = imgData.data;
 
-  // 2) cria um canvas com a máscara 320x320 (grayscale)
+  // máscara 320x320
   const maskCanvas = document.createElement('canvas');
   maskCanvas.width = 320;
   maskCanvas.height = 320;
@@ -285,7 +284,7 @@ function applyMaskToCanvas(
   }
   mctx.putImageData(tmp, 0, 0);
 
-  // 3) escala a máscara para WxH
+  // escala máscara para WxH
   const maskBig = document.createElement('canvas');
   maskBig.width = W;
   maskBig.height = H;
@@ -293,13 +292,13 @@ function applyMaskToCanvas(
   mbctx.drawImage(maskCanvas, 0, 0, 320, 320, 0, 0, W, H);
   const maskImgData = mbctx.getImageData(0, 0, W, H).data;
 
-  // 4) aplica a máscara como alpha
+  // aplica alpha
   for (let i = 0; i < W * H; i++) {
-    src[i * 4 + 3] = maskImgData[i * 4]; // canal R como alpha
+    src[i * 4 + 3] = maskImgData[i * 4]; // usa canal R como alpha
   }
   srcCtx.putImageData(imgData, 0, 0);
 
-  // 5) desenha no canvas principal
+  // desenha no canvas principal
   mainCanvas.width = W;
   mainCanvas.height = H;
   const mainCtx = mainCanvas.getContext('2d')!;
