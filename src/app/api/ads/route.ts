@@ -39,7 +39,6 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
 
 // ======= Utils imagem (para JSON dataURL) =======
 function parseDataUrl(dataUrl: string): { mime: string; buffer: Buffer } | null {
-  // data:image/png;base64,AAAA...
   const m = dataUrl.match(/^data:(.+);base64,(.+)$/i);
   if (!m) return null;
   const mime = (m[1] || "").toLowerCase();
@@ -114,7 +113,7 @@ export async function GET(req: Request) {
           lng: (ad.centerLng ?? ad.lng) as number,
         };
         if (!Number.isFinite(center.lat) || !Number.isFinite(center.lng)) {
-          return true; // sem centro definido, não filtra por distância
+          return true;
         }
         const d = haversineKm(origin, center);
         return d <= (ad.radiusKm || 0) || d <= radiusKm;
@@ -180,8 +179,12 @@ export async function POST(req: Request) {
       if (!title || !priceCents || !city || !uf) {
         return NextResponse.json({ error: "Campos obrigatórios ausentes." }, { status: 400 });
       }
+      // >>> lat/lng são OBRIGATÓRIOS no schema
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return NextResponse.json({ error: "Coordenadas inválidas." }, { status: 400 });
+      }
 
-      // imagem: ou arquivo, ou url já pronta
+      // imagem: arquivo OU url já pronta
       let finalImageUrl: string | null = null;
       let finalImageMime: string | null = null;
 
@@ -219,21 +222,20 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Imagem é obrigatória." }, { status: 400 });
       }
 
-      // lat/lng agora são opcionais
-      const latVal = Number.isFinite(lat) ? lat : null;
-      const lngVal = Number.isFinite(lng) ? lng : null;
+      const latNum = lat; // garantidos acima
+      const lngNum = lng;
 
       const ad = await prisma.ad.create({
         data: {
           title,
-          description, // <-- string sempre
+          description, // string não nula
           priceCents,
           city,
           uf,
-          lat: latVal,
-          lng: lngVal,
-          centerLat: latVal,
-          centerLng: lngVal,
+          lat: latNum,
+          lng: lngNum,
+          centerLat: latNum,
+          centerLng: lngNum,
           radiusKm: Number.isFinite(radiusKm) && radiusKm > 0 ? radiusKm : 10,
           imageUrl: finalImageUrl,
           imageMime: finalImageMime,
@@ -263,6 +265,13 @@ export async function POST(req: Request) {
 
     if (!title || !priceCents || !city || !uf) {
       return NextResponse.json({ error: "Campos obrigatórios ausentes." }, { status: 400 });
+    }
+
+    // >>> lat/lng obrigatórios
+    const latNum = Number(lat);
+    const lngNum = Number(lng);
+    if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
+      return NextResponse.json({ error: "Coordenadas inválidas." }, { status: 400 });
     }
 
     let finalImageUrl: string | null = null;
@@ -298,27 +307,23 @@ export async function POST(req: Request) {
       finalImageUrl = putRes.url;
       finalImageMime = parsed.mime;
     } else if (typeof imageUrl === "string" && imageUrl) {
-      // URL já pronta
       finalImageUrl = imageUrl;
       finalImageMime = null;
     } else {
       return NextResponse.json({ error: "Imagem é obrigatória." }, { status: 400 });
     }
 
-    const latVal = Number.isFinite(Number(lat)) ? Number(lat) : null;
-    const lngVal = Number.isFinite(Number(lng)) ? Number(lng) : null;
-
     const ad = await prisma.ad.create({
       data: {
         title: String(title).trim(),
-        description: String(description ?? "").trim(), // <-- string sempre
+        description: String(description ?? "").trim(), // string não nula
         priceCents: Number(priceCents) || 0,
         city: String(city).trim(),
         uf: String(uf).trim().toUpperCase(),
-        lat: latVal,
-        lng: lngVal,
-        centerLat: latVal,
-        centerLng: lngVal,
+        lat: latNum,
+        lng: lngNum,
+        centerLat: latNum,
+        centerLng: lngNum,
         radiusKm: Number(radiusKm) > 0 ? Number(radiusKm) : 10,
         imageUrl: finalImageUrl,
         imageMime: finalImageMime,
