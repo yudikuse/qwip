@@ -1,42 +1,235 @@
+/* src/app/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ---- Chips (etiquetas) ------------------------------------- */
-.chip {
-  @apply inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium;
-  @apply border;
+/* =========
+   Design tokens (CSS Variables)
+   ========= */
+:root {
+  /* Paleta base (modo claro opcional) */
+  --background: #0b0f14;            /* fundo escuro */
+  --foreground: #e6e6e6;            /* texto principal */
+
+  --card: #0f141a;
+  --card-foreground: #e9eef2;
+
+  --popover: #0f141a;
+  --popover-foreground: #e9eef2;
+
+  /* Verde oficial (WhatsApp-ish) */
+  --primary: #25d366;
+  --primary-foreground: #0b0f14;    /* texto sobre fundo primary em contextos claros */
+
+  /* Cinzas de apoio */
+  --secondary: #11161c;
+  --secondary-foreground: #c9d1d9;
+
+  --muted: #0f141a;
+  --muted-foreground: #9aa4af;      /* textos fracos / dicas */
+
+  /* Amarelo oficial (badges/urgência) */
+  --accent: #ffc857;
+  --accent-foreground: #1a1a1a;
+
+  /* Estado de erro */
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  /* Bordas e UI */
+  --border: rgba(255,255,255,0.12);
+  --input: rgba(255,255,255,0.16);
+  --input-background: rgba(255,255,255,0.04);
+  --switch-background: rgba(255,255,255,0.08);
+  --ring: rgba(37, 211, 102, 0.45);
+
+  /* Sidebar (se usar) */
+  --sidebar: #0b0f14;
+  --sidebar-foreground: #e6e6e6;
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: #0b0f14;
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: #1a1a1a;
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  --radius: 14px; /* controla os rounded-xl em tailwind.config */
 }
 
-/* chip neutra (cinza leve) */
-.chip--neutral {
-  @apply border-white/10 bg-white/5 text-white/80;
+/* Modo dark via classe (mantém os mesmos valores, mas deixei separado para fácil override futuramente) */
+.dark {
+  --background: #0b0f14;
+  --foreground: #e6e6e6;
+
+  --card: #0f141a;
+  --card-foreground: #e9eef2;
+
+  --popover: #0f141a;
+  --popover-foreground: #e9eef2;
+
+  --primary: #25d366;
+  --primary-foreground: #0b0f14;
+
+  --secondary: #11161c;
+  --secondary-foreground: #c9d1d9;
+
+  --muted: #0f141a;
+  --muted-foreground: #9aa4af;
+
+  --accent: #ffc857;
+  --accent-foreground: #1a1a1a;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  --border: rgba(255,255,255,0.12);
+  --input: rgba(255,255,255,0.16);
+  --input-background: rgba(255,255,255,0.04);
+  --switch-background: rgba(255,255,255,0.08);
+  --ring: rgba(37, 211, 102, 0.45);
+
+  --sidebar: #0b0f14;
+  --sidebar-foreground: #e6e6e6;
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: #0b0f14;
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: #1a1a1a;
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  --radius: 14px;
 }
 
-/* chip de aviso (amarela oficial) */
-.chip--warn {
-  border-color: color-mix(in oklab, #ffc857 60%, #000 40%);
-  background: color-mix(in oklab, #ffc857 18%, #000 82%);
-  color: #ffc857;
-  box-shadow: var(--tw-shadow-chip);
+/* =========
+   Base resets
+   ========= */
+* {
+  @apply border-border;
 }
 
-/* chip verde (preço/confirm) */
-.chip--ok {
-  border-color: color-mix(in oklab, #25d366 60%, #000 40%);
-  background: color-mix(in oklab, #25d366 18%, #000 82%);
-  color: #25d366;
+html {
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* botão principal com verde da marca */
-.btn-brand {
-  @apply rounded-xl px-4 py-2 font-semibold text-black;
-  background: #25d366;
+body {
+  @apply bg-background text-foreground antialiased;
+  font-feature-settings: "rlig" 1, "calt" 1;
 }
-.btn-brand:hover { background: color-mix(in oklab, #25d366 88%, #000 12%); }
 
-/* botões “fantasma” */
-.btn-ghost {
-  @apply rounded-xl border border-white/15 px-4 py-2 font-semibold text-white/90;
+/* =========
+   Form + inputs
+   ========= */
+input[type="text"],
+input[type="number"],
+input[type="search"],
+input[type="email"],
+input[type="tel"],
+textarea,
+select {
+  background-color: var(--input-background);
+  border: 1px solid var(--input);
+  color: var(--foreground);
+  outline: none;
 }
-.btn-ghost:hover { @apply bg-white/5; }
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted-foreground);
+}
+
+/* File input (o botão verde precisa chamar atenção) */
+input[type="file"]::file-selector-button {
+  background: var(--primary);
+  color: #0b0f14;
+  border: 0;
+  padding: 0.5rem 0.75rem;
+  margin-right: 0.75rem;
+  border-radius: 0.75rem; /* ~ rounded-xl */
+  cursor: pointer;
+  font-weight: 600;
+}
+input[type="file"]::file-selector-button:hover {
+  filter: brightness(1.05);
+}
+
+/* Foco em elementos “clicáveis” */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+/* Botão primário (verde) – fallback para quando não usar classes utilitárias */
+.btn-primary {
+  background: var(--primary);
+  color: #0b0f14;
+  font-weight: 700;
+  border-radius: 0.75rem;
+}
+.btn-primary:hover { filter: brightness(1.05); }
+
+/* Chip amarelo (expira, alcance, etc.) */
+.badge-accent {
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
+  color: var(--accent-foreground);
+  border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
+  border-radius: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem; /* text-xs */
+  font-weight: 600;
+}
+
+/* =========
+   Leaflet (mapa)
+   ========= */
+.leaflet-container {
+  background: #0c1117;            /* corrige flashing branco */
+  border-radius: 12px;
+}
+
+.leaflet-control-zoom a {
+  background: var(--input-background);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+}
+
+/* Mantém interações suaves sem contorno zoado em shapes */
+.leaflet-interactive:focus {
+  outline: none;
+}
+
+/* Tooltip de “raio atual” que você usa sobre o mapa (se aplicável) */
+.map-radius-chip {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--accent-foreground);
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* =========
+   Helpers visuais
+   ========= */
+.hr-faint {
+  height: 1px;
+  background: var(--border);
+}
+
+.card {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
