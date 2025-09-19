@@ -1,293 +1,310 @@
-// components/PhotoEditor.tsx
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import * as React from 'react';
 import * as ort from 'onnxruntime-web';
 
-// Modelo U²-Net (recortador universal) hospedado publicamente.
-// Você pode espelhar esse .onnx no seu storage/CDN depois.
-const U2NET_URL =
-  'https://huggingface.co/datasets/Xenova/onnx-models/resolve/main/u2net/u2net.onnx';
+/**
+ * Editor simples com:
+ * - preview do upload
+ * - filtros básicos (brilho/contraste/saturação)
+ * - botão "Remover fundo (beta)" usando ONNX Runtime (U^2-Net)
+ *
+ * Observação:
+ * - O modelo é carregado em runtime via fetch (CDN pública). Em produção,
+ *   espelhe o arquivo .onnx em /public/modelos/u2net.onnx ou em um storage seu.
+ */
 
-type Props = {
-  srcDataUrl: string;              // data:image/...
-  onCancel: () => void;
-  onApply: (editedDataUrl: string) => void;
+type PhotoEditorProps = {
+  /** dataURL da imagem vinda do input de arquivo */
+  srcDataUrl: string;
+  /** callback com o resultado final como dataURL */
+  onExport?: (dataUrl: string) => void;
+  className?: string;
 };
 
-export default function PhotoEditor({ srcDataUrl, onCancel, onApply }: Props) {
-  const imgRef = useRef<HTMLImageElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+const MODEL_URL =
+  'https://huggingface.co/onnx/models/resolve/main/vision/segmentation/u2net/u2net.onnx';
 
-  // Filtros básicos
-  const [brightness, setBrightness] = useState(1);
-  const [contrast, setContrast] = useState(1);
-  const [saturation, setSaturation] = useState(1);
-  const [sepia, setSepia] = useState(0);
-  const [blur, setBlur] = useState(0);
-  const [rotation, setRotation] = useState(0);    // graus
-  const [flipH, setFlipH] = useState(false);
-  const [flipV, setFlipV] = useState(false);
+export default function PhotoEditor({ srcDataUrl, onExport, className }: PhotoEditorProps) {
+  // refs mutáveis (canvas e contexto)
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const ctxRef = React.useRef<CanvasRenderingContext2D | null>(null);
 
-  // IA — remoção de fundo
-  const [removingBg, setRemovingBg] = useState(false);
-  const [mask, setMask] = useState<ImageData | null>(null);
-  const [session, setSession] = useState<ort.InferenceSession | null>(null);
-  const [loadingModel, setLoadingModel] = useState(false);
+  // controles de filtro
+  const [brightness, setBrightness] = React.useState(100);
+  const [contrast, setContrast] = React.useState(100);
+  const [saturation, setSaturation] = React.useState(100);
 
-  // Carrega modelo ONNX quando o usuário clicar em "Remover fundo"
-  async function ensureSession() {
-    if (session || loadingModel) return;
-    setLoadingModel(true);
-    try {
-      const s = await ort.InferenceSession.create(U2NET_URL, {
-        executionProviders: ['webgpu', 'wasm'], // tenta WebGPU; cai para WASM
-      });
-      setSession(s);
-    } finally {
-      setLoadingModel(false);
-    }
-  }
+  // sessão ONNX
+  const sessionRef = React.useRef<ort.InferenceSession | null>(null);
+  const [loadingBg, setLoadingBg] = React.useState(false);
+  const [modelReady, setModelReady] = React.useState(false);
 
-  // Desenha a imagem com filtros atuais
-  function renderToCanvas(base?: HTMLImageElement, useMask?: ImageData | null) {
-    const img = base ?? imgRef.current;
+  // carrega a imagem no canvas quando src muda
+  React.useEffect(() => {
+    if (!srcDataUrl) return;
     const canvas = canvasRef.current;
-    if (!img || !canvas) return;
+    if (!canvas) return;
 
-    // ajusta dimensões mantendo qualidade
-    const maxW = 1280;
-    const scale = Math.min(1, maxW / img.naturalWidth);
-    const w = Math.round(img.naturalWidth * scale);
-    const h = Math.round(img.naturalHeight * scale);
-    canvas.width = w;
-    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctxRef.current = ctx;
 
-    const ctx = canvas.getContext('2d')!;
-    ctx.save();
-
-    // aplica transformações (girar/espelhar) no contexto
-    ctx.translate(w / 2, h / 2);
-    const rad = (rotation * Math.PI) / 180;
-    ctx.rotate(rad);
-    ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
-    ctx.translate(-w / 2, -h / 2);
-
-    // filtros CSS-like via context.filter
-    ctx.filter = [
-      `brightness(${brightness})`,
-      `contrast(${contrast})`,
-      `saturate(${saturation})`,
-      `sepia(${sepia})`,
-      blur > 0 ? `blur(${blur}px)` : '',
-    ]
-      .filter(Boolean)
-      .join(' ');
-
-    ctx.drawImage(img, 0, 0, w, h);
-    ctx.restore();
-
-    // aplica máscara (transparência) se houver
-    if (useMask) {
-      const imgData = ctx.getImageData(0, 0, w, h);
-      const d = imgData.data;
-      const m = useMask.data;
-      // usa canal R da máscara como alfa
-      for (let i = 0; i < d.length; i += 4) {
-        d[i + 3] = m[i]; // alpha = máscara
-      }
-      ctx.putImageData(imgData, 0, 0);
-    }
-  }
-
-  // carrega imagem e desenha
-  useEffect(() => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      imgRef.current = img;
-      renderToCanvas(img, mask);
+      // dimensiona canvas para a imagem
+      canvas.width = img.width;
+      canvas.height = img.height;
+      // aplica filtros CSS-like via canvas (desenhando com composição)
+      drawWithFilters(img);
     };
     img.src = srcDataUrl;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [srcDataUrl]);
+  }, [srcDataUrl, brightness, contrast, saturation]);
 
-  // re-render quando filtros/transformações mudarem
-  useEffect(() => {
-    renderToCanvas(undefined, mask);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brightness, contrast, saturation, sepia, blur, rotation, flipH, flipV, mask]);
+  function drawWithFilters(img: HTMLImageElement) {
+    const ctx = ctxRef.current;
+    const canvas = canvasRef.current;
+    if (!ctx || !canvas) return;
 
-  // Gera máscara de recorte com U²-Net
-  async function handleRemoveBg() {
+    // Filtros equivalentes a CSS filter
+    const cssFilter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
+    // Canvas 2D moderno já suporta ctx.filter
+    // Fallback: se não existir, desenha sem filtro
+    // @ts-expect-error: filter existe na maioria dos browsers modernos
+    ctx.filter = cssFilter || 'none';
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    // reseta para não “vazar” para outras operações
+    // @ts-expect-error
+    ctx.filter = 'none';
+  }
+
+  async function ensureModel() {
+    if (sessionRef.current) return sessionRef.current;
+    // tenta criar sessão (WASM)
+    const session = await ort.InferenceSession.create(MODEL_URL, {
+      executionProviders: ['wasm'],
+    });
+    sessionRef.current = session;
+    setModelReady(true);
+    return session;
+  }
+
+  // Remoção de fundo (beta): gera máscara e aplica
+  async function handleRemoveBackground() {
+    if (!srcDataUrl) return;
+    const canvas = canvasRef.current;
+    const ctx = ctxRef.current;
+    if (!canvas || !ctx) return;
+
+    setLoadingBg(true);
     try {
-      await ensureSession();
-      if (!session || !canvasRef.current) return;
+      const session = await ensureModel();
 
-      setRemovingBg(true);
+      // Carrega a imagem para um canvas offscreen para extrair tensor
+      const img = await loadImage(srcDataUrl);
+      const { inputTensor, resizedW, resizedH } = imageToTensor(img, 320, 320);
 
-      // pega bitmap atual (sem máscara) como entrada do modelo
-      const c = canvasRef.current;
-      const w = c.width;
-      const h = c.height;
-      const ctx = c.getContext('2d')!;
-      const imageData = ctx.getImageData(0, 0, w, h);
+      // roda o modelo
+      const outputs = await session.run({ input: inputTensor });
+      // tentativa de achar a primeira saída (o nome pode variar por modelo)
+      const first = outputs[Object.keys(outputs)[0]];
+      const mask = tensorToMask(first, resizedW, resizedH);
 
-      // Pré-processamento simples: redimensiona para 320x320 e normaliza
-      const INPUT_SIZE = 320;
-      const off = new OffscreenCanvas(INPUT_SIZE, INPUT_SIZE);
-      const octx = off.getContext('2d')!;
-      octx.drawImage(c, 0, 0, INPUT_SIZE, INPUT_SIZE);
-      const small = octx.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE).data;
-
-      const floatData = new Float32Array(1 * 3 * INPUT_SIZE * INPUT_SIZE);
-      // RGBA -> CHW RGB [0,1]
-      let p = 0;
-      for (let i = 0; i < small.length; i += 4) {
-        floatData[p] = small[i] / 255;           // R
-        floatData[p + INPUT_SIZE * INPUT_SIZE] = small[i + 1] / 255; // G
-        floatData[p + 2 * INPUT_SIZE * INPUT_SIZE] = small[i + 2] / 255; // B
-        p += 1;
-      }
-
-      const tensor = new ort.Tensor('float32', floatData, [1, 3, INPUT_SIZE, INPUT_SIZE]);
-      const outputs = await session.run({ 'input.1': tensor }); // nome da entrada varia por modelo
-      const out = outputs[Object.keys(outputs)[0]] as ort.Tensor; // [1,1,320,320]
-
-      // pós-processa para máscara 0..255 e redimensiona de volta
-      const maskSmall = out.data as Float32Array;
-      const maskImageData = new ImageData(INPUT_SIZE, INPUT_SIZE);
-      for (let i = 0; i < maskSmall.length; i++) {
-        const v = Math.max(0, Math.min(255, Math.round(maskSmall[i] * 255)));
-        const j = i * 4;
-        maskImageData.data[j] = v;
-        maskImageData.data[j + 1] = v;
-        maskImageData.data[j + 2] = v;
-        maskImageData.data[j + 3] = v; // alpha igual
-      }
-
-      // escala a máscara para o tamanho do canvas
-      const maskCanvas = new OffscreenCanvas(w, h);
-      const mctx = maskCanvas.getContext('2d')!;
-      // desenha pequena e estica
-      const tmp = new OffscreenCanvas(INPUT_SIZE, INPUT_SIZE);
-      const tctx = tmp.getContext('2d')!;
-      tctx.putImageData(maskImageData, 0, 0);
-      mctx.drawImage(tmp, 0, 0, w, h);
-      const bigMask = mctx.getImageData(0, 0, w, h);
-
-      setMask(bigMask);
-      renderToCanvas(undefined, bigMask);
+      // redimensiona a máscara para o tamanho original e aplica como alpha
+      applyMaskToCanvas(img, mask);
     } catch (e) {
-      alert('Falha ao remover fundo (beta). Tente novamente.');
-      console.error(e);
+      console.error('remove-bg error:', e);
+      alert('Não foi possível remover o fundo agora. Tente novamente em instantes.');
     } finally {
-      setRemovingBg(false);
+      setLoadingBg(false);
     }
   }
 
-  function handleApply() {
+  function exportPng() {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const out = canvas.toDataURL('image/webp', 0.95);
-    onApply(out);
+    const data = canvas.toDataURL('image/png');
+    onExport?.(data);
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-4xl rounded-2xl border border-white/10 bg-[#0b0e13] p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Editor de Foto (Beta)</h2>
-          <button onClick={onCancel} className="rounded-lg border border-white/15 px-3 py-1 text-sm">
-            Fechar
-          </button>
-        </div>
+    <div className={className}>
+      <div className="mb-3 flex items-center gap-3 text-sm">
+        <label className="w-40">Brilho: {brightness}%</label>
+        <input
+          type="range"
+          min={50}
+          max={150}
+          value={brightness}
+          onChange={(e) => setBrightness(Number(e.target.value))}
+          className="w-full"
+        />
+      </div>
 
-        <div className="mt-3 grid gap-4 md:grid-cols-[1fr,320px]">
-          <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-            <canvas ref={canvasRef} className="block max-h-[60vh] w-full" />
-          </div>
+      <div className="mb-3 flex items-center gap-3 text-sm">
+        <label className="w-40">Contraste: {contrast}%</label>
+        <input
+          type="range"
+          min={50}
+          max={150}
+          value={contrast}
+          onChange={(e) => setContrast(Number(e.target.value))}
+          className="w-full"
+        />
+      </div>
 
-          <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-3">
-            <div className="text-sm font-medium">Ajustes</div>
+      <div className="mb-4 flex items-center gap-3 text-sm">
+        <label className="w-40">Saturação: {saturation}%</label>
+        <input
+          type="range"
+          min={0}
+          max={200}
+          value={saturation}
+          onChange={(e) => setSaturation(Number(e.target.value))}
+          className="w-full"
+        />
+      </div>
 
-            <Range label="Brilho" value={brightness} setValue={setBrightness} min={0.5} max={1.5} step={0.01} />
-            <Range label="Contraste" value={contrast} setValue={setContrast} min={0.5} max={1.5} step={0.01} />
-            <Range label="Saturação" value={saturation} setValue={setSaturation} min={0} max={2} step={0.01} />
-            <Range label="Sépia" value={sepia} setValue={setSepia} min={0} max={1} step={0.01} />
-            <Range label="Desfoque" value={blur} setValue={setBlur} min={0} max={5} step={0.1} />
+      <div className="mb-3 overflow-hidden rounded-xl border border-white/10 bg-black/10">
+        <canvas ref={canvasRef} className="block w-full" />
+      </div>
 
-            <div className="grid grid-cols-3 gap-2 pt-2">
-              <button onClick={() => setRotation((r) => (r + 90) % 360)} className="rounded-lg border border-white/15 px-2 py-1 text-sm">
-                Girar 90°
-              </button>
-              <button onClick={() => setFlipH((v) => !v)} className="rounded-lg border border-white/15 px-2 py-1 text-sm">
-                Espelhar H
-              </button>
-              <button onClick={() => setFlipV((v) => !v)} className="rounded-lg border border-white/15 px-2 py-1 text-sm">
-                Espelhar V
-              </button>
-            </div>
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={handleRemoveBackground}
+          className="inline-flex items-center rounded-xl bg-[#25d366] px-4 py-2 font-semibold text-black/90 shadow-sm hover:bg-[#1fd05f] transition disabled:opacity-60"
+          disabled={loadingBg}
+        >
+          {loadingBg ? 'Removendo fundo…' : 'Remover fundo (beta)'}
+        </button>
 
-            <div className="pt-3">
-              <button
-                onClick={handleRemoveBg}
-                disabled={loadingModel || removingBg}
-                className="w-full rounded-xl bg-emerald-500 px-3 py-2 font-semibold text-black/90 disabled:opacity-60"
-              >
-                {loadingModel ? 'Carregando IA…' : removingBg ? 'Removendo fundo…' : 'Remover fundo (IA)'}
-              </button>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Tudo roda no seu navegador. Não enviamos sua imagem para servidores.
-              </p>
-            </div>
+        <button
+          type="button"
+          onClick={exportPng}
+          className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground hover:bg-white/5 transition"
+        >
+          Exportar PNG
+        </button>
 
-            <div className="grid grid-cols-2 gap-2 pt-2">
-              <button onClick={onCancel} className="rounded-xl border border-white/15 px-3 py-2 text-sm">
-                Cancelar
-              </button>
-              <button onClick={handleApply} className="rounded-xl bg-[#25d366] px-3 py-2 font-semibold text-black/90">
-                Aplicar
-              </button>
-            </div>
-          </div>
-        </div>
+        {!modelReady && (
+          <span className="text-xs text-muted-foreground">
+            O modelo carrega na 1ª vez que você clica em “Remover fundo”.
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
-// Componente auxiliar para slider
-function Range({
-  label,
-  value,
-  setValue,
-  min,
-  max,
-  step,
-}: {
-  label: string;
-  value: number;
-  setValue: (n: number) => void;
-  min: number;
-  max: number;
-  step: number;
-}) {
-  return (
-    <div>
-      <div className="flex items-center justify-between text-sm">
-        <span>{label}</span>
-        <span className="text-muted-foreground">{value.toFixed(2)}</span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => setValue(Number(e.target.value))}
-        className="w-full"
-      />
-    </div>
-  );
+/* ---------------- helpers de imagem/onnx ---------------- */
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+// Converte imagem para tensor NCHW normalizado em 0..1, redimensionando para WxH
+function imageToTensor(img: HTMLImageElement, W: number, H: number) {
+  const off = document.createElement('canvas');
+  off.width = W;
+  off.height = H;
+  const octx = off.getContext('2d')!;
+  octx.drawImage(img, 0, 0, W, H);
+  const { data } = octx.getImageData(0, 0, W, H);
+
+  const floatData = new Float32Array(3 * W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      const r = data[i] / 255;
+      const g = data[i + 1] / 255;
+      const b = data[i + 2] / 255;
+      // NCHW
+      floatData[0 * W * H + y * W + x] = r;
+      floatData[1 * W * H + y * W + x] = g;
+      floatData[2 * W * H + y * W + x] = b;
+    }
+  }
+
+  const inputTensor = new ort.Tensor('float32', floatData, [1, 3, H, W]);
+  return { inputTensor, resizedW: W, resizedH: H };
+}
+
+// Converte a saída do modelo (1x1xHxW ou 1xHxW) em máscara 0..255 (Uint8ClampedArray)
+function tensorToMask(output: ort.Tensor, W: number, H: number) {
+  const data = output.data as Float32Array | number[];
+  const out = new Uint8ClampedArray(W * H);
+  // Normaliza para 0..255
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < data.length; i++) {
+    const v = Number(data[i]);
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  const rng = max - min || 1;
+  for (let i = 0; i < W * H; i++) {
+    const v = Number(data[i]);
+    const norm = (v - min) / rng;
+    out[i] = Math.round(norm * 255);
+  }
+  return out; // 8-bit alpha para cada pixel
+}
+
+function applyMaskToCanvas(img: HTMLImageElement, mask: Uint8ClampedArray) {
+  const canvas = document.createElement('canvas');
+  const W = img.width;
+  const H = img.height;
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(img, 0, 0, W, H);
+
+  const imgData = ctx.getImageData(0, 0, W, H);
+  const src = imgData.data;
+
+  // redimensiona a máscara (que veio 320x320) para WxH
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = 320;
+  maskCanvas.height = 320;
+  const mctx = maskCanvas.getContext('2d')!;
+  const tmp = mctx.createImageData(320, 320);
+  for (let i = 0; i < 320 * 320; i++) {
+    tmp.data[i * 4 + 0] = mask[i];
+    tmp.data[i * 4 + 1] = mask[i];
+    tmp.data[i * 4 + 2] = mask[i];
+    tmp.data[i * 4 + 3] = 255;
+  }
+  mctx.putImageData(tmp, 0, 0);
+
+  // escala a máscara para o tamanho da imagem final
+  const maskBig = document.createElement('canvas');
+  maskBig.width = W;
+  maskBig.height = H;
+  const mbctx = maskBig.getContext('2d')!;
+  mbctx.drawImage(maskCanvas, 0, 0, 320, 320, 0, 0, W, H);
+  const maskImgData = mbctx.getImageData(0, 0, W, H).data;
+
+  // aplica alpha no canal A
+  for (let i = 0; i < W * H; i++) {
+    src[i * 4 + 3] = maskImgData[i * 4]; // usa canal R como alpha
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  // desenha no canvas principal
+  const mainCanvas = document.querySelector('canvas');
+  const mainCtx = mainCanvas?.getContext('2d');
+  if (mainCanvas && mainCtx) {
+    mainCanvas.width = W;
+    mainCanvas.height = H;
+    mainCtx.clearRect(0, 0, W, H);
+    mainCtx.drawImage(canvas, 0, 0);
+  }
 }
