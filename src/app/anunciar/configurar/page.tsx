@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 type DraftBase = {
   title: string;
-  priceDigits: string; // ex: "1850" = R$ 18,50
+  priceDigits: string; // "1850" => R$ 18,50
   description: string;
   imageDataUrl: string; // data:image/...
   createdAt: string;
@@ -21,14 +21,13 @@ type Config = {
   uf?: string;
 };
 
-// helpers -------------------------------------------------------
-
 function formatCentsBRL(cents: number) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
     minimumFractionDigits: 2,
     currencyDisplay: 'symbol',
+    currency: 'BRL',
   }).format(cents / 100);
 }
 
@@ -36,19 +35,18 @@ function classNames(...xs: Array<string | false | undefined>) {
   return xs.filter(Boolean).join(' ');
 }
 
-// page ----------------------------------------------------------
-
 export default function ConfigurarPage() {
   const router = useRouter();
-
   const [draft, setDraft] = useState<DraftBase | null>(null);
   const [cfg, setCfg] = useState<Config>({
     category: '',
     radiusKm: 10,
     urgencyTimer: true,
+    city: '',
+    uf: '',
   });
+  const [loading, setLoading] = useState(false);
 
-  // carrega rascunho e config salvos
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem('qwip_draft_ad');
@@ -59,36 +57,76 @@ export default function ConfigurarPage() {
       setDraft(JSON.parse(raw) as DraftBase);
 
       const rawCfg = sessionStorage.getItem('qwip_config_ad');
-      if (rawCfg) {
-        setCfg((prev) => ({ ...prev, ...(JSON.parse(rawCfg) as Partial<Config>) }));
-      }
+      if (rawCfg) setCfg((s) => ({ ...s, ...(JSON.parse(rawCfg) as Partial<Config>) }));
     } catch {
       router.replace('/anunciar');
     }
   }, [router]);
 
-  // persiste config conforme o usuário mexe
   useEffect(() => {
     sessionStorage.setItem('qwip_config_ad', JSON.stringify(cfg));
   }, [cfg]);
 
-  const cents = useMemo(
-    () => (draft ? parseInt(draft.priceDigits || '0', 10) : 0),
-    [draft]
-  );
+  const cents = useMemo(() => (draft ? parseInt(draft.priceDigits || '0', 10) : 0), [draft]);
 
-  // “Card” da direita (preview)
   const previewChips = [
-    { text: 'Oferta por tempo limitado', tone: 'warning' as const },
-    ...(cfg.city && cfg.uf ? [{ text: `${cfg.city}, ${cfg.uf}`, tone: 'neutral' as const }] : []),
+    cfg.urgencyTimer ? { text: 'Oferta por tempo limitado', tone: 'warning' as const } : null,
+    cfg.city && cfg.uf ? { text: `${cfg.city}, ${cfg.uf}`, tone: 'neutral' as const } : null,
     { text: `+ ${cfg.radiusKm}km`, tone: 'neutral' as const },
-  ];
+  ].filter(Boolean) as { text: string; tone: 'warning' | 'neutral' }[];
 
-  // ações -------------------------------------------------------
+  async function handleContinue() {
+    if (!draft) return;
+    if (!draft.title.trim() || !draft.priceDigits) {
+      alert('Preencha título e preço.');
+      return;
+    }
+    if (!cfg.city || !cfg.uf) {
+      alert('Informe Cidade e UF.');
+      return;
+    }
 
-  function handleContinue() {
-    // Próximo passo: página de confirmação/compartilhamento
-    router.push('/anunciar/confirmar');
+    setLoading(true);
+    try {
+      // publica de fato (MVP: salva dataURL como imageUrl)
+      const payload = {
+        title: draft.title.trim(),
+        description: draft.description.trim(),
+        priceCents: parseInt(draft.priceDigits, 10) || 0,
+        imageUrl: draft.imageDataUrl || null,
+        city: cfg.city || null,
+        uf: cfg.uf || null,
+        radiusKm: Number(cfg.radiusKm) || 10,
+        // criamos expiresAt de 24h no backend, mas podemos enviar também:
+        // expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      };
+
+      const res = await fetch('/api/ads', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || 'Falha ao publicar.');
+      }
+
+      const data = (await res.json()) as { ok: boolean; id: string };
+      const id = data?.id;
+      if (!id) throw new Error('Resposta sem id.');
+
+      const url = `${location.origin}/anuncio/${id}`;
+      sessionStorage.setItem('qwip_published_ad', JSON.stringify({ id, url }));
+
+      // segue para confirmar/compartilhar
+      router.push('/anunciar/confirmar');
+    } catch (e: any) {
+      console.error(e);
+      alert(e?.message || 'Erro ao publicar.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (!draft) return null;
@@ -102,18 +140,15 @@ export default function ConfigurarPage() {
         </p>
 
         <div className="mt-6 grid gap-6 md:grid-cols-[1.25fr,1fr]">
-          {/* COLUNA ESQUERDA — formulário -------------------------------- */}
+          {/* ESQUERDA */}
           <section className="rounded-2xl border border-white/10 p-4">
-            {/* Abas fake (apenas visual por enquanto) */}
             <div className="mb-4 flex gap-2">
               {['Produto', 'Templates', 'Copy Coach', 'Avançado'].map((tab, i) => (
                 <span
                   key={tab}
                   className={classNames(
                     'cursor-default rounded-xl px-3 py-1 text-sm',
-                    i === 0
-                      ? 'bg-white/10 font-semibold'
-                      : 'border border-white/10 text-muted-foreground'
+                    i === 0 ? 'bg-white/10 font-semibold' : 'border border-white/10 text-muted-foreground'
                   )}
                 >
                   {tab}
@@ -121,7 +156,6 @@ export default function ConfigurarPage() {
               ))}
             </div>
 
-            {/* Campos do produto */}
             <div className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium">Título do anúncio *</label>
@@ -154,9 +188,7 @@ export default function ConfigurarPage() {
                     className="w-full rounded-xl border border-white/15 bg-transparent px-3 py-2 text-sm outline-none"
                     placeholder="Ex.: 18,50"
                   />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Valor atual: {formatCentsBRL(cents)}
-                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">Valor atual: {formatCentsBRL(cents)}</p>
                 </div>
 
                 <div>
@@ -171,6 +203,31 @@ export default function ConfigurarPage() {
                     <option value="servicos">Serviços</option>
                     <option value="beleza">Beleza</option>
                     <option value="utilidades">Utilidades</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Cidade *</label>
+                  <input
+                    value={cfg.city || ''}
+                    onChange={(e) => setCfg((s) => ({ ...s, city: e.target.value }))}
+                    className="w-full rounded-xl border border-white/15 bg-transparent px-3 py-2 text-sm outline-none"
+                    placeholder="Ex.: Barra do Garças"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">UF *</label>
+                  <select
+                    value={cfg.uf || ''}
+                    onChange={(e) => setCfg((s) => ({ ...s, uf: e.target.value }))}
+                    className="w-full rounded-xl border border-white/15 bg-transparent px-3 py-2 text-sm outline-none"
+                  >
+                    <option value="">UF…</option>
+                    {['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'].map((u) => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -203,7 +260,7 @@ export default function ConfigurarPage() {
                     className="w-full"
                   />
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Atinge compradores até <strong>{cfg.radiusKm} km</strong> de distância.
+                    Atinge compradores até <strong>{cfg.radiusKm} km</strong>.
                   </p>
                 </div>
 
@@ -232,27 +289,26 @@ export default function ConfigurarPage() {
               <div className="pt-2">
                 <button
                   onClick={handleContinue}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold hover:bg-emerald-500"
+                  disabled={loading}
+                  className={classNames(
+                    'rounded-xl px-4 py-2 text-sm font-semibold',
+                    loading ? 'bg-white/10 cursor-not-allowed text-muted-foreground' : 'bg-emerald-600 hover:bg-emerald-500'
+                  )}
                 >
-                  Salvar e continuar
+                  {loading ? 'Publicando…' : 'Salvar e continuar'}
                 </button>
               </div>
             </div>
           </section>
 
-          {/* COLUNA DIREITA — preview + resumo ---------------------------- */}
+          {/* DIREITA */}
           <aside className="space-y-6">
             <section className="rounded-2xl border border-white/10 p-4">
               <p className="mb-3 text-sm font-medium">Preview Final</p>
-
               <div className="overflow-hidden rounded-xl border border-white/10">
                 {draft.imageDataUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={draft.imageDataUrl}
-                    alt={draft.title || 'Prévia da imagem'}
-                    className="h-56 w-full object-cover md:h-64"
-                  />
+                  <img src={draft.imageDataUrl} alt={draft.title || 'Prévia da imagem'} className="h-56 w-full object-cover md:h-64" />
                 ) : (
                   <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">
                     (Prévía da imagem)
@@ -261,21 +317,17 @@ export default function ConfigurarPage() {
               </div>
 
               <div className="mt-2 flex flex-wrap gap-2">
-                {cfg.urgencyTimer && (
-                  <span className="rounded-md bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-300">
-                    Oferta por tempo limitado
-                  </span>
-                )}
-                {previewChips
-                  .filter((c) => c.tone === 'neutral')
-                  .map((c) => (
-                    <span
-                      key={c.text}
-                      className="rounded-md border border-white/10 px-2 py-0.5 text-xs text-muted-foreground"
-                    >
+                {previewChips.map((c) =>
+                  c.tone === 'warning' ? (
+                    <span key={c.text} className="rounded-md bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-300">
                       {c.text}
                     </span>
-                  ))}
+                  ) : (
+                    <span key={c.text} className="rounded-md border border-white/10 px-2 py-0.5 text-xs text-muted-foreground">
+                      {c.text}
+                    </span>
+                  )
+                )}
               </div>
 
               <div className="mt-2">
