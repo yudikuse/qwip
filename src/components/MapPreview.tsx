@@ -1,67 +1,75 @@
+// src/components/MapPreview.tsx
 'use client';
 
-import { MapContainer, TileLayer, Marker, Circle } from 'react-leaflet';
-import type { Map } from 'leaflet';
+import { useEffect, useMemo } from 'react';
+import { MapContainer, TileLayer, Circle, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-
-// Para o marker funcionar bonitinho no Next (sem ícone quebrado),
-// você já deve estar usando o default fix em outro ponto do app.
-// Se precisar, me avisa que mando o fix do ícone também.
 
 type Props = {
   center: [number, number]; // [lat, lng]
-  radiusKm: number;         // raio em km
-  height?: number;          // opcional (px), default 340
+  radiusKm: number;         // raio em KM
 };
 
-export default function MapPreview({ center, radiusKm, height = 340 }: Props) {
-  const radiusMeters = Math.max(100, radiusKm * 1000); // mínimo 100m para visual
+// Ajusta o mapa quando monta/atualiza
+function MapTuner({ center, zoom }: { center: [number, number]; zoom: number }) {
+  const map = useMap();
 
-  function handleCreated(map: Map) {
-    // Habilita scroll do mouse
-    map.scrollWheelZoom.enable();
+  useEffect(() => {
+    // Garante que o mapa use o centro e zoom desejados
+    map.setView(center, zoom, { animate: false });
+    // Corrige layout após render
+    setTimeout(() => map.invalidateSize(), 50);
+  }, [center, zoom, map]);
 
-    // Ajusta sensibilidade do scroll (opção do Leaflet 1.9), mas os tipos não expõem:
-    // @ts-expect-error - propriedade existe no Leaflet, não nas typings do react-leaflet
-    map.options.wheelPxPerZoom = 80;
+  return null;
+}
 
-    // Zoom/touch mais confortáveis
-    // @ts-expect-error - também não mapeado nas typings
-    map.options.touchZoom = 'center';
+export default function MapPreview({ center, radiusKm }: Props) {
+  // Heurística simples de zoom pelo raio (ajuste fino se quiser)
+  const zoom = useMemo(() => {
+    if (radiusKm <= 2) return 14;
+    if (radiusKm <= 5) return 13;
+    if (radiusKm <= 10) return 12;
+    if (radiusKm <= 20) return 11;
+    return 10;
+  }, [radiusKm]);
 
-    // Garantir que o mapa renderize com o center correto
-    map.setView(center);
-  }
+  const radiusMeters = Math.max(100, radiusKm * 1000);
 
   return (
-    <div className="w-full rounded-xl overflow-hidden border border-white/10">
+    <div className="relative">
       <MapContainer
         center={center}
-        zoom={13}
+        zoom={zoom}
         minZoom={3}
-        maxZoom={19}
+        maxZoom={18}
         zoomControl={true}
-        scrollWheelZoom={true}
-        whenCreated={handleCreated}
-        style={{ height, width: '100%' }}
+        scrollWheelZoom={true}       // ✅ scroll do mouse
+        touchZoom="center"           // ✅ pinch no centro (sem hack nas typings)
+        style={{ height: 340, width: '100%', borderRadius: 12, overflow: 'hidden' }}
       >
         <TileLayer
-          // OSM default
+          // Você pode trocar o estilo depois (Stadia, Carto, etc.)
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="&copy; OpenStreetMap"
+          attribution='&copy; OpenStreetMap contributors'
         />
-        <Marker position={center} />
+        <MapTuner center={center} zoom={zoom} />
         <Circle
           center={center}
           radius={radiusMeters}
           pathOptions={{
-            color: '#25d366',         // borda
+            color: 'var(--accent)',              // contorno amarelo oficial
             weight: 2,
-            fillColor: '#25d366',     // fill
-            fillOpacity: 0.18,        // máscara verde clara
+            fillColor: 'var(--accent)',
+            fillOpacity: 0.15,                   // máscara suave
           }}
         />
       </MapContainer>
+
+      {/* Chip de raio no canto do mapa (usa amarelo oficial) */}
+      <div className="pointer-events-none absolute left-3 top-3 map-radius-chip">
+        Raio: {radiusKm} km
+      </div>
     </div>
   );
 }
