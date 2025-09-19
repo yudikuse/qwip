@@ -103,8 +103,11 @@
 /* =========
    Base resets
    ========= */
+
+/* ❗️Alteração pra evitar o erro do Tailwind:
+   antes: * { @apply border-border; }  */
 * {
-  @apply border-border;
+  border-color: var(--border);
 }
 
 html {
