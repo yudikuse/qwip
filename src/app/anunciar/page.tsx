@@ -352,4 +352,4 @@ export default function CriarAnuncioPage() {
       </div>
     </main>
   );
-}
+  }
