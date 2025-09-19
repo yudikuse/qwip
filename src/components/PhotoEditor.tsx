@@ -1,27 +1,22 @@
+// src/components/PhotoEditor.tsx
 'use client';
 
 import * as React from 'react';
 import * as ort from 'onnxruntime-web';
 
 type PhotoEditorProps = {
-  /** dataURL da imagem vinda do input de arquivo */
   srcDataUrl: string;
-  /** callback com o resultado final como dataURL (PNG) */
   onApply?: (dataUrl: string) => void;
-  /** fecha modal/painel, se a tela pai quiser */
   onCancel?: () => void;
   className?: string;
 };
 
+// Dica forte: coloque o modelo local em /public/modelos/u2net.onnx
+// e troque para: const MODEL_URL = '/modelos/u2net.onnx'
 const MODEL_URL =
   'https://huggingface.co/onnx/models/resolve/main/vision/segmentation/u2net/u2net.onnx';
 
-export default function PhotoEditor({
-  srcDataUrl,
-  onApply,
-  onCancel,
-  className,
-}: PhotoEditorProps) {
+export default function PhotoEditor({ srcDataUrl, onApply, onCancel, className }: PhotoEditorProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const ctxRef = React.useRef<CanvasRenderingContext2D | null>(null);
   const imgRef = React.useRef<HTMLImageElement | null>(null);
@@ -36,7 +31,6 @@ export default function PhotoEditor({
   const [loadingBg, setLoadingBg] = React.useState(false);
   const [modelReady, setModelReady] = React.useState(false);
 
-  // desenha imagem com filtros
   const drawWithFilters = React.useCallback(() => {
     const img = imgRef.current;
     const ctx = ctxRef.current;
@@ -50,7 +44,6 @@ export default function PhotoEditor({
     (ctx as any).filter = 'none';
   }, [brightness, contrast, saturation]);
 
-  // carrega a imagem
   React.useEffect(() => {
     if (!srcDataUrl) return;
 
@@ -65,21 +58,17 @@ export default function PhotoEditor({
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       imgRef.current = img;
-      // tamanho do preview: limita pra não explodir layout,
-      // mas mantém proporção (máx 900px de largura)
+      // dimensiona preview mantendo proporção (máx 900px de largura)
       const maxW = 900;
       const scale = img.width > maxW ? maxW / img.width : 1;
       canvas.width = Math.round(img.width * scale);
       canvas.height = Math.round(img.height * scale);
       drawWithFilters();
     };
-    img.onerror = () => {
-      alert('Falha ao carregar a imagem.');
-    };
+    img.onerror = () => alert('Falha ao carregar a imagem.');
     img.src = srcDataUrl;
   }, [srcDataUrl, drawWithFilters]);
 
-  // redesenha quando mexe no filtro
   React.useEffect(() => {
     drawWithFilters();
   }, [drawWithFilters]);
@@ -103,30 +92,30 @@ export default function PhotoEditor({
     try {
       const session = await ensureModel();
 
-      // 1) Pré-processa (320x320 NCHW [0..1])
+      // pré-processa (320x320, float32 NCHW 0..1)
       const { inputTensor, W, H } = imageToTensor(img, 320, 320);
 
-      // 2) Descobre nome da entrada/saída do modelo
+      // nomes dinâmicos (evita "input"/"output" errados)
       const inputName = Object.keys(session.inputMetadata)[0];
       const outputName = Object.keys(session.outputMetadata)[0];
 
-      // 3) Inference
       const outputs = await session.run({ [inputName]: inputTensor });
       const out = outputs[outputName];
 
-      // 4) Pós-processa -> máscara 0..255 e escala para o tamanho do canvas atual
+      // máscara pequena -> 0..255
       const smallMask = tensorToMask(out as ort.Tensor, W, H);
-      const maskForCanvas = scaleMaskNearest(smallMask, W, H, canvas.width, canvas.height);
+      // escala para o tamanho do canvas do preview
+      const mask = scaleMaskNearest(smallMask, W, H, canvas.width, canvas.height);
 
-      // 5) Aplica no preview
-      applyAlphaMaskOnCanvas(canvas, maskForCanvas);
+      // aplica alpha no próprio canvas do editor
+      applyAlphaMaskOnCanvas(canvas, mask);
     } catch (e: any) {
       console.error('remove-bg error:', e);
-      const msg =
+      alert(
         typeof e?.message === 'string'
           ? e.message
-          : 'Não foi possível remover o fundo agora. Tente novamente em instantes.';
-      alert(msg);
+          : 'Não foi possível remover o fundo agora. Tente novamente em instantes.'
+      );
     } finally {
       setLoadingBg(false);
     }
@@ -135,98 +124,92 @@ export default function PhotoEditor({
   function exportPng() {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const data = canvas.toDataURL('image/png');
-    onApply?.(data);
+    onApply?.(canvas.toDataURL('image/png'));
   }
 
   return (
-    <div className={className}>
-      {/* GRID: controles à esquerda, preview à direita (no desktop) */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[360px_1fr]">
-        {/* Painel de controles */}
-        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-          <div className="mb-4">
-            <label className="mb-1 block text-sm font-medium">
-              Brilho: {brightness}%
-            </label>
-            <input
-              type="range"
+    // MODAL overlay (fixo na tela)
+    <div className={`fixed inset-0 z-50 flex items-center justify-center ${className || ''}`}>
+      <div className="absolute inset-0 bg-black/70" onClick={onCancel} />
+      <div className="relative z-10 w-full max-w-6xl rounded-2xl border border-white/10 bg-[#0b0f14] p-4 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold">Editor de foto (Beta)</h2>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-xl border border-white/15 px-3 py-1.5 text-sm hover:bg-white/5"
+          >
+            Fechar
+          </button>
+        </div>
+
+        {/* Grid: controles à esquerda / preview à direita (desktop) */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[360px_1fr]">
+          {/* Controles */}
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            <Slider
+              label={`Brilho: ${brightness}%`}
               min={50}
               max={150}
               value={brightness}
-              onChange={(e) => setBrightness(Number(e.target.value))}
-              className="w-full"
+              onChange={setBrightness}
             />
-          </div>
-
-          <div className="mb-4">
-            <label className="mb-1 block text-sm font-medium">
-              Contraste: {contrast}%
-            </label>
-            <input
-              type="range"
+            <Slider
+              label={`Contraste: ${contrast}%`}
               min={50}
               max={150}
               value={contrast}
-              onChange={(e) => setContrast(Number(e.target.value))}
-              className="w-full"
+              onChange={setContrast}
             />
-          </div>
-
-          <div className="mb-6">
-            <label className="mb-1 block text-sm font-medium">
-              Saturação: {saturation}%
-            </label>
-            <input
-              type="range"
+            <Slider
+              label={`Saturação: ${saturation}%`}
               min={0}
               max={200}
               value={saturation}
-              onChange={(e) => setSaturation(Number(e.target.value))}
-              className="w-full"
+              onChange={setSaturation}
             />
-          </div>
 
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={handleRemoveBackground}
-              className="inline-flex items-center rounded-xl bg-[#25d366] px-4 py-2 font-semibold text-black/90 shadow-sm transition hover:bg-[#1fd05f] disabled:opacity-60"
-              disabled={loadingBg}
-            >
-              {loadingBg ? 'Removendo fundo…' : 'Remover fundo (beta)'}
-            </button>
-
-            <button
-              type="button"
-              onClick={exportPng}
-              className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground transition hover:bg-white/5"
-            >
-              Exportar PNG
-            </button>
-
-            {onCancel && (
+            <div className="mt-4 flex flex-wrap gap-3">
               <button
                 type="button"
-                onClick={onCancel}
+                onClick={handleRemoveBackground}
+                className="inline-flex items-center rounded-xl bg-[#25d366] px-4 py-2 font-semibold text-black/90 shadow-sm transition hover:bg-[#1fd05f] disabled:opacity-60"
+                disabled={loadingBg}
+              >
+                {loadingBg ? 'Removendo fundo…' : 'Remover fundo (beta)'}
+              </button>
+
+              <button
+                type="button"
+                onClick={exportPng}
                 className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground transition hover:bg-white/5"
               >
-                Cancelar
+                Exportar PNG
               </button>
+
+              {onCancel && (
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground transition hover:bg-white/5"
+                >
+                  Cancelar
+                </button>
+              )}
+            </div>
+
+            {!modelReady && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                O modelo carrega na 1ª vez que você clica em “Remover fundo”.
+              </p>
             )}
           </div>
 
-          {!modelReady && (
-            <p className="mt-3 text-xs text-[var(--muted-foreground)]">
-              O modelo carrega na 1ª vez que você clica em “Remover fundo”.
-            </p>
-          )}
-        </div>
-
-        {/* Preview */}
-        <div className="rounded-2xl border border-white/10 bg-black/10 p-3">
-          <div className="overflow-auto">
-            <canvas ref={canvasRef} className="block max-w-full" />
+          {/* Preview */}
+          <div className="rounded-2xl border border-white/10 bg-black/10 p-3">
+            <div className="overflow-auto">
+              <canvas ref={canvasRef} className="block max-w-full" />
+            </div>
           </div>
         </div>
       </div>
@@ -234,7 +217,36 @@ export default function PhotoEditor({
   );
 }
 
-/* ---------------- helpers ---------------- */
+/* ---------- UI tiny ---------- */
+function Slider({
+  label,
+  min,
+  max,
+  value,
+  onChange,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <div className="mb-4">
+      <label className="mb-1 block text-sm font-medium">{label}</label>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full"
+      />
+    </div>
+  );
+}
+
+/* ---------- helpers de imagem/ONNX ---------- */
 
 function imageToTensor(img: HTMLImageElement, W: number, H: number) {
   const off = document.createElement('canvas');
@@ -262,31 +274,20 @@ function imageToTensor(img: HTMLImageElement, W: number, H: number) {
 }
 
 function tensorToMask(output: ort.Tensor, W: number, H: number) {
-  // U2Net costuma devolver 1x1xHxW ou 1xHxW
-  const data = output.data as Float32Array | number[];
-  const flat = new Float32Array(W * H);
-
-  if (data.length === W * H) {
-    for (let i = 0; i < W * H; i++) flat[i] = Number(data[i]);
-  } else {
-    // assume 1x1xHxW
-    for (let i = 0; i < W * H; i++) flat[i] = Number(data[i]);
-  }
-
-  // normaliza 0..1 e converte para 0..255
+  const src = output.data as Float32Array | number[];
+  // normaliza 0..1 e mapeia para 0..255
   let min = Infinity,
     max = -Infinity;
-  for (let i = 0; i < flat.length; i++) {
-    const v = flat[i];
+  for (let i = 0; i < src.length; i++) {
+    const v = Number(src[i]);
     if (v < min) min = v;
     if (v > max) max = v;
   }
   const rng = max - min || 1;
 
   const out = new Uint8ClampedArray(W * H);
-  for (let i = 0; i < flat.length; i++) {
-    const norm = (flat[i] - min) / rng;
-    // leve suavização para matte
+  for (let i = 0; i < W * H; i++) {
+    const norm = (Number(src[i]) - min) / rng;
     const v = Math.max(0, Math.min(1, norm));
     out[i] = Math.round(v * 255);
   }
@@ -318,9 +319,7 @@ function applyAlphaMaskOnCanvas(canvas: HTMLCanvasElement, mask: Uint8ClampedArr
   const data = imgData.data;
 
   for (let i = 0; i < W * H; i++) {
-    // usa máscara como alpha
-    data[i * 4 + 3] = mask[i];
+    data[i * 4 + 3] = mask[i]; // usa máscara como alpha
   }
-
   ctx.putImageData(imgData, 0, 0);
 }
