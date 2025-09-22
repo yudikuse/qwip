@@ -41,6 +41,19 @@ async function blobToDataURL(blob: Blob): Promise<string> {
 export default function CriarAnuncioPage() {
   const router = useRouter();
 
+  // 🚦 Guard: exige verificação de telefone ANTES de criar
+  useEffect(() => {
+    try {
+      const isVerified = sessionStorage.getItem('qwip_phone_verified') === '1';
+      if (!isVerified) {
+        router.replace('/verificar-sms?next=/anunciar');
+      }
+    } catch {
+      // se o navegador bloquear sessionStorage por algum motivo, enviamos para verificar
+      router.replace('/verificar-sms?next=/anunciar');
+    }
+  }, [router]);
+
   const [title, setTitle] = useState('');
   const [priceDigits, setPriceDigits] = useState('');
   const [description, setDescription] = useState('');
@@ -145,6 +158,7 @@ export default function CriarAnuncioPage() {
     if (!sessionStorage.getItem('qwip_config_ad')) {
       sessionStorage.setItem('qwip_config_ad', JSON.stringify({ category: '', radiusKm, urgencyTimer: true, city, uf }));
     }
+    // mantém fluxo atual: daqui vai para configurar
     router.push('/anunciar/configurar');
   }
 
