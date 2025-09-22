@@ -13,13 +13,14 @@ export async function aiRemoveBackground(
   const cfg: Config = {
     // Usa WebGPU/GPU quando disponível; cai para CPU automaticamente.
     device: "gpu",
-    // 'type' NÃO existe no tipo; só 'format' e 'quality'.
+    // ATENÇÃO: 'type' NÃO existe aqui. Somente 'format' e 'quality'.
     output: { format: "image/png", quality: 0.92 },
     progress: (_key, current, total) => {
       if (onProgress) onProgress(current, total);
     },
   };
 
+  // A lib já retorna um Blob (PNG com alpha)
   const out = await removeBackground(input, cfg);
-  return out; // já é um Blob (PNG com alpha)
+  return out;
 }
