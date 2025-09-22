@@ -1,32 +1,39 @@
 "use client";
 
 /**
- * Chamamos @imgly/background-removal via import dinâmico para ficar compatível
- * com diferentes formatos de build (ESM/CJS) e variações de types.
- * - Tenta usar module.default
- * - Se não houver, tenta module.removeBackground
- * - Se ainda não houver, tenta chamar o módulo em si como função
+ * Chama @imgly/background-removal com suporte a progresso real (0–100).
+ * - Tenta: fn(input, { device, output, progress })
+ * - Se falhar por assinatura/tipos, cai para fn(input) (sem progresso)
  */
 export async function aiRemoveBackground(
   input: Blob | ArrayBuffer | Uint8Array | string | URL,
-  _onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number) => void
 ): Promise<Blob> {
-  // Import dinâmico evita problemas de tipos “não chamável”
-  const mod = await import("@imgly/background-removal");
-
-  // Seleciona o export correto em tempo de execução
-  const fn =
-    (mod as any).default ??
-    (mod as any).removeBackground ??
-    (mod as any);
+  const mod: any = await import("@imgly/background-removal");
+  const fn: any = mod?.default ?? mod?.removeBackground ?? mod;
 
   if (typeof fn !== "function") {
     throw new Error(
-      "Falha ao carregar @imgly/background-removal: export não é função. " +
-      "Verifique a versão instalada ou tente limpar o cache do Vercel."
+      "@imgly/background-removal: export não é função. Verifique a versão instalada."
     );
   }
 
-  const out: Blob = await fn(input);
-  return out;
+  // Opções com callback de progresso (tipagem flexível)
+  const opts: any = {
+    device: "gpu",
+    output: { format: "image/png", quality: 0.92 },
+    progress: (_key: string, current: number, total: number) => {
+      if (onProgress) onProgress(current, total);
+    },
+  };
+
+  try {
+    // 1ª tentativa: com opções (para exibir progresso)
+    const out: Blob = await fn(input, opts);
+    return out;
+  } catch {
+    // Fallback: sem opções (algumas builds expõem só a assinatura simples)
+    const out: Blob = await fn(input);
+    return out;
+  }
 }
