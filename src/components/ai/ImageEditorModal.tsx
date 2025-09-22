@@ -38,18 +38,27 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
     })();
   }, [open, file]);
 
-  async function onRemoveBg() {
+   async function onRemoveBg() {
     try {
+      // avisa o mundo externo que começou a trabalhar
+      window.dispatchEvent(new CustomEvent("ai-edit:working", { detail: true }));
       setWorking(true);
-      setProgress(undefined);
-      const blob = await aiRemoveBackground(file, (current, total) =>
-        setProgress({ current, total })
-      );
+
+      const blob = await aiRemoveBackground(file /* , (current, total) => {
+        // Se futuramente voltarmos a ter "progress", dá pra emitir:
+        // const pct = Math.round((current / total) * 100);
+        // window.dispatchEvent(new CustomEvent("ai-edit:progress", { detail: pct }));
+      } */);
+
       const bmp = await createImageBitmap(blob);
       if (!canvasRef.current) return;
       drawImageToCanvas(bmp, canvasRef.current);
     } finally {
       setWorking(false);
+      // terminou
+      window.dispatchEvent(new CustomEvent("ai-edit:working", { detail: false }));
+      // zera progresso visível no botão (se houver)
+      window.dispatchEvent(new CustomEvent("ai-edit:progress", { detail: 0 }));
     }
   }
 
