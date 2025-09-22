@@ -1,20 +1,19 @@
 // src/app/auth/phone/page.tsx
-import { redirect } from "next/navigation";
+'use client';
 
-// Evita SSG e permite redirect no request
-export const dynamic = "force-dynamic";
+import { useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 
-type SearchParams =
-  Promise<Record<string, string | string[] | undefined>>;
+export default function AuthPhoneBridge() {
+  const sp = useSearchParams();
 
-export default async function AuthPhonePage({
-  searchParams,
-}: {
-  searchParams: SearchParams;
-}) {
-  const sp = await searchParams;
-  const rawNext = sp?.next;
-  const next = Array.isArray(rawNext) ? rawNext[0] : rawNext || "/anunciar";
+  useEffect(() => {
+    const next = sp.get('next') || '';
+    const target =
+      '/verificar' + (next ? `?redirect=${encodeURIComponent(next)}` : '');
+    // redireciona sem envolver Suspense/SSR
+    window.location.replace(target);
+  }, [sp]);
 
-  redirect(`/verificar-sms?next=${encodeURIComponent(next)}`);
+  return null; // página-ponte, sem UI
 }
