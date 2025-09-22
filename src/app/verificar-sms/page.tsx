@@ -1,7 +1,8 @@
 // src/app/verificar-sms/page.tsx
 'use client';
+
+// Impede SSG/ISR/SSR neste segmento
 export const dynamic = 'force-dynamic';
-export const revalidate = 0;
 
 import { useEffect } from 'react';
 
@@ -10,6 +11,7 @@ export default function VerificarSmsAlias() {
     try {
       const sp = new URLSearchParams(window.location.search);
       const next = sp.get('next') || '';
+      // Fluxo antigo usa ?redirect=
       const target =
         '/verificar' + (next ? `?redirect=${encodeURIComponent(next)}` : '');
       window.location.replace(target);
@@ -17,5 +19,6 @@ export default function VerificarSmsAlias() {
       window.location.replace('/verificar');
     }
   }, []);
-  return null;
+
+  return null; // ponte sem UI
 }
