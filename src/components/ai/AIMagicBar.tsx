@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import ImageEditorModal from "./ImageEditorModal";
 
 /**
@@ -17,18 +17,19 @@ export default function AIMagicBar({
 }) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File>();
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [hostEl, setHostEl] = useState<HTMLDivElement | null>(null);
 
   // "engancha" no input já existente sem quebrar layout
   useEffect(() => {
-    const input = document.querySelector<HTMLInputElement>(anchorSelector) || document.querySelector<HTMLInputElement>('input[type="file"]');
+    const input =
+      document.querySelector<HTMLInputElement>(anchorSelector) ||
+      document.querySelector<HTMLInputElement>('input[type="file"]');
     if (!input) return;
 
-    // cria um pequeno container visual logo abaixo do input
     const host = document.createElement("div");
     host.className = "mt-2";
     input.insertAdjacentElement("afterend", host);
-    containerRef.current = host;
+    setHostEl(host);
 
     // listener p/ pegar o último arquivo selecionado
     const onChange = () => {
@@ -36,17 +37,23 @@ export default function AIMagicBar({
       if (f) setFile(f);
     };
     input.addEventListener("change", onChange);
+
     return () => {
       input.removeEventListener("change", onChange);
       host.remove();
+      setHostEl(null);
     };
   }, [anchorSelector]);
 
   function applyBlobToFileInput(blob: Blob) {
-    // cria um File novo e injeta no input original
-    const original = document.querySelector<HTMLInputElement>(anchorSelector) || document.querySelector<HTMLInputElement>('input[type="file"]');
+    const original =
+      document.querySelector<HTMLInputElement>(anchorSelector) ||
+      document.querySelector<HTMLInputElement>('input[type="file"]');
     if (!original) return;
-    const edited = new File([blob], "foto-editada.png", { type: "image/png", lastModified: Date.now() });
+    const edited = new File([blob], "foto-editada.png", {
+      type: "image/png",
+      lastModified: Date.now(),
+    });
     const dt = new DataTransfer();
     dt.items.add(edited);
     original.files = dt.files; // substitui o arquivo no input
@@ -55,20 +62,23 @@ export default function AIMagicBar({
 
   // render da "barra" perto do input original
   useEffect(() => {
-    if (!containerRef.current) return;
-    containerRef.current.innerHTML = "";
+    if (!hostEl) return;
+    hostEl.innerHTML = "";
+
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-2 text-black font-semibold hover:bg-emerald-400";
+    btn.className =
+      "inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-2 text-black font-semibold hover:bg-emerald-400";
     btn.textContent = "Editar com IA (grátis)";
     btn.onclick = () => setOpen(true);
-    containerRef.current.appendChild(btn);
+    hostEl.appendChild(btn);
 
     const hint = document.createElement("p");
     hint.className = "text-xs text-zinc-500 mt-1";
-    hint.textContent = "Remoção de fundo + ajustes rápidos direto no navegador.";
-    containerRef.current.appendChild(hint);
-  }, [containerRef.current, file]);
+    hint.textContent =
+      "Remoção de fundo + ajustes rápidos direto no navegador.";
+    hostEl.appendChild(hint);
+  }, [hostEl, file]);
 
   return (
     <>
