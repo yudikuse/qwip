@@ -7,6 +7,9 @@ import dynamic from 'next/dynamic';
 // Carrega o mapa apenas no cliente
 const MapPreview = dynamic(() => import('@/components/MapPreview'), { ssr: false });
 
+// Carrega o montador da barra de IA (sem SSR)
+const AIMount = dynamic(() => import('./AIMount'), { ssr: false });
+
 type Draft = {
   title: string;
   priceDigits: string;          // "1850" => R$ 18,50
@@ -95,7 +98,10 @@ export default function CriarAnuncioPage() {
     );
   }, [lat, lng, city, uf]);
 
-  const cents = useMemo(() => parseInt((priceDigits || '0').replace(/\D/g, ''), 10) || 0, [priceDigits]);
+  const cents = useMemo(
+    () => parseInt((priceDigits || '0').replace(/\D/g, ''), 10) || 0,
+    [priceDigits]
+  );
 
   // upload local (apenas dataURL)
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -206,6 +212,7 @@ export default function CriarAnuncioPage() {
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   onChange={onFileChange}
+                  data-ai="photo" // <- seletor usado pela barra de IA
                   className="block w-full cursor-pointer rounded-xl border border-white/15 bg-[#0f1115] px-3 py-2 text-sm
                              file:mr-3 file:rounded-lg file:border-0 file:bg-[#25d366] file:px-3 file:py-2
                              file:text-black/90 file:font-semibold hover:file:opacity-95"
@@ -349,7 +356,10 @@ export default function CriarAnuncioPage() {
             <span className={chipNeutral}>Raio atual: {radiusKm} km</span>
           </div>
         </section>
+
+        {/* Monta a barra de IA (seletor pega o input com data-ai="photo") */}
+        <AIMount />
       </div>
     </main>
   );
-  }
+}
