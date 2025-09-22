@@ -46,11 +46,11 @@ export default function CriarAnuncioPage() {
     try {
       const isVerified = sessionStorage.getItem('qwip_phone_verified') === '1';
       if (!isVerified) {
-        router.replace('/verificar-sms?next=/anunciar');
+        router.replace('/auth/phone?next=/anunciar'); // <— corrigido
       }
     } catch {
       // se o navegador bloquear sessionStorage por algum motivo, enviamos para verificar
-      router.replace('/verificar-sms?next=/anunciar');
+      router.replace('/auth/phone?next=/anunciar');   // <— corrigido
     }
   }, [router]);
 
