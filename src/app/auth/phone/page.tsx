@@ -1,13 +1,20 @@
 // src/app/auth/phone/page.tsx
 import { redirect } from "next/navigation";
 
-// Garante execução por requisição (sem tentativa de SSG que quebra com redirect)
+// Evita SSG e permite redirect no request
 export const dynamic = "force-dynamic";
 
-type SearchParams = { [key: string]: string | string[] | undefined };
+type SearchParams =
+  Promise<Record<string, string | string[] | undefined>>;
 
-export default function AuthPhonePage({ searchParams }: { searchParams: SearchParams }) {
-  const rawNext = searchParams?.next;
+export default async function AuthPhonePage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const sp = await searchParams;
+  const rawNext = sp?.next;
   const next = Array.isArray(rawNext) ? rawNext[0] : rawNext || "/anunciar";
+
   redirect(`/verificar-sms?next=${encodeURIComponent(next)}`);
 }
