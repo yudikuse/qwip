@@ -8,26 +8,24 @@ type Phase = 'start' | 'code' | 'success';
 export default function VerificarSmsPage() {
   const [phase, setPhase] = useState<Phase>('start');
 
-  // telefone (apenas dígitos) + máscara de exibição
-  const [phoneDigits, setPhoneDigits] = useState(''); // ex.: "11999998888"
+  const [phoneDigits, setPhoneDigits] = useState(''); // "11999998888"
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // consentimento dos termos
   const [consent, setConsent] = useState(false);
 
-  // rota de retorno
-  const [redirectTo, setRedirectTo] = useState<string>('/anuncio/novo');
+  // rota de retorno (aceita ?redirect= ou ?next=)
+  const [redirectTo, setRedirectTo] = useState<string>('/anunciar');
   useEffect(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
-      const r = sp.get('redirect');
+      const r = sp.get('redirect') || sp.get('next');
       if (r) setRedirectTo(r);
     } catch {}
   }, []);
 
-  // máscara BR: (11) 99999-9999  | para 10 dígitos: (11) 3999-9999
+  // máscara BR
   function maskBR(digits: string) {
     const d = digits.replace(/\D/g, '');
     if (!d) return '';
@@ -40,7 +38,7 @@ export default function VerificarSmsPage() {
 
   function handlePhoneChange(v: string) {
     setErr(null);
-    const only = v.replace(/\D/g, '').slice(0, 11); // até 11 dígitos
+    const only = v.replace(/\D/g, '').slice(0, 11);
     setPhoneDigits(only);
   }
 
@@ -66,7 +64,7 @@ export default function VerificarSmsPage() {
         body: JSON.stringify({ phone: e164 }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Falha ao enviar SMS');
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Falha ao enviar SMS');
 
       setPhase('code');
     } catch (error) {
@@ -95,14 +93,23 @@ export default function VerificarSmsPage() {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/otp/check', {
+      // >>> chama /api/otp/verify (compatível com o middleware/cookie)
+      const res = await fetch('/api/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: e164, code: otp }),
+        body: JSON.stringify({ phone: e164, code: otp }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Código inválido');
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Código inválido');
 
+      // marca (se você usa guardas client-side além do middleware)
+      try {
+        sessionStorage.setItem('qwip_phone_verified', '1');
+      } catch {}
+
+      // redirect imediato (quebra loop de voltar para esta página)
+      window.location.replace(redirectTo || '/anunciar');
+      // (opcional) mostrar success enquanto navega:
       setPhase('success');
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Erro desconhecido';
@@ -112,27 +119,26 @@ export default function VerificarSmsPage() {
     }
   }
 
-  // auto-redirect suave após sucesso (mantém botão visível)
   useEffect(() => {
+    // fallback de UX: se ficar em success por algum motivo, garante redirect
     if (phase === 'success') {
       const t = setTimeout(() => {
         try {
-          window.location.href = redirectTo;
+          window.location.replace(redirectTo || '/anunciar');
         } catch {}
       }, 700);
       return () => clearTimeout(t);
     }
   }, [phase, redirectTo]);
 
-  const phoneOk = phoneDigits.length >= 10; // 10 ou 11 dígitos
+  const phoneOk = phoneDigits.length >= 10;
 
+  // ---------------- UI (inalterada visualmente) ----------------
   return (
     <main className="min-h-[calc(100dvh-80px)] w-full bg-background text-foreground">
       <div className="mx-auto w-full max-w-md px-4 py-10">
-        {/* Header seguro */}
         <div className="mb-6 flex items-center justify-center gap-3">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/15 ring-1 ring-emerald-500/25">
-            {/* cadeado */}
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" className="text-emerald-400 fill-current">
               <path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm-3 8V6a3 3 0 116 0v3H9z"></path>
             </svg>
@@ -146,10 +152,7 @@ export default function VerificarSmsPage() {
         </div>
 
         {phase === 'start' && (
-          <form
-            onSubmit={onStart}
-            className="rounded-lg border border-white/10 bg-[#0f131a] p-6 shadow-sm"
-          >
+          <form onSubmit={onStart} className="rounded-lg border border-white/10 bg-[#0f131a] p-6 shadow-sm">
             <label htmlFor="phone" className="block text-sm font-medium text-neutral-200">
               Seu número de celular
             </label>
@@ -164,7 +167,6 @@ export default function VerificarSmsPage() {
               disabled={loading}
             />
 
-            {/* bloco de segurança */}
             <div className="mt-3 rounded-md border border-white/10 bg-black/20 p-3 text-xs text-neutral-300">
               <ul className="list-disc space-y-1 pl-5">
                 <li>Seu número é usado apenas para verificação.</li>
@@ -173,7 +175,6 @@ export default function VerificarSmsPage() {
               </ul>
             </div>
 
-            {/* termos e consentimento */}
             <div className="mt-4 flex items-start gap-3">
               <input
                 id="consent"
@@ -212,14 +213,10 @@ export default function VerificarSmsPage() {
         )}
 
         {phase === 'code' && (
-          <form
-            onSubmit={onCheck}
-            className="rounded-lg border border-white/10 bg-[#0f131a] p-6 shadow-sm"
-          >
+          <form onSubmit={onCheck} className="rounded-lg border border-white/10 bg-[#0f131a] p-6 shadow-sm">
             <div className="mb-4">
               <p className="text-sm text-neutral-300">
-                Enviamos um SMS para{' '}
-                <span className="font-medium text-white">{phoneMasked || 'seu número'}</span>.
+                Enviamos um SMS para <span className="font-medium text-white">{phoneMasked || 'seu número'}</span>.
               </p>
               <p className="mt-1 text-xs text-neutral-400">Não compartilhe este código com ninguém.</p>
             </div>
@@ -264,12 +261,9 @@ export default function VerificarSmsPage() {
         {phase === 'success' && (
           <div className="rounded-lg border border-white/10 bg-[#0f131a] p-6 text-center shadow-sm">
             <h2 className="text-xl font-semibold text-white">Número verificado! ✅</h2>
-            <p className="mt-2 text-sm text-neutral-400">
-              Agora você pode continuar para criar seu anúncio.
-            </p>
-
+            <p className="mt-2 text-sm text-neutral-400">Agora você pode continuar para criar seu anúncio.</p>
             <a
-              href={redirectTo}
+              href={redirectTo || '/anunciar'}
               className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-md bg-emerald-500 font-medium text-[#0F1115] transition hover:bg-emerald-400"
             >
               Continuar
