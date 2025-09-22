@@ -6,10 +6,6 @@ import ImageEditorModal from "./ImageEditorModal";
 /**
  * Renderiza um botão "Editar com IA (grátis)" no hostSelector (ex.: abaixo do preview),
  * mas observa o arquivo do inputSelector (seu <input type="file"> existente).
- *
- * - inputSelector: CSS do input de foto (ex.: '[data-ai="photo"]')
- * - hostSelector:  CSS de onde o botão deve aparecer (ex.: '#ai-under-preview')
- * - onReplaceFile: callback chamado com o Blob editado (para atualizar o preview)
  */
 export default function AIMagicBar({
   inputSelector,
@@ -25,6 +21,28 @@ export default function AIMagicBar({
   const [hostEl, setHostEl] = useState<HTMLDivElement | null>(null);
   const [inputEl, setInputEl] = useState<HTMLInputElement | null>(null);
 
+  // estados para UI do botão
+  const [working, setWorking] = useState(false);
+  const [progress, setProgress] = useState<number>(0);
+
+  // escuta eventos emitidos pelo modal (working/progress)
+  useEffect(() => {
+    const onWorking = (e: Event) => {
+      const b = (e as CustomEvent).detail === true;
+      setWorking(b);
+    };
+    const onProgress = (e: Event) => {
+      const pct = Number((e as CustomEvent).detail || 0);
+      setProgress(isFinite(pct) ? pct : 0);
+    };
+    window.addEventListener("ai-edit:working", onWorking);
+    window.addEventListener("ai-edit:progress", onProgress);
+    return () => {
+      window.removeEventListener("ai-edit:working", onWorking);
+      window.removeEventListener("ai-edit:progress", onProgress);
+    };
+  }, []);
+
   // localiza elementos (host e input)
   useEffect(() => {
     const input =
@@ -34,16 +52,17 @@ export default function AIMagicBar({
 
     const host =
       document.querySelector<HTMLDivElement>(hostSelector) ||
-      (input ? ((): HTMLDivElement => {
-        const div = document.createElement("div");
-        div.className = "mt-2";
-        input.insertAdjacentElement("afterend", div);
-        return div;
-      })() : null);
+      (input
+        ? (() => {
+            const div = document.createElement("div");
+            div.className = "mt-2";
+            input.insertAdjacentElement("afterend", div);
+            return div;
+          })()
+        : null);
 
     setHostEl(host || null);
 
-    // cleanup se criarmos um host dinâmico
     return () => {
       if (host && !document.querySelector(hostSelector) && host.parentElement) {
         host.remove();
@@ -62,7 +81,7 @@ export default function AIMagicBar({
     return () => inputEl.removeEventListener("change", onChange);
   }, [inputEl]);
 
-  // injeta o botão e um hint no host
+  // injeta botão compacto com ícone / loader
   useEffect(() => {
     if (!hostEl) return;
     hostEl.innerHTML = "";
@@ -70,24 +89,56 @@ export default function AIMagicBar({
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className =
-      "inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-1.5 " +
-      "text-xs font-semibold text-black hover:bg-emerald-400";
-    btn.textContent = "Editar com IA (grátis)";
+      "inline-flex items-center gap-2 rounded-lg bg-emerald-500/95 px-2.5 py-1.5 " +
+      "text-xs font-semibold text-black hover:bg-emerald-400 shadow-sm";
     btn.onclick = () => {
       if (!file) {
-        // feedback simples se ainda não há arquivo
-        btn.animate([{ transform: "translateX(0)" }, { transform: "translateX(-4px)" }, { transform: "translateX(4px)" }, { transform: "translateX(0)" }], { duration: 200 });
+        btn.animate(
+          [
+            { transform: "translateX(0)" },
+            { transform: "translateX(-3px)" },
+            { transform: "translateX(3px)" },
+            { transform: "translateX(0)" },
+          ],
+          { duration: 180 }
+        );
         return;
       }
       setOpen(true);
     };
+
+    const setBtnContent = () => {
+      if (working) {
+        btn.innerHTML = `
+          <svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4z"></path>
+          </svg>
+          <span>${progress ? `Editando… ${progress}%` : "Editando…"}</span>
+        `;
+      } else {
+        btn.innerHTML = `
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 21l14-14M16 5l3 3M2 22l5-2-3-3-2 5z"></path>
+          </svg>
+          <span>Editar com IA (grátis)</span>
+        `;
+      }
+    };
+
+    setBtnContent();
     hostEl.appendChild(btn);
 
+    // dica menor
     const hint = document.createElement("p");
     hint.className = "text-[10px] text-zinc-500 mt-1";
     hint.textContent = "Remove fundo + ajustes rápidos no navegador.";
     hostEl.appendChild(hint);
-  }, [hostEl, file]);
+
+    // re-render simples quando muda estado
+    const id = setInterval(() => setBtnContent(), 150);
+    return () => clearInterval(id);
+  }, [hostEl, file, working, progress]);
 
   // aplica Blob editado no input e dispara callback p/ atualizar preview
   function applyBlobToFileInput(blob: Blob) {
@@ -99,7 +150,6 @@ export default function AIMagicBar({
       const dt = new DataTransfer();
       dt.items.add(edited);
       inputEl.files = dt.files;
-      // dispara 'change' para qualquer listener existente na página
       inputEl.dispatchEvent(new Event("change", { bubbles: true }));
     }
     onReplaceFile(blob);
