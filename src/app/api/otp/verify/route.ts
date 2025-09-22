@@ -4,17 +4,41 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { toE164BR } from "@/lib/phone";
 import { checkOtpViaVerify } from "@/lib/twilio";
-import {
-  getClientIP,
-  limitByKey,
-  checkCooldown,
-  tooMany,
-} from "@/lib/rate-limit";
-import { issueSession } from "@/lib/session";
+import { getClientIP, limitByKey, checkCooldown, tooMany } from "@/lib/rate-limit";
+
+// Mesmo segredo e cookie que o middleware usa
+const COOKIE_NAME = "qwip_session";
+const SIGNING_SECRET =
+  process.env.SIGNING_SECRET ||
+  process.env.QWIP_SIGNING_SECRET ||
+  "dev-secret-change-me";
+
+// utils (Edge-safe)
+function b64url(bytes: Uint8Array) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function hmacSha256(key: string, data: string): Promise<Uint8Array> {
+  const enc = new TextEncoder();
+  const kBuf = new ArrayBuffer(enc.encode(key).byteLength);
+  new Uint8Array(kBuf).set(enc.encode(key));
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    kBuf,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const dBuf = new ArrayBuffer(enc.encode(data).byteLength);
+  new Uint8Array(dBuf).set(enc.encode(data));
+  const sig = await crypto.subtle.sign("HMAC", cryptoKey, dBuf);
+  return new Uint8Array(sig);
+}
 
 export async function POST(req: NextRequest) {
   try {
-    // --------- validação do payload ---------
+    // --------- payload ---------
     let body: any = {};
     try {
       body = await req.json();
@@ -22,7 +46,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "JSON inválido." }, { status: 400 });
     }
 
-    const phoneRaw: string | undefined = body?.phone ?? body?.phoneE164;
+    // aceitamos { phone, code } | { phoneE164, code } | { to, code }
+    const phoneRaw: string | undefined = body?.phone ?? body?.phoneE164 ?? body?.to;
     const code: string | undefined = body?.code;
     const e164 = phoneRaw ? toE164BR(String(phoneRaw)) : null;
 
@@ -30,10 +55,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
     }
 
-    // --------- BLINDAGEM (rate limit + cooldown) ---------
+    // --------- Rate limit / cooldown ---------
     const ip = getClientIP(req);
 
-    // 1) Cooldown por telefone: 10s entre verificações
+    // 1) Cooldown por telefone: 10s
     {
       const c = checkCooldown(`otp:verify:${e164}`, 10);
       if (!c.ok) return tooMany("Aguarde antes de tentar verificar novamente.", c.retryAfterSec);
@@ -61,34 +86,38 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // --------- Sessão segura + cookie de compat p/ UI ---------
-    const sessionValue = await issueSession(e164, 24);
+    // --------- Emite token compatível com o middleware (v1.<payload>.<sig>) ---------
+    const iat = Math.floor(Date.now() / 1000);
+    const exp = iat + 60 * 60 * 24; // 24h
+    const payload = { phone: e164, iat, exp };
+    const payloadStr = JSON.stringify(payload);
+    const payloadB64 = b64url(new TextEncoder().encode(payloadStr));
+    const toSign = `v1.${payloadB64}`;
+    const sig = await hmacSha256(SIGNING_SECRET, toSign);
+    const token = `v1.${payloadB64}.${b64url(sig)}`;
+
     const res = NextResponse.json(
       { ok: true, phoneE164: e164 },
       { headers: { "Cache-Control": "no-store" } }
     );
 
-    // Descobre o host atual (preview, apex, www, etc.)
-    const host = new URL(req.url).hostname;
-
-    // Sessão segura (HttpOnly)
-    res.cookies.set("qwip_session", sessionValue, {
+    // Cookie HttpOnly lido pelo middleware
+    res.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
-      sameSite: "strict",
+      sameSite: "lax", // compat com redirects cross-path
       secure: true,
       path: "/",
       maxAge: 60 * 60 * 24, // 24h
-      domain: host,
+      // NÃO definir "domain" para evitar incompatibilidade em previews/subdomínios
     });
 
-    // Cookie legível pela UI (compat)
+    // (Opcional) cookie legível pela UI
     res.cookies.set("qwip_phone_e164", encodeURIComponent(e164), {
       httpOnly: false,
       sameSite: "lax",
       secure: true,
       path: "/",
       maxAge: 60 * 60 * 24 * 30, // 30d
-      domain: host,
     });
 
     return res;
