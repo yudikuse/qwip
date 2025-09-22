@@ -1,21 +1,13 @@
 // src/app/auth/phone/page.tsx
-"use client";
-import { useEffect } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { redirect } from "next/navigation";
 
-/**
- * Ponte de compatibilidade: redireciona /auth/phone para /verificar-sms
- * preservando o parâmetro `next`.
- */
-export default function AuthPhone() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
+// Garante execução por requisição (sem tentativa de SSG que quebra com redirect)
+export const dynamic = "force-dynamic";
 
-  useEffect(() => {
-    // lê o parâmetro next (ou usa /anunciar como padrão)
-    const next = searchParams.get("next") || "/anunciar";
-    router.replace(`/verificar-sms?next=${encodeURIComponent(next)}`);
-  }, [searchParams, router]);
+type SearchParams = { [key: string]: string | string[] | undefined };
 
-  return null;
+export default function AuthPhonePage({ searchParams }: { searchParams: SearchParams }) {
+  const rawNext = searchParams?.next;
+  const next = Array.isArray(rawNext) ? rawNext[0] : rawNext || "/anunciar";
+  redirect(`/verificar-sms?next=${encodeURIComponent(next)}`);
 }
