@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-// 👇 caminho correto do seu modal
 import ImageEditorModal from '@/components/ai/ImageEditorModal';
 
 export default function AIMount({
@@ -20,16 +19,16 @@ export default function AIMount({
   // Modal
   const [open, setOpen] = useState(false);
 
-  // Estados de progresso vindos do modal
+  // Estados de progresso (vindos via eventos globais do modal)
   const [working, setWorking] = useState(false);
   const [rawPct, setRawPct] = useState(0);
 
-  // Progresso suavizado
+  // Progresso suavizado para a UI
   const [uiPct, setUiPct] = useState(0);
   const rafRef = useRef<number | null>(null);
   const lastRef = useRef<number>(0);
 
-  // Localiza host e input
+  // Localiza host e input e observa mudanças do input
   useEffect(() => {
     setHostEl(document.querySelector<HTMLElement>(hostSelector) ?? null);
 
@@ -45,17 +44,42 @@ export default function AIMount({
     return () => input.removeEventListener('change', onChange);
   }, [hostSelector, inputSelector]);
 
-  // Suavização do progresso
+  // Ouve eventos do modal: ai-edit:working / ai-edit:progress
+  useEffect(() => {
+    const onWorking = (e: Event) => {
+      const v = Boolean((e as CustomEvent).detail);
+      setWorking(v);
+      if (v) {
+        setRawPct(0);
+        setUiPct(0);
+      } else {
+        setRawPct(100);
+      }
+    };
+    const onProgress = (e: Event) => {
+      const pct = Number((e as CustomEvent).detail ?? 0);
+      setRawPct(Number.isFinite(pct) ? pct : 0);
+    };
+
+    window.addEventListener('ai-edit:working', onWorking as EventListener);
+    window.addEventListener('ai-edit:progress', onProgress as EventListener);
+    return () => {
+      window.removeEventListener('ai-edit:working', onWorking as EventListener);
+      window.removeEventListener('ai-edit:progress', onProgress as EventListener);
+    };
+  }, []);
+
+  // Suavização do progresso para parecer “real”
   useEffect(() => {
     function loop(now: number) {
       const last = lastRef.current || now;
       lastRef.current = now;
       const dt = Math.max(0, now - last);
 
-      const cap = working ? 97 : 100;           // segura até 97% enquanto está processando
+      const cap = working ? 97 : 100; // segura perto de 97% enquanto processa
       const target = Math.min(cap, rawPct);
 
-      setUiPct(prev => {
+      setUiPct((prev) => {
         if (target <= prev) return prev;
         const gap = target - prev;
         const speed = Math.max(0.12, Math.min(0.35, gap / 24));
@@ -81,7 +105,7 @@ export default function AIMount({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [working, rawPct]);
 
-  // Renderiza o botão no host
+  // Render do botão compacto no host
   useEffect(() => {
     if (!hostEl) return;
 
@@ -98,6 +122,7 @@ export default function AIMount({
       'inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 ' +
       'text-xs font-semibold text-[var(--primary-foreground)] shadow-sm hover:opacity-95 transition';
 
+    // SVG arco de progresso
     function polar(cx: number, cy: number, r: number, deg: number) {
       const a = (deg - 90) * (Math.PI / 180);
       return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
@@ -154,34 +179,22 @@ export default function AIMount({
     return () => clearInterval(id);
   }, [hostEl, file, working, uiPct]);
 
-  // Handlers para o modal
-  const modalHandlers = useMemo(
-    () => ({
-      onWorking: (v: boolean) => {
-        setWorking(v);
-        if (v) {
-          setRawPct(0);
-          setUiPct(0);
-        } else {
-          setRawPct(100);
-        }
-      },
-      onProgress: (current: number, total: number) => {
-        const pct = Math.max(0, Math.min(100, Math.round((current / Math.max(1, total)) * 100)));
-        setRawPct(pct);
-      },
-      onApply: async (blob: Blob) => {
-        if (inputEl) {
-          const edited = new File([blob], 'foto-editada.png', { type: 'image/png', lastModified: Date.now() });
-          const dt = new DataTransfer();
-          dt.items.add(edited);
-          inputEl.files = dt.files;
-          inputEl.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        onReplace(blob);
-        setOpen(false);
-      },
-    }),
+  // Callbacks do modal
+  const onApply = useMemo(
+    () => async (blob: Blob) => {
+      if (inputEl) {
+        const edited = new File([blob], 'foto-editada.png', {
+          type: 'image/png',
+          lastModified: Date.now(),
+        });
+        const dt = new DataTransfer();
+        dt.items.add(edited);
+        inputEl.files = dt.files;
+        inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      onReplace(blob);
+      setOpen(false);
+    },
     [inputEl, onReplace]
   );
 
@@ -192,11 +205,7 @@ export default function AIMount({
           file={file}
           open={open}
           onClose={() => setOpen(false)}
-          // Se o seu modal já dispara eventos globais, tudo bem.
-          // Estes props permitem reportar progresso diretamente:
-          onWorking={modalHandlers.onWorking as any}
-          onProgress={modalHandlers.onProgress as any}
-          onApply={modalHandlers.onApply}
+          onApply={onApply}
         />
       )}
     </>
