@@ -1,341 +1,349 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import removeBackground from '@imgly/background-removal';
 
-// Import opcional – usado apenas quando clicar em "Remover fundo (IA)"
-let removeBgFn: null | ((
-  input: Blob | ArrayBuffer | Uint8Array | string | URL,
-  cfg?: any
-) => Promise<Blob>) = null;
+type FilterId = 'original' | 'realce' | 'pb' | 'quente' | 'frio' | 'hdr';
 
 type Props = {
-  open: boolean;
   file: File;
+  open: boolean;
   onClose: () => void;
   onApply: (blob: Blob) => void;
 };
 
-type FilterKind = 'original' | 'boost' | 'bw' | 'warm' | 'cool' | 'hdr';
+/** Presets (para export) usando CanvasRenderingContext2D.filter */
+const FILTERS: Record<FilterId, string> = {
+  original: 'none',
+  realce: 'brightness(1.06) contrast(1.09) saturate(1.08) sharpness(0)',
+  pb: 'grayscale(1) contrast(1.05)',
+  quente: 'saturate(1.15) hue-rotate(-8deg) brightness(1.03)',
+  frio: 'saturate(0.95) hue-rotate(8deg) brightness(1.02)',
+  hdr: 'contrast(1.1) saturate(1.1) brightness(1.04)',
+};
 
-export default function ImageEditorModal({ open, file, onClose, onApply }: Props) {
-  const [previewURL, setPreviewURL] = useState<string>('');
-  const [bitmap, setBitmap] = useState<ImageBitmap | null>(null);
+/** Fit “contain”: retorna área renderizada da imagem dentro do viewport */
+function computeContainFit(
+  imgW: number,
+  imgH: number,
+  viewW: number,
+  viewH: number
+) {
+  const scale = Math.min(viewW / imgW, viewH / imgH);
+  const w = Math.round(imgW * scale);
+  const h = Math.round(imgH * scale);
+  const x = Math.round((viewW - w) / 2);
+  const y = Math.round((viewH - h) / 2);
+  return { x, y, w, h, scale };
+}
 
-  // região de desenho na prévia (para mapear seleção -> pixels reais)
-  const drawRect = useRef<{ dx: number; dy: number; dw: number; dh: number }>({
-    dx: 0,
-    dy: 0,
-    dw: 0,
-    dh: 0,
-  });
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
 
-  // Seleção de recorte (coordenadas da pré-visualização)
+/** Suaviza o progresso para não “oscilar” */
+function smoothMonotonicProgress(prev: number, next: number) {
+  // limita passos e garante monotonia
+  const capped = Math.min(next, prev + 7); // no máx +7 por tick
+  return Math.max(prev, Math.round(capped));
+}
+
+export default function ImageEditorModal({ file, open, onClose, onApply }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [imgUrl, setImgUrl] = useState<string>('');
+  const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null);
+
+  // filtros e estado do IA
+  const [filter, setFilter] = useState<FilterId>('original');
+  const [bgBlob, setBgBlob] = useState<Blob | null>(null); // saída do removeBackground
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  // seleção de recorte (em coords do viewport)
+  const [dragging, setDragging] = useState(false);
   const [sel, setSel] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const dragRef = useRef<{ x0: number; y0: number; active: boolean }>({ x0: 0, y0: 0, active: false });
+  const [committedCrop, setCommittedCrop] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null); // normalizado [0..1] dentro da imagem renderizada
 
-  // Filtros rápidos
-  const [filter, setFilter] = useState<FilterKind>('original');
-
-  // Estados da IA (progresso)
-  const [working, setWorking] = useState(false);
-
-  // refs do canvas de prévia
-  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
-
-  // Carrega o arquivo na prévia
+  // carregar a imagem do File
   useEffect(() => {
-    if (!open) return;
+    if (!open || !file) return;
     const url = URL.createObjectURL(file);
-    setPreviewURL(url);
-    (async () => {
-      const bmp = await createImageBitmap(file);
-      setBitmap(bmp);
-    })();
+    setImgUrl(url);
+    const img = new Image();
+    img.onload = () => setImgEl(img);
+    img.src = url;
+    return () => URL.revokeObjectURL(url);
+  }, [file, open]);
 
-    return () => {
-      URL.revokeObjectURL(url);
-      setBitmap((old) => {
-        if (old) old.close?.();
-        return null;
-      });
-    };
-  }, [open, file]);
-
-  // Desenha a imagem na prévia (fit contain) e guarda drawRect para mapeamento correto
+  // limpar estados ao fechar
   useEffect(() => {
-    const canvas = previewCanvasRef.current;
-    if (!canvas || !bitmap) return;
-
-    const px = Math.max(1, Math.floor(devicePixelRatio || 1));
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    canvas.width = w * px;
-    canvas.height = h * px;
-    const ctx = canvas.getContext('2d')!;
-    ctx.setTransform(px, 0, 0, px, 0, 0);
-    ctx.clearRect(0, 0, w, h);
-
-    const iw = bitmap.width;
-    const ih = bitmap.height;
-    const scale = Math.min(w / iw, h / ih);
-    const dw = Math.max(1, Math.floor(iw * scale));
-    const dh = Math.max(1, Math.floor(ih * scale));
-    const dx = Math.floor((w - dw) / 2);
-    const dy = Math.floor((h - dh) / 2);
-    drawRect.current = { dx, dy, dw, dh };
-
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(bitmap, dx, dy, dw, dh);
-  }, [bitmap, previewURL, open]);
-
-  // Interação de recorte
-  useEffect(() => {
-    const overlay = overlayRef.current;
-    const canvas = previewCanvasRef.current;
-    if (!overlay || !canvas) return;
-
-    function clampRect(r: { x: number; y: number; w: number; h: number }) {
-      const { dx, dy, dw, dh } = drawRect.current;
-      let x = Math.max(dx, Math.min(dx + dw, r.x));
-      let y = Math.max(dy, Math.min(dy + dh, r.y));
-      let w = Math.max(1, Math.min(dx + dw - x, r.w));
-      let h = Math.max(1, Math.min(dy + dh - y, r.h));
-      return { x, y, w, h };
-    }
-
-    const onDown = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      dragRef.current = { x0: x, y0: y, active: true };
+    if (!open) {
+      setBgBlob(null);
+      setFilter('original');
       setSel(null);
-    };
-    const onMove = (e: MouseEvent) => {
-      if (!dragRef.current.active) return;
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      const rx = Math.min(dragRef.current.x0, x);
-      const ry = Math.min(dragRef.current.y0, y);
-      const rw = Math.abs(x - dragRef.current.x0);
-      const rh = Math.abs(y - dragRef.current.y0);
-      setSel(clampRect({ x: rx, y: ry, w: rw, h: rh }));
-    };
-    const onUp = () => {
-      dragRef.current.active = false;
-    };
+      setCommittedCrop(null);
+      setRunning(false);
+      setProgress(0);
+    }
+  }, [open]);
 
-    overlay.addEventListener('mousedown', onDown);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      overlay.removeEventListener('mousedown', onDown);
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, []);
+  const viewBox = useMemo(() => {
+    const el = containerRef.current;
+    if (!el || !imgEl) return null;
+    const r = el.getBoundingClientRect();
+    return computeContainFit(imgEl.naturalWidth, imgEl.naturalHeight, Math.floor(r.width), Math.floor(r.height));
+  }, [imgEl, containerRef.current?.clientWidth, containerRef.current?.clientHeight]);
 
-  // Desenha o retângulo da seleção por cima
-  useEffect(() => {
-    const overlay = overlayRef.current;
-    if (!overlay) return;
-    overlay.innerHTML = '';
-    if (!sel) return;
+  /** Converte a seleção (viewport) para frações (0..1) dentro da imagem renderizada */
+  function commitSelection() {
+    if (!sel || !viewBox) return;
+    // interseção com área realmente renderizada da imagem
+    const ix1 = clamp(sel.x, viewBox.x, viewBox.x + viewBox.w);
+    const iy1 = clamp(sel.y, viewBox.y, viewBox.y + viewBox.h);
+    const ix2 = clamp(sel.x + sel.w, viewBox.x, viewBox.x + viewBox.w);
+    const iy2 = clamp(sel.y + sel.h, viewBox.y, viewBox.y + viewBox.h);
+    if (ix2 - ix1 < 6 || iy2 - iy1 < 6) return; // muito pequeno
 
-    const el = document.createElement('div');
-    el.style.position = 'absolute';
-    el.style.left = `${sel.x}px`;
-    el.style.top = `${sel.y}px`;
-    el.style.width = `${sel.w}px`;
-    el.style.height = `${sel.h}px`;
-    el.style.border = '2px solid #22c55e';
-    el.style.borderRadius = '10px';
-    el.style.boxShadow = '0 0 0 200vmax rgba(0,0,0,.35) inset';
-    overlay.appendChild(el);
-  }, [sel]);
-
-  // === util ===
-  function dispatchWorking(v: boolean) {
-    setWorking(v);
-    window.dispatchEvent(new CustomEvent('ai-edit:working', { detail: v }));
-  }
-  function dispatchProgress(p: number) {
-    window.dispatchEvent(new CustomEvent('ai-edit:progress', { detail: p }));
+    const fx1 = (ix1 - viewBox.x) / viewBox.w;
+    const fy1 = (iy1 - viewBox.y) / viewBox.h;
+    const fx2 = (ix2 - viewBox.x) / viewBox.w;
+    const fy2 = (iy2 - viewBox.y) / viewBox.h;
+    setCommittedCrop({ x1: fx1, y1: fy1, x2: fx2, y2: fy2 });
   }
 
-  // Aplica filtros/recorte (e opcionalmente já sobre o recorte)
-  async function renderWithEdits(src: ImageBitmap): Promise<Blob> {
-    const { dx, dy, dw, dh } = drawRect.current;
+  function clearSelection() {
+    setSel(null);
+    setCommittedCrop(null);
+  }
 
-    // Converte seleção da visualização para pixels reais
-    let crop = { x: 0, y: 0, w: src.width, h: src.height };
-    if (sel && sel.w > 2 && sel.h > 2) {
-      const sx = Math.max(0, Math.round(((sel.x - dx) / dw) * src.width));
-      const sy = Math.max(0, Math.round(((sel.y - dy) / dh) * src.height));
-      const sw = Math.max(1, Math.round((sel.w / dw) * src.width));
-      const sh = Math.max(1, Math.round((sel.h / dh) * src.height));
-      // clamp para dentro da imagem
-      crop = {
-        x: Math.min(src.width - 1, sx),
-        y: Math.min(src.height - 1, sy),
-        w: Math.min(src.width - sx, sw),
-        h: Math.min(src.height - sy, sh),
-      };
+  // eventos de recorte
+  function onPointerDown(e: React.PointerEvent) {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    setDragging(true);
+    setSel({ x, y, w: 0, h: 0 });
+  }
+  function onPointerMove(e: React.PointerEvent) {
+    if (!dragging || !containerRef.current || !sel) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    setSel({ ...sel, w: x - sel.x, h: y - sel.y });
+  }
+  function onPointerUp() {
+    setDragging(false);
+  }
+
+  /** Aplica o pipeline e gera Blob final (PNG) */
+  async function handleApply() {
+    if (!imgEl) return;
+
+    setRunning(true);
+    setProgress(10);
+
+    // 1) escolhe source base: original ou sem fundo
+    let sourceBlob: Blob;
+    if (bgBlob) {
+      sourceBlob = bgBlob;
+    } else {
+      sourceBlob = file;
     }
 
-    const c = document.createElement('canvas');
-    c.width = crop.w;
-    c.height = crop.h;
-    const ctx = c.getContext('2d', { willReadFrequently: false })!;
+    // 2) carrega sourceBlob para ImageBitmap (rápido e estável)
+    const srcBitmap = await createImageBitmap(sourceBlob);
+    setProgress((p) => smoothMonotonicProgress(p, 35));
 
-    // aplica filtros simples via CSS filters
-    ctx.imageSmoothingQuality = 'high';
-    ctx.filter = cssFilterFor(filter);
-    ctx.drawImage(src, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
-
-    const blob = await new Promise<Blob>((r) => c.toBlob((b) => r(b!), 'image/png', 0.92));
-    return blob;
-  }
-
-  function cssFilterFor(kind: FilterKind) {
-    switch (kind) {
-      case 'boost':
-        return 'brightness(1.05) contrast(1.12) saturate(1.18)';
-      case 'bw':
-        return 'grayscale(1) contrast(1.05)';
-      case 'warm':
-        return 'brightness(1.03) contrast(1.06) sepia(.18) saturate(1.1)';
-      case 'cool':
-        return 'brightness(1.02) contrast(1.06) hue-rotate(190deg) saturate(1.05)';
-      case 'hdr':
-        return 'brightness(1.06) contrast(1.2) saturate(1.15)';
-      default:
-        return 'none';
+    // 3) calcula crop em pixels reais (se houver)
+    let sx = 0, sy = 0, sw = srcBitmap.width, sh = srcBitmap.height;
+    if (committedCrop && viewBox) {
+      const x1px = Math.round(committedCrop.x1 * srcBitmap.width);
+      const y1px = Math.round(committedCrop.y1 * srcBitmap.height);
+      const x2px = Math.round(committedCrop.x2 * srcBitmap.width);
+      const y2px = Math.round(committedCrop.y2 * srcBitmap.height);
+      sx = clamp(Math.min(x1px, x2px), 0, srcBitmap.width - 1);
+      sy = clamp(Math.min(y1px, y2px), 0, srcBitmap.height - 1);
+      sw = clamp(Math.abs(x2px - x1px), 1, srcBitmap.width - sx);
+      sh = clamp(Math.abs(y2px - y1px), 1, srcBitmap.height - sy);
     }
+
+    // 4) desenha recorte + filtro em um canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = sw;
+    canvas.height = sh;
+    const ctx = canvas.getContext('2d')!;
+
+    // aplica preset
+    const filterCss = FILTERS[filter];
+    // mapear “none” para ctx.filter = 'none'
+    ctx.filter = filterCss === 'none' ? 'none' : filterCss;
+
+    ctx.drawImage(srcBitmap, sx, sy, sw, sh, 0, 0, sw, sh);
+    setProgress((p) => smoothMonotonicProgress(p, 70));
+
+    // 5) exporta PNG
+    const blob: Blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b as Blob), 'image/png', 0.92));
+    setProgress((p) => smoothMonotonicProgress(p, 100));
+
+    setRunning(false);
+    onApply(blob);
+    onClose();
   }
 
-  // Remoção de fundo via Imgly – emite progresso real
-  async function onRemoveBg() {
-    if (!bitmap) return;
+  /** IA: remover fundo */
+  async function handleRemoveBg() {
+    if (!imgEl) return;
+    setRunning(true);
+    setProgress(5);
+
+    // Um progressor suave (0→85) enquanto a lib faz o trabalho
+    let soft = 5;
+    const timer = setInterval(() => {
+      soft = Math.min(soft + 3, 85);
+      setProgress((p) => smoothMonotonicProgress(p, soft));
+    }, 180);
+
     try {
-      dispatchWorking(true);
-      dispatchProgress(2);
-
-      if (!removeBgFn) {
-        const mod = await import('@imgly/background-removal');
-        // @ts-expect-error types
-        removeBgFn = mod.default || mod;
-      }
-
-      // Usa o File original para melhor qualidade
-      const out = await removeBgFn!(file, {
+      const out = await removeBackground(imgUrl, {
         device: 'gpu',
         output: { format: 'image/png', quality: 0.92 },
-        progress: (_k: any, cur: number, tot: number) => {
-          const pct = Math.max(3, Math.min(97, Math.round((cur / tot) * 100)));
-          dispatchProgress(pct);
+        progress: (_k, current, total) => {
+          const pct = Math.round((current / Math.max(1, total)) * 85);
+          setProgress((p) => smoothMonotonicProgress(p, pct));
         },
-      });
+      } as any);
 
-      // Atualiza a preview (e bitmap) com o PNG com alpha
-      const url = URL.createObjectURL(out);
-      setPreviewURL((old) => {
-        if (old) URL.revokeObjectURL(old);
-        return url;
-      });
-      const bmp = await createImageBitmap(out);
-      setBitmap((old) => {
-        if (old) old.close?.();
-        return bmp;
-      });
-      dispatchProgress(100);
+      clearInterval(timer);
+      setProgress((p) => smoothMonotonicProgress(p, 92));
+      setBgBlob(out); // guarda para export
     } catch (e) {
-      console.error('remove-bg', e);
-      alert('Falha ao remover fundo.');
-      dispatchProgress(0);
+      clearInterval(timer);
+      console.error('removeBackground failed', e);
     } finally {
-      dispatchWorking(false);
+      setRunning(false);
+      setProgress(0);
     }
   }
 
-  async function handleApply() {
-    if (!bitmap) return;
-    const blob = await renderWithEdits(bitmap);
-    onApply(blob);
-  }
+  // UI helpers
+  const hasCrop = !!committedCrop;
+  const showUrl = useMemo(() => {
+    if (bgBlob) return URL.createObjectURL(bgBlob);
+    return imgUrl;
+  }, [bgBlob, imgUrl]);
 
-  // Fechar ao ESC
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    // liberar blob de preview quando mudar
+    return () => {
+      if (showUrl && showUrl.startsWith('blob:')) URL.revokeObjectURL(showUrl);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [showUrl]);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-black/70 p-4">
-      <div className="mx-auto mt-4 grid w-full max-w-5xl grid-cols-1 gap-4 md:grid-cols-[1.6fr,1fr]">
-        {/* Preview */}
-        <div className="relative rounded-2xl border border-white/10 bg-[#0f1115]/95 p-3">
-          <div className="relative h-[58vh] min-h-[340px] w-full overflow-hidden rounded-xl bg-black/40">
-            <canvas ref={previewCanvasRef} className="h-full w-full" />
-            <div
-              ref={overlayRef}
-              className="pointer-events-auto absolute inset-0 cursor-crosshair"
-              aria-label="Área de recorte"
-            />
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70">
+      <div className="relative grid h-[86vh] w-[min(1000px,96vw)] grid-cols-1 gap-0 rounded-2xl border border-white/10 bg-[#0f1115] shadow-2xl md:grid-cols-[1.4fr,1fr]">
+        {/* Header */}
+        <div className="absolute left-0 top-0 z-10 w-full rounded-t-2xl border-b border-white/10 bg-[#101319] px-4 py-3 text-sm font-semibold">
+          Editar com IA (grátis)
+          <button
+            className="absolute right-3 top-2.5 rounded-md px-2 py-1 text-zinc-400 hover:bg-white/5"
+            onClick={onClose}
+            aria-label="Fechar"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* LADO ESQUERDO — Canvas */}
+        <div className="col-span-1 mt-12 overflow-hidden p-4">
+          <div
+            ref={containerRef}
+            className="relative h-[66vh] w-full select-none overflow-hidden rounded-xl bg-black/40"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+          >
+            {showUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={showUrl}
+                alt=""
+                className="pointer-events-none absolute left-0 top-0 h-full w-full object-contain"
+              />
+            ) : null}
+
+            {/* Seleção atual */}
+            {sel && (
+              <div
+                className="pointer-events-none absolute border-2 border-emerald-400/80"
+                style={{
+                  left: Math.min(sel.x, sel.x + sel.w),
+                  top: Math.min(sel.y, sel.y + sel.h),
+                  width: Math.abs(sel.w),
+                  height: Math.abs(sel.h),
+                  boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
+                }}
+              />
+            )}
+            {/* Preview do recorte “comitado” */}
+            {committedCrop && viewBox && (
+              <div
+                className="pointer-events-none absolute border-2 border-emerald-500/70"
+                style={{
+                  left: viewBox.x + committedCrop.x1 * viewBox.w,
+                  top: viewBox.y + committedCrop.y1 * viewBox.h,
+                  width: (committedCrop.x2 - committedCrop.x1) * viewBox.w,
+                  height: (committedCrop.y2 - committedCrop.y1) * viewBox.h,
+                }}
+              />
+            )}
           </div>
-          <p className="mt-2 text-[11px] text-zinc-400">
-            Dica: arraste para selecionar um recorte. Clique novamente para refazer.
+          <p className="mt-2 text-xs text-zinc-400">
+            Dica: na primeira vez pode demorar um pouco para baixar o modelo. Depois, fica mais rápido.
           </p>
         </div>
 
-        {/* Painel */}
-        <div className="rounded-2xl border border-white/10 bg-[#0f1115]/95 p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold">Fundo</h3>
+        {/* LADO DIREITO — Controles */}
+        <div className="col-span-1 mt-12 space-y-4 border-t border-white/10 p-4 md:border-l md:border-t-0">
+          <div className="rounded-xl border border-white/10 bg-[#0b0f14] p-3">
+            <div className="text-sm font-medium">Fundo</div>
             <button
-              onClick={onClose}
-              className="rounded-lg border border-white/15 px-2 py-1 text-sm text-zinc-300 hover:bg-white/5"
+              className="mt-3 inline-flex w-full items-center justify-center rounded-md bg-emerald-500 px-4 py-2 font-semibold text-[#0F1115] hover:bg-emerald-400 disabled:opacity-50"
+              onClick={handleRemoveBg}
+              disabled={running}
             >
-              Fechar
+              {running && progress > 0
+                ? `Removendo fundo… ${progress}%`
+                : 'Remover fundo (IA)'}
             </button>
+            <p className="mt-2 text-xs text-zinc-400">
+              Roda no seu navegador. Nenhum upload para servidores externos.
+            </p>
           </div>
 
-          {/* Botão IA */}
-          <button
-            disabled={working}
-            onClick={onRemoveBg}
-            className="mt-2 inline-flex h-11 w-full items-center justify-center rounded-md bg-emerald-500 font-semibold text-[#0F1115] hover:bg-emerald-400 disabled:opacity-60"
-          >
-            {working ? 'Processando…' : 'Remover fundo (IA)'}
-          </button>
-
-          {/* Filtros rápidos */}
-          <div className="mt-6">
-            <h4 className="mb-2 text-sm font-medium text-zinc-200">Filtros rápidos</h4>
-            <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-xl border border-white/10 bg-[#0b0f14] p-3">
+            <div className="text-sm font-medium">Filtros rápidos</div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
               {([
                 ['original', 'Original'],
-                ['boost', 'Realce'],
-                ['bw', 'P&B'],
-                ['warm', 'Quente'],
-                ['cool', 'Frio'],
+                ['realce', 'Realce'],
+                ['pb', 'P&B'],
+                ['quente', 'Quente'],
+                ['frio', 'Frio'],
                 ['hdr', 'HDR leve'],
-              ] as [FilterKind, string][]).map(([k, label]) => (
+              ] as [FilterId, string][]).map(([id, label]) => (
                 <button
-                  key={k}
-                  onClick={() => setFilter(k)}
+                  key={id}
+                  type="button"
+                  onClick={() => setFilter(id)}
                   className={
                     'h-10 rounded-md border px-3 text-sm ' +
-                    (filter === k
-                      ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300'
-                      : 'border-white/12 bg-white/5 text-zinc-300 hover:bg-white/8')
+                    (filter === id
+                      ? 'border-emerald-500/30 bg-emerald-500/20 text-emerald-300'
+                      : 'border-white/10 bg-transparent text-zinc-200 hover:bg-white/5')
                   }
                 >
                   {label}
@@ -344,37 +352,41 @@ export default function ImageEditorModal({ open, file, onClose, onApply }: Props
             </div>
           </div>
 
-          {/* Recorte */}
-          <div className="mt-6">
-            <h4 className="mb-2 text-sm font-medium text-zinc-200">Recorte</h4>
-            <div className="flex gap-2">
+          <div className="rounded-xl border border-white/10 bg-[#0b0f14] p-3">
+            <div className="text-sm font-medium">Recorte</div>
+            <div className="mt-3 flex gap-2">
               <button
-                onClick={() => setSel((s) => (s ? s : { x: 30, y: 30, w: 180, h: 120 }))}
-                className="h-10 flex-1 rounded-md border border-white/12 bg-white/5 text-sm text-zinc-200 hover:bg-white/8"
+                type="button"
+                className="h-10 flex-1 rounded-md border border-white/10 bg-white/5 text-sm text-white hover:bg-white/10"
+                onClick={commitSelection}
               >
                 Aplicar recorte
               </button>
               <button
-                onClick={() => setSel(null)}
-                className="h-10 flex-1 rounded-md border border-white/12 bg-white/5 text-sm text-zinc-200 hover:bg-white/8"
+                type="button"
+                className="h-10 rounded-md border border-white/10 bg-transparent px-3 text-sm text-white hover:bg-white/5"
+                onClick={clearSelection}
               >
                 Limpar seleção
               </button>
             </div>
-            <p className="mt-1 text-[11px] text-zinc-400">Arraste na imagem para selecionar a área.</p>
+            <p className="mt-2 text-xs text-zinc-400">Arraste na imagem para selecionar a área.</p>
           </div>
 
-          {/* Ações */}
-          <div className="mt-6 flex items-center justify-end gap-2">
+          <div className="flex items-center justify-between gap-3 pt-2">
             <button
+              type="button"
+              className="inline-flex h-11 flex-1 items-center justify-center rounded-md bg-emerald-500 px-4 font-semibold text-[#0F1115] hover:bg-emerald-400 disabled:opacity-60"
               onClick={handleApply}
-              className="inline-flex h-11 flex-1 items-center justify-center rounded-md bg-emerald-500 font-semibold text-[#0F1115] hover:bg-emerald-400"
+              disabled={running}
             >
               Aplicar no meu anúncio
             </button>
             <button
+              type="button"
+              className="inline-flex h-11 items-center justify-center rounded-md border border-white/10 bg-transparent px-4 text-white hover:bg-white/5"
               onClick={onClose}
-              className="inline-flex h-11 items-center justify-center rounded-md border border-white/12 bg-transparent px-4 text-sm text-zinc-200 hover:bg-white/5"
+              disabled={running}
             >
               Cancelar
             </button>
