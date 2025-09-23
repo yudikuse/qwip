@@ -1,13 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import ImageEditorModal from './ImageEditorModal';
+// 👇 caminho correto do seu modal
+import ImageEditorModal from '@/components/ai/ImageEditorModal';
 
-/**
- * Monta um botão "Editar com IA (grátis)" abaixo do preview (host="#ai-under-preview"),
- * ouvindo o <input type="file" data-ai="photo"> existente.
- * Abre o ImageEditorModal diretamente e exibe progresso suavizado no botão.
- */
 export default function AIMount({
   hostSelector = '#ai-under-preview',
   inputSelector = 'input[data-ai="photo"]',
@@ -19,26 +15,23 @@ export default function AIMount({
 }) {
   const [hostEl, setHostEl] = useState<HTMLElement | null>(null);
   const [inputEl, setInputEl] = useState<HTMLInputElement | null>(null);
-
-  // arquivo selecionado no input
   const [file, setFile] = useState<File | null>(null);
 
-  // controle do modal
+  // Modal
   const [open, setOpen] = useState(false);
 
-  // estados vindos do modal
-  const [working, setWorking] = useState(false);    // true enquanto IA processa
-  const [rawPct, setRawPct] = useState(0);          // progresso “cru” (0..100)
+  // Estados de progresso vindos do modal
+  const [working, setWorking] = useState(false);
+  const [rawPct, setRawPct] = useState(0);
 
-  // progresso suavizado (não pula para 99% e trava)
+  // Progresso suavizado
   const [uiPct, setUiPct] = useState(0);
   const rafRef = useRef<number | null>(null);
   const lastRef = useRef<number>(0);
 
-  // ==== localizar host e input ====
+  // Localiza host e input
   useEffect(() => {
-    const host = document.querySelector<HTMLElement>(hostSelector) ?? null;
-    setHostEl(host);
+    setHostEl(document.querySelector<HTMLElement>(hostSelector) ?? null);
 
     const input =
       document.querySelector<HTMLInputElement>(inputSelector) ??
@@ -52,30 +45,27 @@ export default function AIMount({
     return () => input.removeEventListener('change', onChange);
   }, [hostSelector, inputSelector]);
 
-  // ==== smoothing do progresso ====
+  // Suavização do progresso
   useEffect(() => {
     function loop(now: number) {
       const last = lastRef.current || now;
       lastRef.current = now;
       const dt = Math.max(0, now - last);
 
-      // trava em 97% enquanto working, para não “terminar” antes da IA
-      const cap = working ? 97 : 100;
+      const cap = working ? 97 : 100;           // segura até 97% enquanto está processando
       const target = Math.min(cap, rawPct);
 
-      setUiPct((prev) => {
+      setUiPct(prev => {
         if (target <= prev) return prev;
-        // aceleração suave baseada no gap + normalização no tempo
         const gap = target - prev;
-        const speed = Math.max(0.12, Math.min(0.35, gap / 24)); // 12%~35% do gap
+        const speed = Math.max(0.12, Math.min(0.35, gap / 24));
         const advance = gap * speed * (dt / 100);
         return Math.min(target, prev + advance);
       });
 
-      // quando working=false, corre até 100 e encerra
       if (!working && uiPct >= 99.5) {
         setUiPct(100);
-        rafRef.current && cancelAnimationFrame(rafRef.current);
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
         return;
       }
@@ -91,11 +81,10 @@ export default function AIMount({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [working, rawPct]);
 
-  // ==== render do botão dentro do host ====
+  // Renderiza o botão no host
   useEffect(() => {
     if (!hostEl) return;
 
-    // cria/garante container único
     let container = hostEl.querySelector<HTMLDivElement>('[data-ai-btn]');
     if (!container) {
       container = document.createElement('div');
@@ -107,20 +96,18 @@ export default function AIMount({
     btn.type = 'button';
     btn.className =
       'inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 ' +
-      'text-xs font-semibold text-[var(--primary-foreground)] shadow-sm ' +
-      'hover:opacity-95 transition';
+      'text-xs font-semibold text-[var(--primary-foreground)] shadow-sm hover:opacity-95 transition';
 
-    function svgArc(cx: number, cy: number, r: number, end: number) {
-      // 0..100 -> 0..360deg
-      const endDeg = (end / 100) * 360;
-      const start = polar(cx, cy, r, endDeg);
-      const finish = polar(cx, cy, r, 0);
-      const large = endDeg - 0 <= 180 ? '0' : '1';
-      return `M ${start.x} ${start.y} A ${r} ${r} 0 ${large} 0 ${finish.x} ${finish.y}`;
-    }
     function polar(cx: number, cy: number, r: number, deg: number) {
       const a = (deg - 90) * (Math.PI / 180);
       return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+    }
+    function svgArc(cx: number, cy: number, r: number, end: number) {
+      const endDeg = (end / 100) * 360;
+      const start = polar(cx, cy, r, endDeg);
+      const finish = polar(cx, cy, r, 0);
+      const large = endDeg <= 180 ? '0' : '1';
+      return `M ${start.x} ${start.y} A ${r} ${r} 0 ${large} 0 ${finish.x} ${finish.y}`;
     }
 
     function render() {
@@ -149,7 +136,6 @@ export default function AIMount({
 
     btn.onclick = () => {
       if (!file) {
-        // micro feedback quando não há arquivo
         btn.animate(
           [
             { transform: 'translateX(0)' },
@@ -168,7 +154,7 @@ export default function AIMount({
     return () => clearInterval(id);
   }, [hostEl, file, working, uiPct]);
 
-  // ==== callbacks vindos do modal ====
+  // Handlers para o modal
   const modalHandlers = useMemo(
     () => ({
       onWorking: (v: boolean) => {
@@ -177,7 +163,6 @@ export default function AIMount({
           setRawPct(0);
           setUiPct(0);
         } else {
-          // força corrida ao fim
           setRawPct(100);
         }
       },
@@ -186,7 +171,6 @@ export default function AIMount({
         setRawPct(pct);
       },
       onApply: async (blob: Blob) => {
-        // substitui o arquivo no <input> para manter consistência
         if (inputEl) {
           const edited = new File([blob], 'foto-editada.png', { type: 'image/png', lastModified: Date.now() });
           const dt = new DataTransfer();
@@ -208,11 +192,11 @@ export default function AIMount({
           file={file}
           open={open}
           onClose={() => setOpen(false)}
-          // os três abaixo precisam existir no seu modal; se seus nomes forem diferentes,
-          // ajuste aqui para repassar corretamente.
+          // Se o seu modal já dispara eventos globais, tudo bem.
+          // Estes props permitem reportar progresso diretamente:
+          onWorking={modalHandlers.onWorking as any}
+          onProgress={modalHandlers.onProgress as any}
           onApply={modalHandlers.onApply}
-          onWorking={modalHandlers.onWorking}
-          onProgress={modalHandlers.onProgress}
         />
       )}
     </>
