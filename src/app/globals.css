@@ -8,7 +8,7 @@
    ========= */
 :root {
   /* Paleta base (modo claro opcional) */
-  --background: #0b0f14;            /* fundo escuro */
+  --background: #0b0f14;            /* fundo escuro preto fosco */
   --foreground: #e6e6e6;            /* texto principal */
 
   --card: #0f141a;
@@ -17,9 +17,9 @@
   --popover: #0f141a;
   --popover-foreground: #e9eef2;
 
-  /* Verde oficial (WhatsApp-ish) */
+  /* Verde oficial (WhatsApp-ish) — unificado */
   --primary: #25d366;
-  --primary-foreground: #0b0f14;    /* texto sobre fundo primary em contextos claros */
+  --primary-foreground: #0b0f14;
 
   /* Cinzas de apoio */
   --secondary: #11161c;
@@ -53,10 +53,10 @@
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
 
-  --radius: 14px; /* controla os rounded-xl em tailwind.config */
+  --radius: 14px; /* controla os rounded-xl no tailwind.config */
 }
 
-/* Modo dark via classe (mantém os mesmos valores, mas deixei separado para fácil override futuramente) */
+/* Modo dark via classe (valores iguais por ora; separado pra overrides futuros) */
 .dark {
   --background: #0b0f14;
   --foreground: #e6e6e6;
@@ -162,7 +162,7 @@ select:focus-visible {
   box-shadow: 0 0 0 3px var(--ring);
 }
 
-/* Botão primário (verde) – fallback para quando não usar classes utilitárias */
+/* Botão primário (verde) – fallback para quando não usar utilitárias */
 .btn-primary {
   background: var(--primary);
   color: #0b0f14;
@@ -171,7 +171,16 @@ select:focus-visible {
 }
 .btn-primary:hover { filter: brightness(1.05); }
 
-/* Chip amarelo (expira, alcance, etc.) */
+/* Botão “outline” coerente (fallback) */
+.btn-outline {
+  background: transparent;
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+.btn-outline:hover { background: rgba(255,255,255,0.05); }
+
+/* Chip amarelo (expira/alcance) */
 .badge-accent {
   background: color-mix(in oklab, var(--accent) 20%, transparent);
   color: var(--accent-foreground);
@@ -208,7 +217,7 @@ select:focus-visible {
   outline: none;
 }
 
-/* Tooltip de “raio atual” que você usa sobre o mapa (se aplicável) */
+/* Tooltip de “raio atual” (se aplicável) */
 .map-radius-chip {
   background: color-mix(in oklab, var(--accent) 16%, transparent);
   color: var(--accent-foreground);
