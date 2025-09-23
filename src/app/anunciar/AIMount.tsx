@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import ImageEditorModal from './ImageEditorModal';
 
 /**
  * Monta um botão "Editar com IA (grátis)" abaixo do preview (host="#ai-under-preview"),
  * ouvindo o <input type="file" data-ai="photo"> existente.
- * Mostra estado de trabalho + progresso suavizado (UI) sem depender do modal.
+ * Abre o ImageEditorModal diretamente e exibe progresso suavizado no botão.
  */
 export default function AIMount({
   hostSelector = '#ai-under-preview',
@@ -16,107 +17,113 @@ export default function AIMount({
   inputSelector?: string;
   onReplace: (blob: Blob) => void;
 }) {
-  const [file, setFile] = useState<File | null>(null);
   const [hostEl, setHostEl] = useState<HTMLElement | null>(null);
   const [inputEl, setInputEl] = useState<HTMLInputElement | null>(null);
 
-  // Estados brutos vindos do modal
-  const [working, setWorking] = useState(false);
-  const [rawProgress, setRawProgress] = useState(0);
+  // arquivo selecionado no input
+  const [file, setFile] = useState<File | null>(null);
 
-  // Progresso suavizado para UI
-  const [uiProgress, setUiProgress] = useState(0);
+  // controle do modal
+  const [open, setOpen] = useState(false);
 
-  // Smoothing: evita saltos (mantém <= 97% até finalize)
-  useEffect(() => {
-    let raf = 0;
-    let last = performance.now();
+  // estados vindos do modal
+  const [working, setWorking] = useState(false);    // true enquanto IA processa
+  const [rawPct, setRawPct] = useState(0);          // progresso “cru” (0..100)
 
-    function step(now: number) {
-      const dt = Math.max(0, now - last);
-      last = now;
+  // progresso suavizado (não pula para 99% e trava)
+  const [uiPct, setUiPct] = useState(0);
+  const rafRef = useRef<number | null>(null);
+  const lastRef = useRef<number>(0);
 
-      const cap = working ? 97 : 100;
-      const target = Math.min(rawProgress, cap);
-
-      setUiProgress((prev) => {
-        // aceleração suave + piso mínimo de avanço
-        const diff = target - prev;
-        if (diff <= 0) return prev;
-
-        const speed = Math.max(0.15, Math.min(0.35, diff / 25)); // 15% ~ 35% do gap
-        const advance = diff * speed * (dt / 100); // normaliza no tempo
-        return Math.min(target, prev + advance);
-      });
-
-      // quando terminar (working=false), corre ao 100 e depois zera
-      if (!working && uiProgress >= 99.5) {
-        setUiProgress(100);
-        cancelAnimationFrame(raf);
-        return;
-      }
-      raf = requestAnimationFrame(step);
-    }
-
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [working, rawProgress]);
-
-  // Ouve eventos do modal
-  useEffect(() => {
-    function onWorking(e: Event) {
-      const v = Boolean((e as CustomEvent).detail);
-      setWorking(v);
-      if (v) {
-        setRawProgress(0);
-        setUiProgress(0);
-      } else {
-        // força corrida final ao 100%
-        setRawProgress(100);
-      }
-    }
-    function onProgress(e: Event) {
-      const pct = Number((e as CustomEvent).detail || 0);
-      // Normaliza para 0..100
-      const clamped = Math.max(0, Math.min(100, pct));
-      setRawProgress(clamped);
-    }
-    window.addEventListener('ai-edit:working', onWorking);
-    window.addEventListener('ai-edit:progress', onProgress);
-    return () => {
-      window.removeEventListener('ai-edit:working', onWorking);
-      window.removeEventListener('ai-edit:progress', onProgress);
-    };
-  }, []);
-
-  // Encontra host e input
+  // ==== localizar host e input ====
   useEffect(() => {
     const host = document.querySelector<HTMLElement>(hostSelector) ?? null;
+    setHostEl(host);
+
     const input =
       document.querySelector<HTMLInputElement>(inputSelector) ??
-      document.querySelector<HTMLInputElement>('input[type="file"]');
-    setHostEl(host);
-    setInputEl(input || null);
-    if (!input) return;
+      document.querySelector<HTMLInputElement>('input[type="file"]') ??
+      null;
+    setInputEl(input);
 
+    if (!input) return;
     const onChange = () => setFile(input.files?.[0] ?? null);
     input.addEventListener('change', onChange);
     return () => input.removeEventListener('change', onChange);
   }, [hostSelector, inputSelector]);
 
-  // Renderiza/atualiza o botão dentro do host
+  // ==== smoothing do progresso ====
+  useEffect(() => {
+    function loop(now: number) {
+      const last = lastRef.current || now;
+      lastRef.current = now;
+      const dt = Math.max(0, now - last);
+
+      // trava em 97% enquanto working, para não “terminar” antes da IA
+      const cap = working ? 97 : 100;
+      const target = Math.min(cap, rawPct);
+
+      setUiPct((prev) => {
+        if (target <= prev) return prev;
+        // aceleração suave baseada no gap + normalização no tempo
+        const gap = target - prev;
+        const speed = Math.max(0.12, Math.min(0.35, gap / 24)); // 12%~35% do gap
+        const advance = gap * speed * (dt / 100);
+        return Math.min(target, prev + advance);
+      });
+
+      // quando working=false, corre até 100 e encerra
+      if (!working && uiPct >= 99.5) {
+        setUiPct(100);
+        rafRef.current && cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+        return;
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    }
+
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(loop);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [working, rawPct]);
+
+  // ==== render do botão dentro do host ====
   useEffect(() => {
     if (!hostEl) return;
-    hostEl.innerHTML = '';
+
+    // cria/garante container único
+    let container = hostEl.querySelector<HTMLDivElement>('[data-ai-btn]');
+    if (!container) {
+      container = document.createElement('div');
+      container.setAttribute('data-ai-btn', '1');
+      hostEl.appendChild(container);
+    }
 
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className =
       'inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 ' +
-      'text-xs font-semibold text-[var(--primary-foreground)] shadow-sm hover:opacity-95 transition';
+      'text-xs font-semibold text-[var(--primary-foreground)] shadow-sm ' +
+      'hover:opacity-95 transition';
 
-    function updateContent() {
+    function svgArc(cx: number, cy: number, r: number, end: number) {
+      // 0..100 -> 0..360deg
+      const endDeg = (end / 100) * 360;
+      const start = polar(cx, cy, r, endDeg);
+      const finish = polar(cx, cy, r, 0);
+      const large = endDeg - 0 <= 180 ? '0' : '1';
+      return `M ${start.x} ${start.y} A ${r} ${r} 0 ${large} 0 ${finish.x} ${finish.y}`;
+    }
+    function polar(cx: number, cy: number, r: number, deg: number) {
+      const a = (deg - 90) * (Math.PI / 180);
+      return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+    }
+
+    function render() {
       if (!working) {
         btn.innerHTML = `
           <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -125,58 +132,89 @@ export default function AIMount({
           <span>Editar com IA (grátis)</span>
         `;
       } else {
-        const pct = Math.round(uiProgress);
+        const pct = Math.round(uiPct);
         btn.innerHTML = `
           <svg class="h-3.5 w-3.5" viewBox="0 0 36 36" fill="none">
             <circle cx="18" cy="18" r="15" stroke="currentColor" stroke-width="3" opacity="0.25"/>
-            <path d="${describeArc(18,18,15,0,3.6*pct)}" stroke="currentColor" stroke-width="3" fill="none"/>
+            <path d="${svgArc(18,18,15,pct)}" stroke="currentColor" stroke-width="3" fill="none"/>
           </svg>
           <span>${pct < 100 ? `Editando… ${pct}%` : 'Finalizando…'}</span>
         `;
       }
     }
 
-    btn.addEventListener('click', () => {
+    render();
+    container.innerHTML = '';
+    container.appendChild(btn);
+
+    btn.onclick = () => {
       if (!file) {
-        // micro-feedback
+        // micro feedback quando não há arquivo
         btn.animate(
-          [{ transform: 'translateX(0)' }, { transform: 'translateX(-3px)' }, { transform: 'translateX(3px)' }, { transform: 'translateX(0)' }],
+          [
+            { transform: 'translateX(0)' },
+            { transform: 'translateX(-3px)' },
+            { transform: 'translateX(3px)' },
+            { transform: 'translateX(0)' },
+          ],
           { duration: 180 }
         );
         return;
       }
-      // abre o modal via evento público que seu modal já escuta
-      window.dispatchEvent(new CustomEvent('ai-edit:open', { detail: { file } }));
-    });
+      setOpen(true);
+    };
 
-    updateContent();
-    hostEl.appendChild(btn);
+    const id = setInterval(render, 120);
+    return () => clearInterval(id);
+  }, [hostEl, file, working, uiPct]);
 
-    const tick = setInterval(updateContent, 120);
-    return () => clearInterval(tick);
+  // ==== callbacks vindos do modal ====
+  const modalHandlers = useMemo(
+    () => ({
+      onWorking: (v: boolean) => {
+        setWorking(v);
+        if (v) {
+          setRawPct(0);
+          setUiPct(0);
+        } else {
+          // força corrida ao fim
+          setRawPct(100);
+        }
+      },
+      onProgress: (current: number, total: number) => {
+        const pct = Math.max(0, Math.min(100, Math.round((current / Math.max(1, total)) * 100)));
+        setRawPct(pct);
+      },
+      onApply: async (blob: Blob) => {
+        // substitui o arquivo no <input> para manter consistência
+        if (inputEl) {
+          const edited = new File([blob], 'foto-editada.png', { type: 'image/png', lastModified: Date.now() });
+          const dt = new DataTransfer();
+          dt.items.add(edited);
+          inputEl.files = dt.files;
+          inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        onReplace(blob);
+        setOpen(false);
+      },
+    }),
+    [inputEl, onReplace]
+  );
 
-    // --- helpers ---
-    function polarToCartesian(cx: number, cy: number, r: number, angleInDegrees: number) {
-      const angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
-      return { x: cx + r * Math.cos(angleInRadians), y: cy + r * Math.sin(angleInRadians) };
-    }
-    function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
-      const start = polarToCartesian(cx, cy, r, endAngle);
-      const end = polarToCartesian(cx, cy, r, startAngle);
-      const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
-      return ['M', start.x, start.y, 'A', r, r, 0, largeArcFlag, 0, end.x, end.y].join(' ');
-    }
-  }, [hostEl, file, working, uiProgress]);
-
-  // Quando modal aplicar o blob editado, este componente só repassa para a página (preview)
-  useEffect(() => {
-    function onApplied(e: Event) {
-      const blob = (e as CustomEvent).detail as Blob;
-      if (blob && onReplace) onReplace(blob);
-    }
-    window.addEventListener('ai-edit:applied', onApplied);
-    return () => window.removeEventListener('ai-edit:applied', onApplied);
-  }, [onReplace]);
-
-  return null;
+  return (
+    <>
+      {open && file && (
+        <ImageEditorModal
+          file={file}
+          open={open}
+          onClose={() => setOpen(false)}
+          // os três abaixo precisam existir no seu modal; se seus nomes forem diferentes,
+          // ajuste aqui para repassar corretamente.
+          onApply={modalHandlers.onApply}
+          onWorking={modalHandlers.onWorking}
+          onProgress={modalHandlers.onProgress}
+        />
+      )}
+    </>
+  );
 }
