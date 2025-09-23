@@ -91,7 +91,12 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
     const el = containerRef.current;
     if (!el || !imgEl) return null;
     const r = el.getBoundingClientRect();
-    return computeContainFit(imgEl.naturalWidth, imgEl.naturalHeight, Math.floor(r.width), Math.floor(r.height));
+    return computeContainFit(
+      imgEl.naturalWidth,
+      imgEl.naturalHeight,
+      Math.floor(r.width),
+      Math.floor(r.height)
+    );
   }, [imgEl, containerRef.current?.clientWidth, containerRef.current?.clientHeight]);
 
   /** Converte a seleção (viewport) para frações (0..1) dentro da imagem renderizada */
@@ -176,14 +181,15 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
 
     // aplica preset
     const filterCss = FILTERS[filter];
-    // mapear “none” para ctx.filter = 'none'
     ctx.filter = filterCss === 'none' ? 'none' : filterCss;
 
     ctx.drawImage(srcBitmap, sx, sy, sw, sh, 0, 0, sw, sh);
     setProgress((p) => smoothMonotonicProgress(p, 70));
 
     // 5) exporta PNG
-    const blob: Blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b as Blob), 'image/png', 0.92));
+    const blob: Blob = await new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b as Blob), 'image/png', 0.92)
+    );
     setProgress((p) => smoothMonotonicProgress(p, 100));
 
     setRunning(false);
@@ -208,7 +214,8 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
       const out = await removeBackground(imgUrl, {
         device: 'gpu',
         output: { format: 'image/png', quality: 0.92 },
-        progress: (_k, current, total) => {
+        // ---- TIPAGEM CORRIGIDA AQUI ----
+        progress: (_k: unknown, current: number, total: number) => {
           const pct = Math.round((current / Math.max(1, total)) * 85);
           setProgress((p) => smoothMonotonicProgress(p, pct));
         },
