@@ -1,11 +1,111 @@
 // src/app/page.tsx
 import Link from "next/link";
 import Image from "next/image";
+import Script from "next/script";
 import QButton from "@/components/ui/QButton";
+import type { Metadata } from "next";
+
+const SITE_URL = "https://qwip.pro";
+
+export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
+  title: "Qwip — Venda HOJE com link direto pro WhatsApp",
+  description:
+    "Crie e compartilhe seu anúncio em menos de 60s. Link direto pro WhatsApp, vitrine com urgência real e moderação inteligente. Sem taxas sobre a venda.",
+  applicationName: "Qwip",
+  keywords: [
+    "anúncio",
+    "anuncios",
+    "vitrine",
+    "vendas",
+    "whatsapp",
+    "link whatsapp",
+    "negócio local",
+    "autônomos",
+    "classificados",
+    "marketplace",
+  ],
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: SITE_URL + "/",
+    title: "Qwip — Venda HOJE com link direto pro WhatsApp",
+    description:
+      "Crie e compartilhe seu anúncio em menos de 60s. Link direto pro WhatsApp e urgência real.",
+    siteName: "Qwip",
+    images: [
+      {
+        url: "/images/og-home.jpg",
+        width: 1200,
+        height: 630,
+        alt: "Qwip — Venda HOJE",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Qwip — Venda HOJE com link direto pro WhatsApp",
+    description:
+      "Crie anúncios rápidos e compartilhe no WhatsApp. Sem taxas sobre a venda.",
+    images: ["/images/og-home.jpg"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-snippet": -1,
+      "max-image-preview": "large",
+      "max-video-preview": -1,
+    },
+  },
+};
 
 export default function Home() {
   return (
     <main className="min-h-screen bg-background text-foreground">
+      {/* Google Analytics (não altera layout) */}
+      <Script
+        id="ga-loader"
+        async
+        src="https://www.googletagmanager.com/gtag/js?id=G-HXC29BV5NT"
+        strategy="afterInteractive"
+      />
+      <Script id="ga-init" strategy="afterInteractive">
+        {`
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-HXC29BV5NT');
+        `}
+      </Script>
+
+      {/* JSON-LD estruturado (SEO) */}
+      <Script id="ld-website" type="application/ld+json" strategy="afterInteractive">
+        {JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "WebSite",
+          name: "Qwip",
+          url: SITE_URL,
+          potentialAction: {
+            "@type": "SearchAction",
+            target: `${SITE_URL}/vitrine?q={search_term_string}`,
+            "query-input": "required name=search_term_string",
+          },
+        })}
+      </Script>
+      <Script id="ld-org" type="application/ld+json" strategy="afterInteractive">
+        {JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Organization",
+          name: "Qwip",
+          url: SITE_URL,
+          logo: `${SITE_URL}/favicon/android-chrome-512x512.png`,
+          sameAs: [],
+        })}
+      </Script>
+
       {/* HERO */}
       <section className="relative">
         <div className="container mx-auto max-w-6xl px-6 py-20 lg:py-28">
@@ -35,7 +135,7 @@ export default function Home() {
                 gerando urgência e mantendo a vitrine sempre atual.
               </p>
 
-              {/* Botões do hero (igual ao Figma) */}
+              {/* Botões do hero (igual ao Figma) */}
               <div className="mt-8 flex flex-wrap gap-3">
                 <QButton
                   href="/anuncio/novo"
