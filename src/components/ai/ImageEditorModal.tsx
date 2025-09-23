@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import removeBackground from '@imgly/background-removal';
+import { removeBackground } from '@imgly/background-removal';
 
 type FilterId = 'original' | 'realce' | 'pb' | 'quente' | 'frio' | 'hdr';
 
