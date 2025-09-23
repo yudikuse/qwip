@@ -19,26 +19,26 @@ export default {
 
         primary: {
           DEFAULT: "var(--primary)",              // #25d366 (verde oficial)
-          foreground: "var(--primary-foreground)"
+          foreground: "var(--primary-foreground)",
         },
         secondary: {
           DEFAULT: "var(--secondary)",
-          foreground: "var(--secondary-foreground)"
+          foreground: "var(--secondary-foreground)",
         },
 
         muted: {
           DEFAULT: "var(--muted)",
-          foreground: "var(--muted-foreground)"
+          foreground: "var(--muted-foreground)",
         },
 
         accent: {
           DEFAULT: "var(--accent)",               // #FFC857 (amarelo oficial)
-          foreground: "var(--accent-foreground)"
+          foreground: "var(--accent-foreground)",
         },
 
         destructive: {
           DEFAULT: "var(--destructive)",
-          foreground: "var(--destructive-foreground)"
+          foreground: "var(--destructive-foreground)",
         },
 
         border: "var(--border)",
