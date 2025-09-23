@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { removeBackground } from '@imgly/background-removal';
 
+/** === Tipos & utilitários === */
 type FilterId = 'original' | 'realce' | 'pb' | 'quente' | 'frio' | 'hdr';
 
 type Props = {
@@ -12,57 +13,49 @@ type Props = {
   onApply: (blob: Blob) => void;
 };
 
-/** Presets (para export) usando CanvasRenderingContext2D.filter */
 const FILTERS: Record<FilterId, string> = {
   original: 'none',
-  realce: 'brightness(1.06) contrast(1.09) saturate(1.08) sharpness(0)',
+  realce: 'brightness(1.06) contrast(1.09) saturate(1.08)',
   pb: 'grayscale(1) contrast(1.05)',
   quente: 'saturate(1.15) hue-rotate(-8deg) brightness(1.03)',
   frio: 'saturate(0.95) hue-rotate(8deg) brightness(1.02)',
   hdr: 'contrast(1.1) saturate(1.1) brightness(1.04)',
 };
 
-/** Fit “contain”: retorna área renderizada da imagem dentro do viewport */
-function computeContainFit(
-  imgW: number,
-  imgH: number,
-  viewW: number,
-  viewH: number
-) {
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function computeContainFit(imgW: number, imgH: number, viewW: number, viewH: number) {
   const scale = Math.min(viewW / imgW, viewH / imgH);
   const w = Math.round(imgW * scale);
   const h = Math.round(imgH * scale);
   const x = Math.round((viewW - w) / 2);
   const y = Math.round((viewH - h) / 2);
-  return { x, y, w, h, scale };
+  return { x, y, w, h };
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
-
-/** Suaviza o progresso para não “oscilar” */
 function smoothMonotonicProgress(prev: number, next: number) {
-  // limita passos e garante monotonia
-  const capped = Math.min(next, prev + 7); // no máx +7 por tick
+  const capped = Math.min(next, prev + 7);
   return Math.max(prev, Math.round(capped));
 }
 
+/** === Componente === */
 export default function ImageEditorModal({ file, open, onClose, onApply }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [imgUrl, setImgUrl] = useState<string>('');
+  const [imgUrl, setImgUrl] = useState('');
   const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null);
 
-  // filtros e estado do IA
+  // filtros e IA
   const [filter, setFilter] = useState<FilterId>('original');
-  const [bgBlob, setBgBlob] = useState<Blob | null>(null); // saída do removeBackground
+  const [bgBlob, setBgBlob] = useState<Blob | null>(null);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
 
   // seleção de recorte (em coords do viewport)
   const [dragging, setDragging] = useState(false);
   const [sel, setSel] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const [committedCrop, setCommittedCrop] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null); // normalizado [0..1] dentro da imagem renderizada
+  const [committedCrop, setCommittedCrop] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 
   // carregar a imagem do File
   useEffect(() => {
@@ -97,22 +90,22 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
       Math.floor(r.width),
       Math.floor(r.height)
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imgEl, containerRef.current?.clientWidth, containerRef.current?.clientHeight]);
 
   /** Converte a seleção (viewport) para frações (0..1) dentro da imagem renderizada */
   function commitSelection() {
     if (!sel || !viewBox) return;
-    // interseção com área realmente renderizada da imagem
     const ix1 = clamp(sel.x, viewBox.x, viewBox.x + viewBox.w);
     const iy1 = clamp(sel.y, viewBox.y, viewBox.y + viewBox.h);
     const ix2 = clamp(sel.x + sel.w, viewBox.x, viewBox.x + viewBox.w);
     const iy2 = clamp(sel.y + sel.h, viewBox.y, viewBox.y + viewBox.h);
-    if (ix2 - ix1 < 6 || iy2 - iy1 < 6) return; // muito pequeno
+    if (ix2 - ix1 < 6 || iy2 - iy1 < 6) return;
 
     const fx1 = (ix1 - viewBox.x) / viewBox.w;
     const fy1 = (iy1 - viewBox.y) / viewBox.h;
-    const fx2 = (ix2 - viewBox.x) / viewBox.w;
-    const fy2 = (iy2 - viewBox.y) / viewBox.h;
+    const fx2 = (ix2 - ix1) / viewBox.w + fx1;
+    const fy2 = (iy2 - iy1) / viewBox.h + fy1;
     setCommittedCrop({ x1: fx1, y1: fy1, x2: fx2, y2: fy2 });
   }
 
@@ -141,7 +134,7 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
     setDragging(false);
   }
 
-  /** Aplica o pipeline e gera Blob final (PNG) */
+  /** Aplica pipeline (recorte + filtro) e funde logomarca se habilitada; retorna Blob PNG */
   async function handleApply() {
     if (!imgEl) return;
 
@@ -149,14 +142,9 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
     setProgress(10);
 
     // 1) escolhe source base: original ou sem fundo
-    let sourceBlob: Blob;
-    if (bgBlob) {
-      sourceBlob = bgBlob;
-    } else {
-      sourceBlob = file;
-    }
+    let sourceBlob: Blob = bgBlob ? bgBlob : file;
 
-    // 2) carrega sourceBlob para ImageBitmap (rápido e estável)
+    // 2) carrega sourceBlob para ImageBitmap
     const srcBitmap = await createImageBitmap(sourceBlob);
     setProgress((p) => smoothMonotonicProgress(p, 35));
 
@@ -173,26 +161,57 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
       sh = clamp(Math.abs(y2px - y1px), 1, srcBitmap.height - sy);
     }
 
-    // 4) desenha recorte + filtro em um canvas
+    // 4) desenha recorte + filtro
     const canvas = document.createElement('canvas');
     canvas.width = sw;
     canvas.height = sh;
     const ctx = canvas.getContext('2d')!;
-
-    // aplica preset
-    const filterCss = FILTERS[filter];
-    ctx.filter = filterCss === 'none' ? 'none' : filterCss;
-
+    ctx.filter = FILTERS[filter] === 'none' ? 'none' : FILTERS[filter];
     ctx.drawImage(srcBitmap, sx, sy, sw, sh, 0, 0, sw, sh);
     setProgress((p) => smoothMonotonicProgress(p, 70));
 
-    // 5) exporta PNG
-    const blob: Blob = await new Promise((resolve) =>
-      canvas.toBlob((b) => resolve(b as Blob), 'image/png', 0.92)
-    );
-    setProgress((p) => smoothMonotonicProgress(p, 100));
+    // 5) (Opcional) fundir LOGO conforme preferências salvas na etapa "Configurar"
+    try {
+      const enabled = sessionStorage.getItem('qwip_logo_enabled') === '1';
+      const dataUrl = sessionStorage.getItem('qwip_logo_dataurl');
+      if (enabled && dataUrl) {
+        const sizePct = clamp(Number(sessionStorage.getItem('qwip_logo_size') ?? '12'), 5, 40); // %
+        const pos = (sessionStorage.getItem('qwip_logo_pos') ??
+          'br') as 'br' | 'bl' | 'tr' | 'tl';
 
+        const logoBitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
+        // escala a logo pela largura do canvas
+        const margin = Math.round(Math.max(canvas.width, canvas.height) * 0.02); // ~2%
+        const targetW = Math.round((canvas.width * sizePct) / 100);
+        const scale = targetW / logoBitmap.width;
+        const w = targetW;
+        const h = Math.round(logoBitmap.height * scale);
+
+        let x = canvas.width - w - margin;
+        let y = canvas.height - h - margin;
+        if (pos === 'bl') x = margin;
+        if (pos === 'tr') { x = canvas.width - w - margin; y = margin; }
+        if (pos === 'tl') { x = margin; y = margin; }
+
+        // leve sombra para destacar
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.35)';
+        ctx.shadowBlur = Math.round(Math.max(canvas.width, canvas.height) * 0.006);
+        ctx.drawImage(logoBitmap, x, y, w, h);
+        ctx.restore();
+      }
+    } catch (e) {
+      // se algo falhar na logo, continuamos sem ela
+      console.warn('Logo overlay skipped:', e);
+    }
+
+    // 6) exporta PNG
+    const blob: Blob = await new Promise((resolve) =>
+      canvas.toBlob((b) => resolve((b as Blob) || new Blob()), 'image/png', 0.92)
+    );
+    setProgress(100);
     setRunning(false);
+
     onApply(blob);
     onClose();
   }
@@ -203,7 +222,6 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
     setRunning(true);
     setProgress(5);
 
-    // Um progressor suave (0→85) enquanto a lib faz o trabalho
     let soft = 5;
     const timer = setInterval(() => {
       soft = Math.min(soft + 3, 85);
@@ -214,8 +232,7 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
       const out = await removeBackground(imgUrl, {
         device: 'gpu',
         output: { format: 'image/png', quality: 0.92 },
-        // ---- TIPAGEM CORRIGIDA AQUI ----
-        progress: (_k: unknown, current: number, total: number) => {
+        progress: (_: unknown, current: number, total: number) => {
           const pct = Math.round((current / Math.max(1, total)) * 85);
           setProgress((p) => smoothMonotonicProgress(p, pct));
         },
@@ -223,7 +240,7 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
 
       clearInterval(timer);
       setProgress((p) => smoothMonotonicProgress(p, 92));
-      setBgBlob(out); // guarda para export
+      setBgBlob(out);
     } catch (e) {
       clearInterval(timer);
       console.error('removeBackground failed', e);
@@ -233,15 +250,12 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
     }
   }
 
-  // UI helpers
-  const hasCrop = !!committedCrop;
+  // preview URL (libera quando muda)
   const showUrl = useMemo(() => {
     if (bgBlob) return URL.createObjectURL(bgBlob);
     return imgUrl;
   }, [bgBlob, imgUrl]);
-
   useEffect(() => {
-    // liberar blob de preview quando mudar
     return () => {
       if (showUrl && showUrl.startsWith('blob:')) URL.revokeObjectURL(showUrl);
     };
@@ -264,7 +278,7 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
           </button>
         </div>
 
-        {/* LADO ESQUERDO — Canvas */}
+        {/* Lado esquerdo: tela */}
         <div className="col-span-1 mt-12 overflow-hidden p-4">
           <div
             ref={containerRef}
@@ -275,14 +289,9 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
           >
             {showUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={showUrl}
-                alt=""
-                className="pointer-events-none absolute left-0 top-0 h-full w-full object-contain"
-              />
+              <img src={showUrl} alt="" className="pointer-events-none absolute left-0 top-0 h-full w-full object-contain" />
             ) : null}
 
-            {/* Seleção atual */}
             {sel && (
               <div
                 className="pointer-events-none absolute border-2 border-emerald-400/80"
@@ -295,7 +304,6 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
                 }}
               />
             )}
-            {/* Preview do recorte “comitado” */}
             {committedCrop && viewBox && (
               <div
                 className="pointer-events-none absolute border-2 border-emerald-500/70"
@@ -313,7 +321,7 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
           </p>
         </div>
 
-        {/* LADO DIREITO — Controles */}
+        {/* Lado direito: controles */}
         <div className="col-span-1 mt-12 space-y-4 border-t border-white/10 p-4 md:border-l md:border-t-0">
           <div className="rounded-xl border border-white/10 bg-[#0b0f14] p-3">
             <div className="text-sm font-medium">Fundo</div>
@@ -322,9 +330,7 @@ export default function ImageEditorModal({ file, open, onClose, onApply }: Props
               onClick={handleRemoveBg}
               disabled={running}
             >
-              {running && progress > 0
-                ? `Removendo fundo… ${progress}%`
-                : 'Remover fundo (IA)'}
+              {running && progress > 0 ? `Removendo fundo… ${progress}%` : 'Remover fundo (IA)'}
             </button>
             <p className="mt-2 text-xs text-zinc-400">
               Roda no seu navegador. Nenhum upload para servidores externos.
