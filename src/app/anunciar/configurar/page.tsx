@@ -5,12 +5,19 @@ import { useRouter } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
+/** === Tipos === */
 type DraftBase = {
   title: string;
   priceDigits: string; // "1850" => R$ 18,50
   description: string;
   imageDataUrl: string; // data:image/...
   createdAt: string;
+  // vindos da etapa anterior (/anunciar)
+  city?: string;
+  uf?: string;
+  lat?: number;
+  lng?: number;
+  radiusKm?: number;
 };
 
 type Config = {
@@ -21,20 +28,27 @@ type Config = {
   uf?: string;
 };
 
-function formatCentsBRL(cents: number) {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    minimumFractionDigits: 2,
-    currencyDisplay: "symbol",
-  }).format(cents / 100);
-}
+type LogoPrefs = {
+  enabled: boolean;
+  dataUrl: string | null;
+  pos: 'br' | 'bl' | 'tr' | 'tl';
+  sizePct: number; // % da largura da imagem exportada
+};
 
-
+/** === Utils === */
 function classNames(...xs: Array<string | false | undefined>) {
   return xs.filter(Boolean).join(' ');
 }
+function formatCentsBRL(cents: number) {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    currencyDisplay: 'symbol',
+  }).format((cents || 0) / 100);
+}
 
+/** === Página === */
 export default function ConfigurarPage() {
   const router = useRouter();
   const [draft, setDraft] = useState<DraftBase | null>(null);
@@ -45,8 +59,18 @@ export default function ConfigurarPage() {
     city: '',
     uf: '',
   });
+
+  // preferências da LOGO
+  const [logo, setLogo] = useState<LogoPrefs>({
+    enabled: false,
+    dataUrl: null,
+    pos: 'br',
+    sizePct: 12,
+  });
+
   const [loading, setLoading] = useState(false);
 
+  /** Carrega draft e cfg do sessionStorage; usa cidade/UF/raio vindos da etapa anterior por padrão */
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem('qwip_draft_ad');
@@ -54,20 +78,51 @@ export default function ConfigurarPage() {
         router.replace('/anunciar');
         return;
       }
-      setDraft(JSON.parse(raw) as DraftBase);
+      const d = JSON.parse(raw) as DraftBase;
+      setDraft(d);
 
+      // Config gravada (se houver)
       const rawCfg = sessionStorage.getItem('qwip_config_ad');
-      if (rawCfg) setCfg((s) => ({ ...s, ...(JSON.parse(rawCfg) as Partial<Config>) }));
+      const prevCfg = rawCfg ? (JSON.parse(rawCfg) as Partial<Config>) : {};
+
+      setCfg((s) => ({
+        category: prevCfg.category ?? s.category,
+        urgencyTimer: prevCfg.urgencyTimer ?? s.urgencyTimer,
+        // Padrões vindos do draft (tela anterior):
+        city: prevCfg.city ?? d.city ?? s.city,
+        uf: prevCfg.uf ?? d.uf ?? s.uf,
+        radiusKm: prevCfg.radiusKm ?? d.radiusKm ?? s.radiusKm,
+      }));
+
+      // Logo prefs (se houver)
+      const enabled = sessionStorage.getItem('qwip_logo_enabled') === '1';
+      const dataUrl = sessionStorage.getItem('qwip_logo_dataurl');
+      const pos = (sessionStorage.getItem('qwip_logo_pos') ?? 'br') as LogoPrefs['pos'];
+      const sizePct = Number(sessionStorage.getItem('qwip_logo_size') ?? '12');
+      setLogo({ enabled, dataUrl: dataUrl || null, pos, sizePct });
     } catch {
       router.replace('/anunciar');
     }
   }, [router]);
 
+  /** Persiste cfg */
   useEffect(() => {
     sessionStorage.setItem('qwip_config_ad', JSON.stringify(cfg));
   }, [cfg]);
 
-  const cents = useMemo(() => (draft ? parseInt(draft.priceDigits || '0', 10) : 0), [draft]);
+  /** Persiste preferências da LOGO (lidas no editor para fundir na foto) */
+  useEffect(() => {
+    sessionStorage.setItem('qwip_logo_enabled', logo.enabled ? '1' : '0');
+    if (logo.dataUrl) sessionStorage.setItem('qwip_logo_dataurl', logo.dataUrl);
+    else sessionStorage.removeItem('qwip_logo_dataurl');
+    sessionStorage.setItem('qwip_logo_pos', logo.pos);
+    sessionStorage.setItem('qwip_logo_size', String(logo.sizePct));
+  }, [logo]);
+
+  const cents = useMemo(
+    () => (draft ? parseInt(draft.priceDigits || '0', 10) : 0),
+    [draft]
+  );
 
   const previewChips = [
     cfg.urgencyTimer ? { text: 'Oferta por tempo limitado', tone: 'warning' as const } : null,
@@ -75,9 +130,30 @@ export default function ConfigurarPage() {
     { text: `+ ${cfg.radiusKm}km`, tone: 'neutral' as const },
   ].filter(Boolean) as { text: string; tone: 'warning' | 'neutral' }[];
 
+  /** Upload da LOGO */
+  function onLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const okType = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(f.type);
+    if (!okType) {
+      alert('Formato inválido. Use PNG, JPG, WEBP ou SVG.');
+      e.target.value = '';
+      return;
+    }
+    if (f.size > 3 * 1024 * 1024) {
+      alert('Logomarca muito grande. Máximo 3MB.');
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setLogo((s) => ({ ...s, dataUrl: String(reader.result || '') }));
+    reader.readAsDataURL(f);
+  }
+
+  /** Publicar (MVP: envia dataURL como imageUrl; a fusão da logo já é feita no editor ao aplicar) */
   async function handleContinue() {
     if (!draft) return;
-    if (!draft.title.trim() || !draft.priceDigits) {
+    if (!draft.title?.trim() || !draft.priceDigits) {
       alert('Preencha título e preço.');
       return;
     }
@@ -88,7 +164,7 @@ export default function ConfigurarPage() {
 
     setLoading(true);
     try {
-      // publica de fato (MVP: salva dataURL como imageUrl)
+      // payload
       const payload = {
         title: draft.title.trim(),
         description: draft.description.trim(),
@@ -97,8 +173,6 @@ export default function ConfigurarPage() {
         city: cfg.city || null,
         uf: cfg.uf || null,
         radiusKm: Number(cfg.radiusKm) || 10,
-        // criamos expiresAt de 24h no backend, mas podemos enviar também:
-        // expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       };
 
       const res = await fetch('/api/ads', {
@@ -119,7 +193,6 @@ export default function ConfigurarPage() {
       const url = `${location.origin}/anuncio/${id}`;
       sessionStorage.setItem('qwip_published_ad', JSON.stringify({ id, url }));
 
-      // segue para confirmar/compartilhar
       router.push('/anunciar/confirmar');
     } catch (e: any) {
       console.error(e);
@@ -157,6 +230,7 @@ export default function ConfigurarPage() {
             </div>
 
             <div className="space-y-4">
+              {/* Título */}
               <div>
                 <label className="mb-1 block text-sm font-medium">Título do anúncio *</label>
                 <input
@@ -170,9 +244,10 @@ export default function ConfigurarPage() {
                   className="w-full rounded-xl border border-white/15 bg-transparent px-3 py-2 text-sm outline-none"
                   placeholder="Ex.: Marmita Caseira com Entrega"
                 />
-                <p className="mt-1 text-xs text-muted-foreground">0/80 caracteres</p>
+                <p className="mt-1 text-xs text-muted-foreground">{draft.title.length}/80 caracteres</p>
               </div>
 
+              {/* Preço + Categoria */}
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-sm font-medium">Preço (R$) *</label>
@@ -186,9 +261,9 @@ export default function ConfigurarPage() {
                       sessionStorage.setItem('qwip_draft_ad', JSON.stringify(next));
                     }}
                     className="w-full rounded-xl border border-white/15 bg-transparent px-3 py-2 text-sm outline-none"
-                    placeholder="Ex.: 18,50"
+                    placeholder="Ex.: 1850 para R$ 18,50"
                   />
-                  <p className="mt-1 text-xs text-muted-foreground">Valor atual: {formatCentsBRL(cents)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Valor atual: {formatCentsBRL(parseInt(draft.priceDigits || '0'))}</p>
                 </div>
 
                 <div>
@@ -207,6 +282,7 @@ export default function ConfigurarPage() {
                 </div>
               </div>
 
+              {/* Cidade/UF (pré-preenchidos da etapa anterior) */}
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-sm font-medium">Cidade *</label>
@@ -214,7 +290,7 @@ export default function ConfigurarPage() {
                     value={cfg.city || ''}
                     onChange={(e) => setCfg((s) => ({ ...s, city: e.target.value }))}
                     className="w-full rounded-xl border border-white/15 bg-transparent px-3 py-2 text-sm outline-none"
-                    placeholder="Ex.: Barra do Garças"
+                    placeholder="Ex.: Rio Verde"
                   />
                 </div>
                 <div>
@@ -232,6 +308,7 @@ export default function ConfigurarPage() {
                 </div>
               </div>
 
+              {/* Descrição */}
               <div>
                 <label className="mb-1 block text-sm font-medium">Descrição detalhada *</label>
                 <textarea
@@ -245,9 +322,10 @@ export default function ConfigurarPage() {
                   className="w-full rounded-xl border border-white/15 bg-transparent px-3 py-2 text-sm outline-none"
                   placeholder="Conte os detalhes importantes do produto/serviço…"
                 />
-                <p className="mt-1 text-xs text-muted-foreground">0/500 caracteres</p>
+                <p className="mt-1 text-xs text-muted-foreground">{draft.description.length}/500 caracteres</p>
               </div>
 
+              {/* Raio + Timer */}
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-sm font-medium">Raio de alcance</label>
@@ -286,6 +364,71 @@ export default function ConfigurarPage() {
                 </div>
               </div>
 
+              {/* LOGO DO VENDEDOR */}
+              <div className="rounded-xl border border-white/10 p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Logomarca do vendedor</p>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={logo.enabled}
+                      onChange={(e) => setLogo((s) => ({ ...s, enabled: e.target.checked }))}
+                    />
+                    Incluir na imagem do anúncio
+                  </label>
+                </div>
+
+                <div className="mt-3 grid gap-3 md:grid-cols-[1fr,1fr]">
+                  <div>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      onChange={onLogoChange}
+                      className="block w-full cursor-pointer rounded-xl border border-white/15 bg-[#0f1115] px-3 py-2 text-sm"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      PNG com fundo transparente recomendado.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs text-muted-foreground">Posição</label>
+                      <div className="grid grid-cols-4 gap-1">
+                        {([
+                          ['tl','↖︎'],['tr','↗︎'],['bl','↙︎'],['br','↘︎'],
+                        ] as [LogoPrefs['pos'], string][]).map(([p, label]) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setLogo((s) => ({ ...s, pos: p }))}
+                            className={classNames(
+                              'rounded-md border px-2 py-1 text-sm',
+                              logo.pos === p ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300' : 'border-white/10'
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs text-muted-foreground">Tamanho (%)</label>
+                      <input
+                        type="range"
+                        min={5}
+                        max={40}
+                        value={logo.sizePct}
+                        onChange={(e) => setLogo((s) => ({ ...s, sizePct: Number(e.target.value) }))}
+                        className="w-full"
+                      />
+                      <div className="mt-1 text-xs text-muted-foreground">{logo.sizePct}% da largura</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="pt-2">
                 <button
                   onClick={handleContinue}
@@ -305,13 +448,36 @@ export default function ConfigurarPage() {
           <aside className="space-y-6">
             <section className="rounded-2xl border border-white/10 p-4">
               <p className="mb-3 text-sm font-medium">Preview Final</p>
-              <div className="overflow-hidden rounded-xl border border-white/10">
+              <div className="relative overflow-hidden rounded-xl border border-white/10">
                 {draft.imageDataUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={draft.imageDataUrl} alt={draft.title || 'Prévia da imagem'} className="h-56 w-full object-cover md:h-64" />
+                  <>
+                    {/* imagem base */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={draft.imageDataUrl}
+                      alt={draft.title || 'Prévia da imagem'}
+                      className="h-56 w-full object-cover md:h-64"
+                    />
+                    {/* overlay da LOGO (apenas visual) */}
+                    {logo.enabled && logo.dataUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={logo.dataUrl}
+                        alt="Logo"
+                        className={classNames(
+                          'pointer-events-none absolute max-h-[30%] max-w-[30%]',
+                          logo.pos === 'br' && 'right-2 bottom-2',
+                          logo.pos === 'bl' && 'left-2 bottom-2',
+                          logo.pos === 'tr' && 'right-2 top-2',
+                          logo.pos === 'tl' && 'left-2 top-2'
+                        )}
+                        style={{ width: `${logo.sizePct}%` }}
+                      />
+                    ) : null}
+                  </>
                 ) : (
-                  <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">
-                    (Prévía da imagem)
+                  <div className="flex h-56 items-center justify-center text-sm text-muted-foreground md:h-64">
+                    (Prévia da imagem)
                   </div>
                 )}
               </div>
