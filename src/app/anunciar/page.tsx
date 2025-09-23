@@ -46,11 +46,10 @@ export default function CriarAnuncioPage() {
     try {
       const isVerified = sessionStorage.getItem('qwip_phone_verified') === '1';
       if (!isVerified) {
-        router.replace('/auth/phone?next=/anunciar'); // <— corrigido
+        router.replace('/auth/phone?next=/anunciar');
       }
     } catch {
-      // se o navegador bloquear sessionStorage por algum motivo, enviamos para verificar
-      router.replace('/auth/phone?next=/anunciar');   // <— corrigido
+      router.replace('/auth/phone?next=/anunciar');
     }
   }, [router]);
 
@@ -61,8 +60,8 @@ export default function CriarAnuncioPage() {
 
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
-  const [city, setCity] = useState<string>('');
-  const [uf, setUf] = useState<string>('');
+  const [city, setCity] = useState<string>('Rio Verde');
+  const [uf, setUf] = useState<string>('GO');
   const [radiusKm, setRadiusKm] = useState<number>(8);
 
   useEffect(() => {
@@ -91,15 +90,16 @@ export default function CriarAnuncioPage() {
         const { latitude, longitude } = pos.coords;
         setLat(latitude);
         setLng(longitude);
-        if (!city) setCity('Rio Verde');
-        if (!uf) setUf('GO');
       },
       () => {},
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 120_000 }
     );
-  }, [lat, lng, city, uf]);
+  }, [lat, lng]);
 
-  const cents = useMemo(() => parseInt((priceDigits || '0').replace(/\D/g, ''), 10) || 0, [priceDigits]);
+  const cents = useMemo(
+    () => parseInt((priceDigits || '0').replace(/\D/g, ''), 10) || 0,
+    [priceDigits]
+  );
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -156,25 +156,19 @@ export default function CriarAnuncioPage() {
     };
     sessionStorage.setItem('qwip_draft_ad', JSON.stringify(draft));
     if (!sessionStorage.getItem('qwip_config_ad')) {
-      sessionStorage.setItem('qwip_config_ad', JSON.stringify({ category: '', radiusKm, urgencyTimer: true, city, uf }));
+      sessionStorage.setItem(
+        'qwip_config_ad',
+        JSON.stringify({ category: '', radiusKm, urgencyTimer: true, city, uf })
+      );
     }
-    // mantém fluxo atual: daqui vai para configurar
     router.push('/anunciar/configurar');
   }
 
-  const centerTuple: [number, number] = lat !== null && lng !== null ? [lat, lng] : [-17.792, -50.918];
-
-  const btnPrimary =
-    'inline-flex items-center justify-center rounded-xl bg-[#25d366] px-4 py-2 font-semibold text-black/90 shadow-sm hover:bg-[#1fd05f] transition';
-  const btnOutline =
-    'inline-flex items-center justify-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-foreground hover:bg-white/5 transition';
-  const chipYellow =
-    'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium bg-[#ffc857]/20 border-[#ffc857]/40 text-[#ffc857]';
   const chipNeutral =
-    'inline-flex items-center rounded-md border border-white/15 px-2 py-0.5 text-xs text-muted-foreground';
+    'inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground';
 
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen bg-background text-foreground">
       <div className="container mx-auto max-w-6xl px-4 py-8">
         <h1 className="text-2xl font-bold">Crie seu anúncio</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -184,18 +178,20 @@ export default function CriarAnuncioPage() {
 
         <div className="mt-6 grid gap-6 md:grid-cols-[1.25fr,1fr]">
           {/* ESQUERDA */}
-          <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <section className="card p-4">
             <div className="space-y-5">
               <div>
-                <label className="mb-1 block text-sm font-medium">Foto do anúncio (JPEG/PNG/WEBP, máx. 4MB)</label>
+                <label className="mb-1 block text-sm font-medium">
+                  Foto do anúncio (JPEG/PNG/WEBP, máx. 4MB)
+                </label>
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   onChange={onFileChange}
                   data-ai="photo"
-                  className="block w-full cursor-pointer rounded-xl border border-white/15 bg-[#0f1115] px-3 py-2 text-sm
-                             file:mr-3 file:rounded-lg file:border-0 file:bg-[#25d366] file:px-3 file:py-2
-                             file:text-black/90 file:font-semibold hover:file:opacity-95"
+                  className="block w-full cursor-pointer rounded-xl border border-input bg-input-background px-3 py-2 text-sm
+                             file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-2
+                             file:text-[var(--primary-foreground)] file:font-semibold hover:file:opacity-95"
                 />
               </div>
 
@@ -204,7 +200,7 @@ export default function CriarAnuncioPage() {
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value.slice(0, 80))}
-                  className="w-full rounded-xl border border-white/15 bg-[#0f1115] px-3 py-2 text-sm outline-none"
+                  className="w-full rounded-xl border border-input bg-input-background px-3 py-2 text-sm outline-none"
                   placeholder="Ex.: Marmita Caseira com Entrega"
                 />
                 <p className="mt-1 text-xs text-muted-foreground">{title.length}/80 caracteres</p>
@@ -216,7 +212,7 @@ export default function CriarAnuncioPage() {
                   inputMode="numeric"
                   value={maskBRLFromDigits(priceDigits)}
                   onChange={(e) => setPriceDigits((e.target.value || '').replace(/\D/g, ''))}
-                  className="w-full rounded-xl border border-white/15 bg-[#0f1115] px-3 py-2 text-sm outline-none"
+                  className="w-full rounded-xl border border-input bg-input-background px-3 py-2 text-sm outline-none"
                   placeholder="Ex.: 18,50"
                 />
                 <p className="mt-1 text-xs text-muted-foreground">Valor atual: {formatCentsBRL(cents)}</p>
@@ -228,7 +224,7 @@ export default function CriarAnuncioPage() {
                   rows={6}
                   value={description}
                   onChange={(e) => setDescription(e.target.value.slice(0, 500))}
-                  className="w-full rounded-xl border border-white/15 bg-[#0f1115] px-3 py-2 text-sm outline-none"
+                  className="w-full rounded-xl border border-input bg-input-background px-3 py-2 text-sm outline-none"
                   placeholder="Conte os detalhes importantes do produto/serviço..."
                 />
                 <p className="mt-1 text-xs text-muted-foreground">{description.length}/500 caracteres</p>
@@ -247,11 +243,13 @@ export default function CriarAnuncioPage() {
                 <p className="mt-1 text-xs text-muted-foreground">Raio atual: {radiusKm} km</p>
               </div>
 
-              <div className="rounded-xl border border-white/15 p-3">
+              <div className="rounded-xl border border-border p-3 bg-input-background/40">
                 <p className="text-sm font-medium">Localização</p>
-                <p className="mt-1 text-xs text-muted-foreground">Usaremos sua posição atual. Se negar, informe seu CEP.</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Usaremos sua posição atual. Se negar, informe seu CEP.
+                </p>
                 <div className="mt-2 flex items-center gap-3">
-                  <button className={btnPrimary} type="button" onClick={handleAskLocation}>
+                  <button className="btn-primary inline-flex items-center justify-center px-4 py-2" type="button" onClick={handleAskLocation}>
                     Usar minha localização
                   </button>
                   <span className="text-sm text-muted-foreground">
@@ -261,14 +259,16 @@ export default function CriarAnuncioPage() {
               </div>
 
               <div className="pt-2">
-                <button onClick={handleContinue} className={btnPrimary}>Continuar</button>
+                <button onClick={handleContinue} className="btn-primary inline-flex items-center justify-center px-4 py-2">
+                  Continuar
+                </button>
               </div>
             </div>
           </section>
 
           {/* DIREITA */}
-          <aside className="rounded-2xl border border-white/10 bg-black/20 p-4">
-            <div className="mb-2 h-56 overflow-hidden rounded-xl border border-white/10">
+          <aside className="card p-4">
+            <div className="mb-2 h-56 overflow-hidden rounded-xl border border-border bg-input-background/40">
               {imageDataUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={imageDataUrl} alt="Prévia da imagem" className="h-full w-full object-cover" />
@@ -279,16 +279,16 @@ export default function CriarAnuncioPage() {
               )}
             </div>
 
-            {/* >>> Botão IA abaixo do preview <<< */}
+            {/* Botão IA abaixo do preview */}
             <div id="ai-under-preview" className="mb-3" />
 
             <div className="mb-2 flex flex-wrap gap-2">
-              <span className={chipYellow}>Expira em 24h</span>
+              <span className="badge-accent">Expira em 24h</span>
               <span className={chipNeutral}>alcança {radiusKm} km</span>
             </div>
 
             <h3 className="text-lg font-semibold">{title || 'Título do anúncio'}</h3>
-            <div className="text-emerald-400 font-semibold">{formatCentsBRL(cents)}</div>
+            <div className="text-primary font-semibold">{formatCentsBRL(cents)}</div>
             <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">
               {description || 'Descrição breve aparecerá aqui.'}
             </p>
@@ -297,8 +297,12 @@ export default function CriarAnuncioPage() {
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <button className={btnPrimary} type="button">WhatsApp</button>
-              <button className={btnOutline} type="button">Compartilhar</button>
+              <button className="btn-primary inline-flex items-center justify-center px-4 py-2" type="button">
+                WhatsApp
+              </button>
+              <button className="btn-outline inline-flex items-center justify-center px-4 py-2" type="button">
+                Compartilhar
+              </button>
             </div>
 
             <p className="mt-3 text-xs text-muted-foreground">
@@ -307,19 +311,21 @@ export default function CriarAnuncioPage() {
           </aside>
         </div>
 
-        <section className="rounded-2xl border border-white/10 bg-black/20 p-4 mt-6">
+        <section className="card p-4 mt-6">
           <div className="text-sm font-medium">Área no mapa</div>
           <div className="mt-3">
             <MapPreview center={lat !== null && lng !== null ? [lat, lng] : [-17.792, -50.918]} radiusKm={radiusKm} />
           </div>
-          <div className="mt-2 text-right"><span className={chipNeutral}>Raio atual: {radiusKm} km</span></div>
+          <div className="mt-2 text-right">
+            <span className={chipNeutral}>Raio atual: {radiusKm} km</span>
+          </div>
         </section>
 
-        {/* monta a barra de IA e atualiza o preview ao aplicar */}
+        {/* IA: aplica e atualiza preview */}
         <AIMount
           onReplace={async (blob) => {
             const data = await blobToDataURL(blob);
-            setImageDataUrl(data); // preview atualiza na hora
+            setImageDataUrl(data);
           }}
         />
       </div>
