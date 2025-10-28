@@ -93,11 +93,13 @@ export async function POST(req: NextRequest) {
       bytes = new Uint8Array(dataUrlToBuffer(imageDataUrl));
     }
 
-    return new NextResponse(bytes, {
-      status: 200,
-      headers: {
-        'Content-Type': 'image/png',
-        'Cache-Control': 'no-store',
+    return new NextResponse(
+  new Blob([bytes], { type: 'image/png' }),
+  {
+    status: 200,
+    headers: {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'no-store',
       },
     });
   } catch (e: any) {
