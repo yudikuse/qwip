@@ -1,108 +1,191 @@
 // src/app/api/ai/enhance/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+export const runtime = "nodejs";
 
-type Mode = 'realce' | 'face' | 'paisagem';
+import { NextRequest, NextResponse } from "next/server";
 
-function dataUrlToBuffer(dataUrl: string): Buffer {
-  const [, meta, b64] = dataUrl.match(/^data:(.*?);base64,(.+)$/) || [];
-  if (!meta || !b64) throw new Error('dataURL inválida');
-  return Buffer.from(b64, 'base64');
-}
+/**
+ * Esta rota recebe uma imagem (multipart/form-data: campo "file")
+ * e retorna um PNG. Se houver configuração futura do Replicate e você enviar
+ * um `image_url` público via JSON, dá para plugar no bloco comentado.
+ *
+ * Hoje: fallback seguro (sem dependências): devolve o próprio arquivo como PNG.
+ * - Corrige o erro anterior de tipo usando Blob/ArrayBuffer no NextResponse.
+ */
 
-async function callReplicate(mode: Mode, imageDataUrl: string): Promise<Uint8Array> {
-  const token = process.env.REPLICATE_API_TOKEN;
-  if (!token) throw new Error('REPLICATE_API_TOKEN não configurado');
-
-  // Pequeno roteamento de modelos por modo (simples e eficaz)
-  // - face: CodeFormer (restauração de rosto)
-  // - realce/paisagem: Real-ESRGAN (upscale + nitidez)
-  // Obs.: os owners/modelos podem ser atualizados depois — começa assim para MVP.
-  const models: Record<Mode, { model: string; version?: string; input: any }> = {
-    face: {
-      model: 'sczhou/codeformer',
-      input: { upscale: 1, background_enhance: true, face_upsample: true },
-    },
-    realce: {
-      model: 'xinntao/realesrgan',
-      input: { scale: 2, face_enhance: false },
-    },
-    paisagem: {
-      model: 'xinntao/realesrgan',
-      input: { scale: 2, face_enhance: false },
-    },
-  };
-
-  const buf = dataUrlToBuffer(imageDataUrl);
-  const base64 = Buffer.from(buf).toString('base64');
-  const entry = models[mode];
-
-  // Chamada direta à Replicate (v3) – retorno binário em base64
-  const res = await fetch('https://api.replicate.com/v1/models/' + entry.model + '/predictions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Token ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      input: { ...entry.input, image: `data:image/png;base64,${base64}` },
-    }),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`Replicate HTTP ${res.status}: ${txt || 'erro'}`);
-  }
-
-  const job = await res.json();
-  // Poll simples até finalizar (MVP)
-  let prediction = job;
-  let guard = 0;
-  while (prediction.status === 'starting' || prediction.status === 'processing') {
-    await new Promise((r) => setTimeout(r, 750));
-    const r2 = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
-      headers: { Authorization: `Token ${token}` },
-    });
-    prediction = await r2.json();
-    if (++guard > 60) throw new Error('Timeout no processamento');
-  }
-
-  if (prediction.status !== 'succeeded') {
-    throw new Error(`Falha Replicate: ${prediction.status}`);
-  }
-
-  // A Replicate costuma retornar URL(s). Fazemos o download do primeiro resultado.
-  const outUrl: string = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
-  const bin = await fetch(outUrl);
-  const arr = new Uint8Array(await bin.arrayBuffer());
-  return arr;
+function badRequest(msg: string) {
+  return NextResponse.json({ ok: false, error: msg }, { status: 400 });
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { mode, imageDataUrl } = (await req.json()) as { mode: Mode; imageDataUrl: string };
-    if (!mode || !imageDataUrl) {
-      return NextResponse.json({ error: 'Parâmetros inválidos' }, { status: 400 });
+    const contentType = req.headers.get("content-type") || "";
+
+    // 1) Se vier multipart (upload do <input type="file">)
+    if (contentType.includes("multipart/form-data")) {
+      const form = await req.formData();
+      const file = form.get("file");
+
+      if (!(file instanceof File)) {
+        return badRequest("Envie a imagem no campo 'file' (multipart/form-data).");
+      }
+
+      // ⚠️ Aqui poderíamos validar mimetype/tamanho, se quiser
+      const arrayBuffer = await file.arrayBuffer();
+      const type = file.type || "image/png";
+
+      // Fallback atual: devolve a própria imagem.
+      // (Se quiser FORÇAR PNG, converta via Canvas no cliente antes de enviar,
+      //  ou instale 'sharp' no servidor e converta aqui.)
+      return new NextResponse(
+        new Blob([arrayBuffer], { type }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": type,
+            "Cache-Control": "no-store",
+          },
+        }
+      );
     }
 
-    let bytes: Uint8Array;
+    // 2) Alternativamente, se quiser enviar JSON com uma URL pública da imagem
+    //    (útil para integrar com Replicate — muitos modelos pedem URL)
+    if (contentType.includes("application/json")) {
+      const body = await req.json().catch(() => ({} as any));
+      const imageUrl: string | undefined = body?.image_url;
 
-    if (process.env.REPLICATE_API_TOKEN) {
-      bytes = await callReplicate(mode, imageDataUrl);
-    } else {
-      // Fallback sem custo: devolve a própria imagem (não quebra a UX enquanto configuramos chave)
-      bytes = new Uint8Array(dataUrlToBuffer(imageDataUrl));
+      if (!imageUrl) {
+        return badRequest("Envie multipart com 'file' OU JSON com 'image_url'.");
+      }
+
+      // === Gancho opcional para Replicate (apenas se quiser usar) ===
+      // Deixe as variáveis no Vercel:
+      // - REPLICATE_API_TOKEN
+      // - REPLICATE_MODEL (ex.: "owner/model")
+      // - REPLICATE_VERSION (hash da versão do modelo) OU use deployments
+      const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN;
+      const REPLICATE_MODEL = process.env.REPLICATE_MODEL;      // opcional
+      const REPLICATE_VERSION = process.env.REPLICATE_VERSION;  // opcional
+      const REPLICATE_DEPLOYMENT = process.env.REPLICATE_DEPLOYMENT; // opcional, form "owner/name"
+
+      if (REPLICATE_API_TOKEN && (REPLICATE_DEPLOYMENT || (REPLICATE_MODEL && REPLICATE_VERSION))) {
+        try {
+          // Você pode usar 'predictions' com model+version,
+          // ou 'deployments' se tiver um deployment configurado na sua conta.
+          // Abaixo mostro as duas formas. Escolha uma e comente a outra.
+
+          let apiUrl = "";
+          let payload: any = {};
+
+          if (REPLICATE_DEPLOYMENT) {
+            // Forma A: Deployments (mais simples p/ produção)
+            // POST https://api.replicate.com/v1/deployments/{owner}/{name}/predictions
+            apiUrl = `https://api.replicate.com/v1/deployments/${REPLICATE_DEPLOYMENT}/predictions`;
+            payload = {
+              input: { image: imageUrl },
+            };
+          } else {
+            // Forma B: Models + Version
+            // POST https://api.replicate.com/v1/predictions
+            apiUrl = "https://api.replicate.com/v1/predictions";
+            payload = {
+              version: REPLICATE_VERSION,
+              input: { image: imageUrl },
+              model: REPLICATE_MODEL, // alguns clients nem exigem esta key, mas deixo por clareza
+            };
+          }
+
+          const start = await fetch(apiUrl, {
+            method: "POST",
+            headers: {
+              "Authorization": `Token ${REPLICATE_API_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          });
+
+          if (!start.ok) {
+            const msg = await start.text();
+            console.warn("[replicate] start failed:", msg);
+            // Fallback: baixa a imagem original e devolve como PNG
+            const orig = await fetch(imageUrl);
+            const ab = await orig.arrayBuffer();
+            return new NextResponse(new Blob([ab], { type: "image/png" }), {
+              status: 200,
+              headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
+            });
+          }
+
+          const started = await start.json();
+          const pollUrl: string = started?.urls?.get;
+
+          // Poll simples até terminar (ou você pode usar webhooks do Replicate)
+          let outputUrl: string | null = null;
+          for (let i = 0; i < 40; i++) { // ~40 tentativas
+            await new Promise((r) => setTimeout(r, 1500));
+            const poll = await fetch(pollUrl, {
+              headers: { "Authorization": `Token ${REPLICATE_API_TOKEN}` },
+            });
+            const data = await poll.json();
+
+            if (data?.status === "succeeded") {
+              // Alguns modelos retornam array de URLs; outros, uma string
+              const out = data?.output;
+              if (Array.isArray(out)) {
+                outputUrl = out[out.length - 1] || null;
+              } else if (typeof out === "string") {
+                outputUrl = out;
+              } else if (out?.image) {
+                outputUrl = out.image;
+              }
+              break;
+            }
+            if (data?.status === "failed" || data?.status === "canceled") {
+              console.warn("[replicate] failed/canceled:", data?.error || data);
+              break;
+            }
+          }
+
+          if (outputUrl) {
+            const resp = await fetch(outputUrl);
+            const ab = await resp.arrayBuffer();
+            return new NextResponse(new Blob([ab], { type: "image/png" }), {
+              status: 200,
+              headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
+            });
+          }
+
+          // Se não saiu nada do Replicate, devolve original como fallback
+          const orig = await fetch(imageUrl);
+          const ab = await orig.arrayBuffer();
+          return new NextResponse(new Blob([ab], { type: "image/png" }), {
+            status: 200,
+            headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
+          });
+        } catch (err) {
+          console.error("[replicate] error:", err);
+          // fallback para a imagem original
+          const orig = await fetch(imageUrl);
+          const ab = await orig.arrayBuffer();
+          return new NextResponse(new Blob([ab], { type: "image/png" }), {
+            status: 200,
+            headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
+          });
+        }
+      }
+
+      // Sem token/modelo configurado: apenas retorna a imagem original
+      const resp = await fetch(imageUrl);
+      const ab = await resp.arrayBuffer();
+      return new NextResponse(new Blob([ab], { type: "image/png" }), {
+        status: 200,
+        headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
+      });
     }
 
-    return new NextResponse(
-  new Blob([bytes], { type: 'image/png' }),
-  {
-    status: 200,
-    headers: {
-      'Content-Type': 'image/png',
-      'Cache-Control': 'no-store',
-      },
-    });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Erro interno' }, { status: 500 });
+    return badRequest("Content-Type inválido. Use multipart/form-data (file) ou JSON (image_url).");
+  } catch (e) {
+    console.error("[ai/enhance] error:", e);
+    return NextResponse.json({ ok: false, error: "Falha ao processar imagem." }, { status: 500 });
   }
 }
