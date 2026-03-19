@@ -1,36 +1,157 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
-// ── Google Ads conversion helper ──────────────────────────────────────────────
 declare global {
   interface Window { gtag?: (...args: unknown[]) => void; }
 }
 function fireConversion() {
-  // Substitua AW-XXXXXXXXX/YYYYY pelo seu ID de conversão do Google Ads
   if (typeof window !== "undefined" && window.gtag) {
     window.gtag("event", "conversion", {
-      send_to: process.env.NEXT_PUBLIC_ADS_CONVERSION_ID ?? "AW-XXXXXXXXX/YYYYY",
+      send_to: process.env.NEXT_PUBLIC_ADS_CONVERSION_ID ?? "",
     });
   }
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
 interface Dor { id: string; n: string; t: string; d: string; }
 
 const DORES: Dor[] = [
-  { id: "pedido", n: "01", t: "O pedido sumiu no grupo", d: "Combinaram, ninguém executou, ninguém cobrou. Toda semana alguém pergunta \"mas isso foi pedido mesmo?\"" },
-  { id: "margem", n: "02", t: "Vende bem, sobra pouco", d: "No fim do mês o saldo não bate com o movimento. Você não sabe ao certo qual produto ou serviço dá lucro de verdade." },
-  { id: "lead",   n: "03", t: "Orçamento feito, cliente sumiu", d: "Ninguém fez follow-up. O cliente comprou do concorrente e você nem ficou sabendo. Acontece toda semana." },
-  { id: "relat",  n: "04", t: "Relatório só no fim do mês", d: "Quando o problema aparece já passou. Você toma decisão olhando pro retrovisor, nunca pro para-brisa." },
+  { id: "pedido", n: "01", t: "O pedido sumiu no grupo", d: "Combinaram, ninguém executou, ninguém cobrou." },
+  { id: "margem", n: "02", t: "Vende bem, sobra pouco", d: "Você não sabe qual produto dá lucro de verdade." },
+  { id: "lead",   n: "03", t: "Orçamento feito, cliente sumiu", d: "Ninguém fez follow-up. Comprou do concorrente." },
+  { id: "relat",  n: "04", t: "Relatório só no fim do mês", d: "Problema visto tarde demais para resolver." },
 ];
+
+function ScenePedido() {
+  return (
+    <div style={{background:"#111",borderRadius:10,padding:"14px 12px",display:"flex",flexDirection:"column",gap:8,fontFamily:"system-ui,sans-serif"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+        <div style={{width:28,height:28,borderRadius:"50%",background:"#25d366",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13}}>G</div>
+        <span style={{color:"#aaa",fontSize:12}}>Grupo Obras — 47 membros</span>
+      </div>
+      {[
+        {msg:"Precisa de 50 sacos de cimento pra amanhã",time:"08:14",own:false},
+        {msg:"Alguém viu isso? 👆",time:"10:32",own:false},
+        {msg:"???",time:"13:55",own:false},
+      ].map((m,i) => (
+        <div key={i} style={{display:"flex",justifyContent:m.own?"flex-end":"flex-start"}}>
+          <div style={{background:m.own?"#005c4b":"#2a2a2a",borderRadius:8,padding:"6px 10px",maxWidth:"80%"}}>
+            <div style={{color:"#e9e9e9",fontSize:12,lineHeight:1.4}}>{m.msg}</div>
+            <div style={{color:"#888",fontSize:10,textAlign:"right",marginTop:3}}>{m.time}</div>
+          </div>
+        </div>
+      ))}
+      <div style={{background:"#ff4d1c22",border:"1px solid #ff4d1c44",borderRadius:6,padding:"5px 10px",marginTop:4}}>
+        <span style={{color:"#ff4d1c",fontSize:11,fontWeight:600}}>⚠ Sem resposta há 2 dias — ninguém comprou</span>
+      </div>
+    </div>
+  );
+}
+
+function SceneMargem() {
+  const bars = [
+    {label:"Jan",venda:18400,lucro:612},
+    {label:"Fev",venda:21200,lucro:430},
+    {label:"Mar",venda:19800,lucro:890},
+  ];
+  const maxV = 22000;
+  return (
+    <div style={{background:"#111",borderRadius:10,padding:"14px 12px",fontFamily:"system-ui,sans-serif"}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
+        <span style={{color:"#aaa",fontSize:11}}>Vendas vs Lucro real</span>
+        <div style={{display:"flex",gap:12}}>
+          <span style={{color:"#4ade80",fontSize:10}}>● Vendas</span>
+          <span style={{color:"#ff4d1c",fontSize:10}}>● Lucro</span>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:16,alignItems:"flex-end",height:80}}>
+        {bars.map((b,i) => (
+          <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+            <div style={{width:"100%",display:"flex",gap:3,alignItems:"flex-end",height:64}}>
+              <div style={{flex:1,background:"#4ade8033",borderRadius:"3px 3px 0 0",height:`${(b.venda/maxV)*100}%`,border:"1px solid #4ade8066"}}/>
+              <div style={{flex:1,background:"#ff4d1c55",borderRadius:"3px 3px 0 0",height:`${Math.max((b.lucro/maxV)*100,3)}%`,border:"1px solid #ff4d1c88"}}/>
+            </div>
+            <span style={{color:"#666",fontSize:10}}>{b.label}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{marginTop:10,background:"#ff4d1c22",border:"1px solid #ff4d1c44",borderRadius:6,padding:"5px 10px"}}>
+        <span style={{color:"#ff4d1c",fontSize:11,fontWeight:600}}>⚠ R$ 19.800 vendidos → R$ 890 sobraram (4,5%)</span>
+      </div>
+    </div>
+  );
+}
+
+function SceneLead() {
+  return (
+    <div style={{background:"#111",borderRadius:10,padding:"14px 12px",display:"flex",flexDirection:"column",gap:8,fontFamily:"system-ui,sans-serif"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+        <div style={{width:28,height:28,borderRadius:"50%",background:"#3b82f6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#fff",fontWeight:700}}>C</div>
+        <div>
+          <div style={{color:"#e9e9e9",fontSize:12,fontWeight:600}}>Cliente Potencial</div>
+          <div style={{color:"#666",fontSize:10}}>visto por último há 5 dias</div>
+        </div>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end"}}>
+        <div style={{background:"#005c4b",borderRadius:8,padding:"6px 10px",maxWidth:"85%"}}>
+          <div style={{color:"#e9e9e9",fontSize:12,lineHeight:1.4}}>Segue o orçamento que conversamos! Qualquer dúvida é só falar 👍</div>
+          <div style={{color:"#888",fontSize:10,textAlign:"right",marginTop:3,display:"flex",justifyContent:"flex-end",gap:4,alignItems:"center"}}>
+            <span>Seg 09:14</span>
+            <span style={{color:"#53bdeb"}}>✓✓</span>
+          </div>
+        </div>
+      </div>
+      <div style={{textAlign:"center",color:"#555",fontSize:11,padding:"4px 0"}}>— Seg · Ter · Qua · Qui · Sex —</div>
+      <div style={{background:"#ff4d1c22",border:"1px solid #ff4d1c44",borderRadius:6,padding:"5px 10px"}}>
+        <span style={{color:"#ff4d1c",fontSize:11,fontWeight:600}}>⚠ Lido. Sem resposta. Nenhum follow-up feito.</span>
+      </div>
+    </div>
+  );
+}
+
+function SceneRelatorio() {
+  const days = Array.from({length:31},(_,i)=>i+1);
+  const problemDay = 8;
+  const reportDay = 31;
+  return (
+    <div style={{background:"#111",borderRadius:10,padding:"14px 12px",fontFamily:"system-ui,sans-serif"}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+        <span style={{color:"#aaa",fontSize:11}}>Março 2025</span>
+        <div style={{display:"flex",gap:12}}>
+          <span style={{color:"#ff4d1c",fontSize:10}}>● Problema surgiu</span>
+          <span style={{color:"#facc15",fontSize:10}}>● Você descobriu</span>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+        {["D","S","T","Q","Q","S","S"].map((d,i)=>(
+          <div key={i} style={{color:"#555",fontSize:9,textAlign:"center",paddingBottom:2}}>{d}</div>
+        ))}
+        {Array.from({length:5}).map((_,i)=>(
+          <div key={`e${i}`} style={{height:22}}/>
+        ))}
+        {days.map(d=>(
+          <div key={d} style={{
+            height:22,borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,
+            background: d===problemDay?"#ff4d1c33": d===reportDay?"#facc1533":"transparent",
+            border: d===problemDay?"1px solid #ff4d1c": d===reportDay?"1px solid #facc15":"1px solid transparent",
+            color: d===problemDay?"#ff4d1c": d===reportDay?"#facc15":"#666",
+            fontWeight: d===problemDay||d===reportDay?700:400,
+          }}>{d}</div>
+        ))}
+      </div>
+      <div style={{marginTop:10,background:"#ff4d1c22",border:"1px solid #ff4d1c44",borderRadius:6,padding:"5px 10px"}}>
+        <span style={{color:"#ff4d1c",fontSize:11,fontWeight:600}}>⚠ Problema no dia 8 — você viu só no dia 31</span>
+      </div>
+    </div>
+  );
+}
+
+const SCENES = [ScenePedido, SceneMargem, SceneLead, SceneRelatorio];
 
 export default function Home() {
   const [dor, setDor] = useState<string>("");
   const [submitted, setSubmitted] = useState(false);
-  const formRef = useRef<HTMLFormElement>(null);
 
-  // scroll reveal
   useEffect(() => {
     const els = document.querySelectorAll<HTMLElement>(".r");
     const obs = new IntersectionObserver(
@@ -41,7 +162,6 @@ export default function Home() {
     return () => obs.disconnect();
   }, []);
 
-  // WhatsApp mask
   function maskZap(e: React.ChangeEvent<HTMLInputElement>) {
     let v = e.target.value.replace(/\D/g, "").slice(0, 11);
     if (v.length >= 7) v = "(" + v.slice(0,2) + ") " + v.slice(2,7) + "-" + v.slice(7);
@@ -58,8 +178,6 @@ export default function Home() {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const payload = Object.fromEntries(fd.entries());
-
-    // Webhook — substitua pela URL do n8n / Make / Zapier
     const WEBHOOK = process.env.NEXT_PUBLIC_WEBHOOK_URL;
     if (WEBHOOK) {
       await fetch(WEBHOOK, {
@@ -68,7 +186,6 @@ export default function Home() {
         body: JSON.stringify(payload),
       }).catch(console.error);
     }
-
     fireConversion();
     setSubmitted(true);
   }
@@ -77,9 +194,9 @@ export default function Home() {
     <>
       <style>{`
         :root {
-          --black:#111110; --white:#faf9f7; --accent:#ff4d1c; --al:#fff2ee;
-          --g50:#f5f4f1; --g100:#eceae5; --g300:#c5c2ba; --g500:#8c8980; --g700:#4e4c46; --g900:#1c1b19;
-          --fd:'Bricolage Grotesque',sans-serif; --fb:'Instrument Sans',sans-serif;
+          --black:#111110;--white:#faf9f7;--accent:#ff4d1c;--al:#fff2ee;
+          --g50:#f5f4f1;--g100:#eceae5;--g300:#c5c2ba;--g500:#8c8980;--g700:#4e4c46;--g900:#1c1b19;
+          --fd:'Bricolage Grotesque',sans-serif;--fb:'Instrument Sans',sans-serif;
         }
         @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500&display=swap');
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -107,23 +224,42 @@ export default function Home() {
         .lbl{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
         h2{font-family:var(--fd);font-size:clamp(30px,4vw,46px);font-weight:700;letter-spacing:-.03em;line-height:1.1;margin-bottom:18px}
         .lead{font-size:18px;font-weight:400;color:var(--g700);max-width:500px;line-height:1.7}
+
+        /* DORES */
         #dores{background:var(--black)}
         #dores h2{color:var(--white)}
         #dores .lead{color:var(--g300)}
         .dh{margin-bottom:52px}
         .dg{display:grid;grid-template-columns:repeat(2,1fr);gap:2px}
         @media(max-width:640px){.dg{grid-template-columns:1fr}}
-        .dcard{background:var(--g900);padding:36px 32px 30px;cursor:pointer;transition:background .18s;border-radius:3px;display:flex;flex-direction:column}
-        .dcard:hover{background:#252422}
-        .dcard.on{background:var(--accent)}
-        .dn{font-family:var(--fd);font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--g500);margin-bottom:18px}
-        .dcard.on .dn{color:rgba(255,255,255,.6)}
-        .dt{font-family:var(--fd);font-size:22px;font-weight:700;color:var(--white);letter-spacing:-.025em;line-height:1.2;margin-bottom:10px}
-        .dd{font-size:14px;color:var(--g300);line-height:1.65;margin-bottom:28px;flex:1}
-        .dcard.on .dd{color:rgba(255,255,255,.8)}
-        .dbtn{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;color:var(--g300);background:rgba(255,255,255,.07);border:none;padding:9px 16px;border-radius:999px;cursor:pointer;align-self:flex-start;transition:background .15s,color .15s}
+
+        .dcard{
+          background:var(--g900);padding:28px;cursor:pointer;
+          transition:background .18s,transform .15s;border-radius:3px;
+          display:flex;flex-direction:column;gap:16px;
+        }
+        .dcard:hover{background:#202020;transform:translateY(-2px)}
+        .dcard.on{background:#1a0d09;outline:1.5px solid var(--accent)}
+
+        .scene-wrap{border-radius:8px;overflow:hidden;pointer-events:none;user-select:none}
+
+        .dcard-body{display:flex;flex-direction:column;gap:8px}
+        .dn{font-family:var(--fd);font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--g500)}
+        .dcard.on .dn{color:rgba(255,100,50,.7)}
+        .dt{font-family:var(--fd);font-size:20px;font-weight:700;color:var(--white);letter-spacing:-.025em;line-height:1.2}
+        .dd{font-size:13px;color:var(--g300);line-height:1.6}
+
+        .dbtn{
+          display:inline-flex;align-items:center;gap:6px;
+          font-size:13px;font-weight:500;color:var(--g300);
+          background:rgba(255,255,255,.07);border:none;padding:9px 16px;
+          border-radius:999px;cursor:pointer;align-self:flex-start;
+          transition:background .15s,color .15s;
+        }
         .dbtn:hover{background:rgba(255,255,255,.13);color:var(--white)}
-        .dcard.on .dbtn{background:rgba(255,255,255,.25);color:#fff}
+        .dcard.on .dbtn{background:var(--accent);color:#fff}
+
+        /* COMO */
         #como{background:var(--g50)}
         .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin-top:56px}
         @media(max-width:680px){.steps{grid-template-columns:1fr}}
@@ -143,6 +279,8 @@ export default function Home() {
         .bac.a .blist li{color:var(--g300)}
         .blist li::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--g300);flex-shrink:0;margin-top:8px}
         .bac.a .blist li::before{background:var(--accent)}
+
+        /* PROVA */
         .cases{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:52px}
         @media(max-width:640px){.cases{grid-template-columns:1fr}}
         .case{background:var(--g50);border-radius:16px;padding:36px;position:relative;overflow:hidden}
@@ -152,6 +290,8 @@ export default function Home() {
         .cres{font-family:var(--fd);font-size:18px;font-weight:700;letter-spacing:-.02em;line-height:1.35;margin-bottom:24px}
         .tags{display:flex;flex-wrap:wrap;gap:6px}
         .tag{font-size:12px;padding:4px 11px;background:var(--white);border-radius:999px;color:var(--g700)}
+
+        /* CONTATO */
         #contato{background:var(--g50)}
         .cw{display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:start}
         @media(max-width:760px){.cw{grid-template-columns:1fr;gap:48px}}
@@ -183,7 +323,6 @@ export default function Home() {
         @media(max-width:580px){nav .nb{display:none}#hero{padding:108px 0 72px}}
       `}</style>
 
-      {/* NAV */}
       <nav>
         <div className="ni">
           <a href="#" className="logo">qwip<span>.</span></a>
@@ -191,7 +330,6 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* HERO */}
       <section id="hero">
         <div className="c">
           <div className="pill"><i />Para varejo e serviços</div>
@@ -204,7 +342,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* DORES */}
       <section id="dores">
         <div className="c">
           <div className="dh r">
@@ -213,19 +350,24 @@ export default function Home() {
             <p className="lead">Clique no cartão que mais parece com o seu dia a dia.</p>
           </div>
           <div className="dg">
-            {DORES.map((d) => (
-              <div key={d.id} className={`dcard r${dor === d.t ? " on" : ""}`} data-dor={d.t}>
-                <div className="dn">{d.n}</div>
-                <div className="dt">{d.t}</div>
-                <div className="dd">{d.d}</div>
-                <button className="dbtn" onClick={() => pickDor(d)}>Esse é o meu problema →</button>
-              </div>
-            ))}
+            {DORES.map((d, i) => {
+              const Scene = SCENES[i];
+              return (
+                <div key={d.id} className={`dcard r${dor === d.t ? " on" : ""}`}>
+                  <div className="scene-wrap"><Scene /></div>
+                  <div className="dcard-body">
+                    <div className="dn">{d.n}</div>
+                    <div className="dt">{d.t}</div>
+                    <div className="dd">{d.d}</div>
+                    <button className="dbtn" onClick={() => pickDor(d)}>Esse é o meu problema →</button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      {/* COMO FUNCIONA */}
       <section id="como">
         <div className="c">
           <div className="r">
@@ -262,7 +404,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* PROVA */}
       <section id="prova">
         <div className="c">
           <div className="r">
@@ -286,7 +427,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CONTATO */}
       <section id="contato">
         <div className="c">
           <div className="cw">
@@ -309,7 +449,7 @@ export default function Home() {
                   </div>
                 )}
                 {!submitted ? (
-                  <form ref={formRef} onSubmit={handleSubmit}>
+                  <form onSubmit={handleSubmit}>
                     <input type="hidden" name="dor_selecionada" value={dor} />
                     <div className="fg"><label htmlFor="nome">Seu nome</label><input type="text" id="nome" name="nome" placeholder="Como posso te chamar?" required /></div>
                     <div className="fg"><label htmlFor="zap">WhatsApp</label><input type="tel" id="zap" name="whatsapp" placeholder="(11) 99999-9999" onChange={maskZap} required /></div>
@@ -343,7 +483,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* FOOTER */}
       <footer>
         <div className="c">
           <div className="fi">
