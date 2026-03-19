@@ -273,13 +273,13 @@ export default function Home() {
             <div className="case r">
               <div className="cseg">Construção civil — Goiás</div>
               <div className="cprob">Pedidos chegavam em grupo de WhatsApp. Itens se perdiam, cotações sem rastreio, ninguém sabia o status de nenhum pedido.</div>
-              <div className="cres">"Hoje cada pedido tem número, histórico e alerta de pendência. Sabemos o custo por equipamento em tempo real."</div>
+              <div className="cres">&ldquo;Hoje cada pedido tem número, histórico e alerta de pendência. Sabemos o custo por equipamento em tempo real.&rdquo;</div>
               <div className="tags"><span className="tag">Leitor de WhatsApp</span><span className="tag">Dashboard de custos</span><span className="tag">Alertas automáticos</span></div>
             </div>
             <div className="case r" style={{ transitionDelay:"0.12s" }}>
               <div className="cseg">Varejo de moda — Minas Gerais</div>
               <div className="cprob">Compras no caderno, vendas anotadas à mão. Margem calculada na intuição. Estoque era uma estimativa.</div>
-              <div className="cres">"Em duas semanas descobrimos que dois produtos respondiam por 70% do lucro — e que vendia outros no prejuízo há meses."</div>
+              <div className="cres">&ldquo;Em duas semanas descobrimos que dois produtos respondiam por 70% do lucro — e que vendia outros no prejuízo há meses.&rdquo;</div>
               <div className="tags"><span className="tag">Controle de estoque</span><span className="tag">Relatório de margem</span><span className="tag">Mini-ERP</span></div>
             </div>
           </div>
